@@ -174,7 +174,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
     end
 end)
 
--- Icon for Comment section
+-- Icon for Comment sections
 local function drawGuiCommentMode(iconID)
      imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.comments)), { 20, 20 }, 
                 { 1 * iconID, 0 }, { 1 * iconID + 1, 1 }, 
