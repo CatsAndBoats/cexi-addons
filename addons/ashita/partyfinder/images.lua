@@ -30,6 +30,7 @@ images.loadTextures = function()
     loadTexture(textures, 'modes')
     loadTexture(textures, 'icons')
     loadTexture(textures, 'jobs')
+    loadTexture(textures, 'comments')
 
     return textures;
 end
