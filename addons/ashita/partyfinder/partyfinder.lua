@@ -141,7 +141,7 @@ local seacomTypes =
     -- Looking for Friends
     [97]  = 'Looking for Friends',
     -- Other
-    [115] = 'Other',
+    [115] = 'Others',
 };
 
 local function ClearResults()
@@ -175,11 +175,20 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 end)
 
 -- Icon for Comment section
-local function drawGuiCommentMode(iconID)
-     imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.comments)), { 20, 20 }, 
-                { 1 * iconID, 0 }, { 1 * iconID + 1, 1 }, 
-                { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
+-- local function drawGuiCommentMode(iconID)
+--      imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.comments)), { 22, 22 }, 
+--                 { 1 * iconID, 0 }, { 1 * iconID + 1, 1 }, 
+--                 { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
+-- end
+
+local function drawGuiCommentMode2(jobID)
+    local total = 6
+    local ratio = 1 / total
+    local iconID = jobID - 1
+
+    imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.comments)), { 22, 22 }, { ratio * iconID, (ratio * iconID) / total }, { ratio * iconID + ratio, ((ratio * iconID) / total) + 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
 end
+
 
 local function drawGuiIcon(iconID)
     imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.icons)), { 16, 16 }, { 0.125 * iconID, (0.125 * iconID) / 8 }, { 0.125 * iconID + 0.125, ((0.125 * iconID) / 8) + 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
@@ -261,6 +270,11 @@ local function RenderInterface()
         imgui.Text("Game Mode:");
         imgui.SameLine();
 
+        -- Set the new width for the combo box
+        local comboWidth = 288  -- Change this value to the desired width
+        imgui.PushItemWidth(comboWidth)
+
+        -- Create the BeginCombo with a smaller width
         if imgui.BeginCombo('##ModeList_ComboBox', modeData[interface.SelectedMode].Display, ImGuiComboFlags_None) then
             for index, entry in ipairs(modeData) do
                 local isSelected = (interface.SelectedMode == index);
@@ -271,10 +285,11 @@ local function RenderInterface()
                     end
                 end
             end
-
             imgui.EndCombo();
         end
 
+        -- Reset the item width to the default value
+        imgui.PopItemWidth()
         --imgui.SameLine();
         imgui.Text('Filter:');
         imgui.SameLine();
@@ -282,34 +297,44 @@ local function RenderInterface()
         imgui.SameLine();
         imgui.Text('Range:');
         imgui.SameLine();
-
-
+        
+        -- Set the new width for the input box
+        local inputWidth = 100  -- Change this value to the desired width
+        imgui.PushItemWidth(inputWidth)
+        
         local minLevel = 0
         local maxLevel = 75
-
+        
+        -- Create the InputInt with a smaller width
         imgui.InputInt('##FilterRange_InputInt', levelRangeInput, 5);
-        levelRangeInput[1] = math.min(maxLevel, math.max(minLevel, levelRangeInput[1]));
+        levelRangeInput[1] = math.min(maxLevel, math.max(minLevel, levelRangeInput[1]))
+        
+        -- Reset the item width to the default value
+        imgui.PopItemWidth()
 
         if imgui.IsItemHovered() then
             imgui.SetTooltip('Only show matches within ' .. levelRangeInput[1] .. ' levels of me.');
         end
 
+        imgui.SameLine();
+
         imgui.Text('Comments:');
         imgui.SameLine();
         imgui.Checkbox('##Comment_Checkbox', commentSetColumnEnabled);
+
         -- Adjust panel width based on comment column visibility
-        local panelWidth = commentSetColumnEnabled[1] and 900 or 525
+        local panelWidth = commentSetColumnEnabled[1] and 900 or 530
 
         -- Define the column positions including the additional space for the icon
         local columnPositions = {
-            Name = 22,  -- Starting position for the name, after the icon
-            Job = 170,  -- Adjusted positions for other columns if necessary
+            Name = 35,  -- Starting position for the name, after the icon
+            Job = 200,  -- Adjusted positions for other columns if necessary
             Location = 315
         }
 
         -- Add Comment position if enabled
         if commentSetColumnEnabled[1] then
-            columnPositions.Comment = 525
+            columnPositions.Comment = 530
         end
 
         imgui.BeginGroup();
@@ -352,7 +377,7 @@ local function RenderInterface()
             end
 
             -- Position the icon before the name
-            imgui.SameLine(columnPositions.Name - 21);
+            imgui.SameLine(columnPositions.Name - 32);
             imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.modes)), { 22, 22 }, { 0.25 * modeType, (0.25 * modeType) / 4 }, { 0.25 * modeType + 0.25, ((0.25 * modeType) / 4) + 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
 
             -- Position the name text next to the icon, with proper spacing
@@ -374,9 +399,45 @@ local function RenderInterface()
             if commentSetColumnEnabled[1] then
                  -- Check if the entry's type is 'Seek Party'
                 if seacomText == 'Seek Party' then
-                -- Position for the 'seek party' icon
-                imgui.SameLine(columnPositions.Comment - 24 ); -- Adjust position for icon
-                drawGuiCommentMode(seekPartyIconID)
+                    -- Position for the 'seek party' icon
+                    imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
+                    seekPartyIconID = 1;
+                    drawGuiCommentMode2(seekPartyIconID)
+                end
+
+                if seacomText == 'Missions & Quests' then
+                    -- Position for the 'Missions & Quests' icon
+                    imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
+                    seekPartyIconID = 2;
+                    drawGuiCommentMode2(seekPartyIconID)
+                end
+
+                if seacomText == 'Battle Content' then
+                    -- Position for the 'Missions & Quests' icon
+                    imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
+                    seekPartyIconID = 3;
+                    drawGuiCommentMode2(seekPartyIconID)
+                end
+
+                if seacomText == 'Looking for LS' then
+                    -- Position for the 'Missions & Quests' icon
+                    imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
+                    seekPartyIconID = 4;
+                    drawGuiCommentMode2(seekPartyIconID)
+                end
+
+                if seacomText == 'Want to Sell' then
+                    -- Position for the 'Missions & Quests' icon
+                    imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
+                    seekPartyIconID = 5;
+                    drawGuiCommentMode2(seekPartyIconID)
+                end
+
+                if seacomText == 'Others' then
+                    -- Position for the 'Missions & Quests' icon
+                    imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
+                    seekPartyIconID = 6;
+                    drawGuiCommentMode2(seekPartyIconID)
                 end
 
                 imgui.SameLine(columnPositions.Comment);
