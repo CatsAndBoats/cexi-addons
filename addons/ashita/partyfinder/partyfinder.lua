@@ -174,14 +174,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
     end
 end)
 
--- Icon for Comment section
--- local function drawGuiCommentMode(iconID)
---      imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.comments)), { 22, 22 }, 
---                 { 1 * iconID, 0 }, { 1 * iconID + 1, 1 }, 
---                 { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
--- end
-
-local function drawGuiCommentMode2(jobID)
+local function drawGuiCommentMode(jobID)
     local total = 6
     local ratio = 1 / total
     local iconID = jobID - 1
@@ -402,42 +395,42 @@ local function RenderInterface()
                     -- Position for the 'seek party' icon
                     imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
                     seekPartyIconID = 1;
-                    drawGuiCommentMode2(seekPartyIconID)
+                    drawGuiCommentMode(seekPartyIconID)
                 end
 
                 if seacomText == 'Missions & Quests' then
                     -- Position for the 'Missions & Quests' icon
                     imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
                     seekPartyIconID = 2;
-                    drawGuiCommentMode2(seekPartyIconID)
+                    drawGuiCommentMode(seekPartyIconID)
                 end
 
                 if seacomText == 'Battle Content' then
                     -- Position for the 'Missions & Quests' icon
                     imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
                     seekPartyIconID = 3;
-                    drawGuiCommentMode2(seekPartyIconID)
+                    drawGuiCommentMode(seekPartyIconID)
                 end
 
                 if seacomText == 'Looking for LS' then
                     -- Position for the 'Missions & Quests' icon
                     imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
                     seekPartyIconID = 4;
-                    drawGuiCommentMode2(seekPartyIconID)
+                    drawGuiCommentMode(seekPartyIconID)
                 end
 
                 if seacomText == 'Want to Sell' then
                     -- Position for the 'Missions & Quests' icon
                     imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
                     seekPartyIconID = 5;
-                    drawGuiCommentMode2(seekPartyIconID)
+                    drawGuiCommentMode(seekPartyIconID)
                 end
 
                 if seacomText == 'Others' then
                     -- Position for the 'Missions & Quests' icon
                     imgui.SameLine(columnPositions.Comment - 30 ); -- Adjust position for icon
                     seekPartyIconID = 6;
-                    drawGuiCommentMode2(seekPartyIconID)
+                    drawGuiCommentMode(seekPartyIconID)
                 end
 
                 imgui.SameLine(columnPositions.Comment);
