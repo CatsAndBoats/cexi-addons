@@ -397,15 +397,6 @@ local function RenderInterface()
             imgui.SameLine(columnPositions.Location);
             imgui.Text(entry.Zone);
 
-            local seacomIconMapping = {
-                ['Seek Party'] = 1,
-                ['Missions & Quests'] = 2,
-                ['Battle Content'] = 3,
-                ['Looking for LS'] = 4,
-                ['Want to Sell'] = 5,
-                ['Others'] = 6,
-            }
-
             if commentSetColumnEnabled[1] then
                 -- Determine the icon ID based on the current seacomText
                 local iconID = seacomIconMapping[seacomText] or 0  -- Default to 0 if no match is found
