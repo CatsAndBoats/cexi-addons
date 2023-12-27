@@ -466,9 +466,10 @@ local function RenderInterface()
 
         end
 
-        if
-            imgui.BeginPopupContextWindow() and
-            entries[interface.SelectedIndex] ~= nil
+        -- if
+        --     imgui.BeginPopupContextWindow() and
+        --     entries[interface.SelectedIndex] ~= nil
+        if interface.SelectedIndex > 0 and imgui.BeginPopupContextWindow() 
         then
             local playerName = entries[interface.SelectedIndex].Name;
             if imgui.MenuItem('Send Tell') then
