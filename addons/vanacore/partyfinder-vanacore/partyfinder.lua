@@ -37,6 +37,7 @@ local guiimages = images.loadTextures();
 local queryActive = false;
 local opened = false;
 local levelFilterCheckbox = { false };
+local commentSetColumnEnabled = { false };
 local levelRangeInput = { '5' }; 
 local partyFinderEntries = T{}
 local results = T{};
@@ -62,6 +63,31 @@ local modeID =
     ['CW']  = 1,
     ['WEW'] = 2,
 };
+
+local jobIconMapping = {
+    ['WAR'] = 1,
+    ['MNK'] = 2,
+    ['WHM'] = 3,
+    ['BLM'] = 4,
+    ['RDM'] = 5,
+    ['THF'] = 6,
+    ['PLD'] = 7,
+    ['DRG'] = 8,
+    ['BST'] = 9,
+    ['BRD'] = 10,
+    ['RNG'] = 11,
+    ['SAM'] = 12,
+    ['NIN'] = 13,
+    ['DRK'] = 14,
+    ['SMN'] = 15,
+    ['BLU'] = 16,
+    ['COR'] = 17,
+    ['PUP'] = 18,
+    ['DNC'] = 19,
+    ['SCH'] = 20,
+    ['RUN'] = 21,
+    ['GEO'] = 22,
+}
 
 local guiIcons =
 {
@@ -115,8 +141,17 @@ local seacomTypes =
     -- Looking for Friends
     [97]  = 'Looking for Friends',
     -- Other
-    [115] = 'Other',
+    [115] = 'Others',
 };
+
+local seacomIconMapping = {
+    ['Seek Party'] = 1,
+    ['Missions & Quests'] = 2,
+    ['Battle Content'] = 3,
+    ['Looking for LS'] = 4,
+    ['Want to Sell'] = 5,
+    ['Others'] = 6,
+}
 
 local function ClearResults()
     results = T{}
@@ -147,6 +182,15 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         opened = true;
     end
 end)
+
+local function drawGuiCommentMode(jobID)
+    local total = 6
+    local ratio = 1 / total
+    local iconID = jobID - 1
+
+    imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.comments)), { 22, 22 }, { ratio * iconID, (ratio * iconID) / total }, { ratio * iconID + ratio, ((ratio * iconID) / total) + 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
+end
+
 
 local function drawGuiIcon(iconID)
     imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.icons)), { 16, 16 }, { 0.125 * iconID, (0.125 * iconID) / 8 }, { 0.125 * iconID + 0.125, ((0.125 * iconID) / 8) + 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
@@ -228,6 +272,11 @@ local function RenderInterface()
         imgui.Text("Game Mode:");
         imgui.SameLine();
 
+        -- Set the new width for the combo box
+        local comboWidth = 288  -- Change this value to the desired width
+        imgui.PushItemWidth(comboWidth)
+
+        -- Create the BeginCombo with a smaller width
         if imgui.BeginCombo('##ModeList_ComboBox', modeData[interface.SelectedMode].Display, ImGuiComboFlags_None) then
             for index, entry in ipairs(modeData) do
                 local isSelected = (interface.SelectedMode == index);
@@ -238,54 +287,129 @@ local function RenderInterface()
                     end
                 end
             end
-
             imgui.EndCombo();
         end
 
-        -- imgui.SameLine();
+        -- Reset the item width to the default value
+        imgui.PopItemWidth()
+        --imgui.SameLine();
         imgui.Text('Filter:');
         imgui.SameLine();
         imgui.Checkbox('##Filter_Checkbox', levelFilterCheckbox);
         imgui.SameLine();
         imgui.Text('Range:');
         imgui.SameLine();
-
+        
+        -- Set the new width for the input box
+        local inputWidth = 100  -- Change this value to the desired width
+        imgui.PushItemWidth(inputWidth)
+        
         local minLevel = 0
         local maxLevel = 75
-
+        
+        -- Create the InputInt with a smaller width
         imgui.InputInt('##FilterRange_InputInt', levelRangeInput, 5);
-        levelRangeInput[1] = math.min(maxLevel, math.max(minLevel, levelRangeInput[1]));
+        levelRangeInput[1] = math.min(maxLevel, math.max(minLevel, levelRangeInput[1]))
+        
+        -- Reset the item width to the default value
+        imgui.PopItemWidth()
 
         if imgui.IsItemHovered() then
             imgui.SetTooltip('Only show matches within ' .. levelRangeInput[1] .. ' levels of me.');
         end
 
+        imgui.SameLine();
+
+        imgui.Text('Comments:');
+        imgui.SameLine();
+        imgui.Checkbox('##Comment_Checkbox', commentSetColumnEnabled);
+
+        -- Adjust panel width based on comment column visibility
+        local panelWidth = commentSetColumnEnabled[1] and 900 or 530
+
+        -- Define the column positions including the additional space for the icon
+        local columnPositions = {
+            Name = 35,  -- Starting position for the name, after the icon
+            Job = 200,  -- Adjusted positions for other columns if necessary
+            Location = 315
+        }
+
+        -- Add Comment position if enabled
+        if commentSetColumnEnabled[1] then
+            columnPositions.Comment = 530
+        end
+
         imgui.BeginGroup();
-        imgui.BeginChild('leftpane', { 500, 225 }, true);
+        imgui.BeginChild('leftpane', { panelWidth, 225 }, true);
 
         -- Table header
-        imgui.SameLine(22);
-        imgui.Text('Name');
-        imgui.SameLine(170);
-        imgui.Text('Job');
-        imgui.SameLine(315);
-        imgui.Text('Location');
+        for _, col in pairs({'Name', 'Job', 'Location'}) do
+            if columnPositions[col] then
+                imgui.SameLine(columnPositions[col]);
+            end
+            imgui.Text(col);
+        end
+
+        -- Render Comment header if enabled
+        if commentSetColumnEnabled[1] then
+            imgui.SameLine(columnPositions.Comment);
+            imgui.Text('Comment');
+        end
+
         imgui.Separator();
 
         local entries = modeData[interface.SelectedMode].Entries;
+        local seekPartyIconID = 0
 
-        for i = 1, #entries do
-            local entry        = entries[i];
-            local outputString = string.format('%-13s', entry.Name);
-            local outputFinish = string.format('%-15s %s', entry.Job .. '(' .. entry.Level .. ')', entry.Zone);
-            local modeType     = modeID[entry.Mode];
+        for i, entry in ipairs(entries) do
 
-            if (imgui.Selectable("", interface.SelectedIndex == i)) then
+            -- This discovers the CatsEyeXI Mode specifically..
+            local modeType = modeID[entry.Mode];
+
+            -- This assumes that `entry.Job` contains the job abbreviation.
+            local jobIconId = jobIconMapping[entry.Job] 
+
+            -- Retrieve the textual representation of the 'Type'
+            local seacomType = seacomTypes[entry.Type];
+            local seacomText = seacomType or 'Other';
+            
+            -- Selectable spans all columns and is invisible, just for selection
+            if imgui.Selectable("##selectable" .. i, interface.SelectedIndex == i, ImGuiSelectableFlags_SpanAllColumns) then
                 interface.SelectedIndex = i;
             end
 
-            local seacomType = seacomTypes[entry.Type];
-            local seacomText = seacomType;
+            -- Position the icon before the name
+            imgui.SameLine(columnPositions.Name - 32);
+            imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.modes)), { 22, 22 }, { 0.25 * modeType, (0.25 * modeType) / 4 }, { 0.25 * modeType + 0.25, ((0.25 * modeType) / 4) + 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
+
+            -- Position the name text next to the icon, with proper spacing
+            imgui.SameLine(columnPositions.Name);
+            imgui.Text(entry.Name);
+
+            -- Position for the job icon
+            imgui.SameLine(columnPositions.Job - 24); -- Subtract the width of the icon plus some padding
+            if jobIconId then
+                drawJobIcon(jobIconId)
+            end
+            imgui.SameLine(columnPositions.Job);
+            imgui.Text(entry.Job .. '(' .. entry.Level .. ')');
+
+            imgui.SameLine(columnPositions.Location);
+            imgui.Text(entry.Zone);
+
+            if commentSetColumnEnabled[1] then
+                -- Determine the icon ID based on the current seacomText
+                local iconID = seacomIconMapping[seacomText] or 0  -- Default to 0 if no match is found
+            
+                -- Draw the icon if we have a valid ID (greater than 0)
+                if iconID > 0 then
+                    imgui.SameLine(columnPositions.Comment - 30)  -- Adjust position for icon
+                    drawGuiCommentMode(iconID)
+                end
+            
+                imgui.SameLine(columnPositions.Comment)
+                imgui.Text(entry.Comment or 'No Comment')
+            end
 
             if seacomType == nil then
                 seacomText = 'Other';
@@ -314,19 +438,12 @@ local function RenderInterface()
                 interface.SelectedIndex = i;
             end
 
-            imgui.SameLine();
-            imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.modes)), { 22, 22 }, { 0.25 * modeType, (0.25 * modeType) / 4 }, { 0.25 * modeType + 0.25, ((0.25 * modeType) / 4) + 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
-
-            imgui.SameLine();
-            imgui.Text(outputString);
-
-            imgui.SameLine();
-            imgui.Text(outputFinish);
         end
 
-        if
-            imgui.BeginPopupContextWindow() and
-            entries[interface.SelectedIndex] ~= nil
+        -- if
+        --     imgui.BeginPopupContextWindow() and
+        --     entries[interface.SelectedIndex] ~= nil
+        if interface.SelectedIndex > 0 and imgui.BeginPopupContextWindow() 
         then
             local playerName = entries[interface.SelectedIndex].Name;
             if imgui.MenuItem('Send Tell') then
