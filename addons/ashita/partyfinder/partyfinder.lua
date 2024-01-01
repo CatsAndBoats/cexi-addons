@@ -153,6 +153,34 @@ local seacomIconMapping = {
     ['Others'] = 6,
 }
 
+local pfStyles =
+{
+	T{ImGuiCol_Text,                 {0.0, 0.0, 0.0, 1.0}},                    -- #000000FF (Black)
+	T{ImGuiCol_Button,               {0.8, 0.7176, 0.9569, 1.0}},              
+	T{ImGuiCol_ButtonActive,         {0.8, 0.7176, 0.9569, 1.0}},              
+	T{ImGuiCol_ButtonHovered,        {0.898, 0.8353, 0.9882, 1.0}},            
+	T{ImGuiCol_FrameBg,              {0.96, 0.96, 0.96, 1.0}},                 
+	T{ImGuiCol_FrameBgActive,        {0.235, 0.165, 0.235, 1.0}},              
+	T{ImGuiCol_FrameBgHovered,       {0.651, 0.882, 0.490, 0.31}},             
+	T{ImGuiCol_TextDisabled,         {0.6, 0.6, 0.6, 1.0}},                    -- #999999FF (Gray)
+	T{ImGuiCol_WindowBg,             {0.94, 0.94, 0.94, 1.0}},                 -- #F0F0F0FF (Light Gray)
+	T{ImGuiCol_ChildBg,              {0.96, 0.96, 0.96, 1.0}},                 -- #F5F5F5FF (White Smoke)
+	T{ImGuiCol_PopupBg,              {1.0, 1.0, 1.0, 0.98}},                   -- #FFFFFFFF (White)
+	T{ImGuiCol_Border,               {0.0, 0.0, 0.0, 0.3}},                    -- #0000004D (Dark Gray)
+	T{ImGuiCol_BorderShadow,         {0.0, 0.0, 0.0, 0.0}},                    -- #00000000 (Transparent)
+	T{ImGuiCol_TitleBg,              {0.96, 0.96, 0.96, 1.0}},                 -- #F5F5F5FF (White Smoke)
+	T{ImGuiCol_TitleBgActive,        {0.82, 0.82, 0.82, 1.0}},                 -- #D1D1D1FF (Light Gray)
+	T{ImGuiCol_TitleBgCollapsed,     {1.0, 1.0, 1.0, 0.51}},                   -- #FFFFFF82 (Semi-transparent White)
+	T{ImGuiCol_ScrollbarBg,          {0.82, 0.82, 0.82, 1.0}},                 -- #D1D1D1FF (Light Gray)
+	T{ImGuiCol_ScrollbarGrab,        {0.8, 0.7176, 0.9569, 1.0}},              -- #CCB7F4FF (Light Purple)
+	T{ImGuiCol_ScrollbarGrabActive,  {0.8, 0.7176, 0.9569, 1.0}},              -- #CCB7F4FF (Light Purple)
+	T{ImGuiCol_ScrollbarGrabHovered, {0.235, 0.165, 0.235, 1.0}},              -- #3C2A3CFF (Dark Purple)
+	T{ImGuiCol_HeaderActive,         {0.439, 0.772, 0.204, 0.31}},             -- #6FA93D4F (Green)
+	T{ImGuiCol_Header,               {0.8, 0.7176, 0.9569, 1.0}},              -- #BA9DBBFF (Light Purple)
+	T{ImGuiCol_HeaderHovered,        {0.651, 0.882, 0.490, 0.31}},             -- #A6E17D4F (Light Green)
+	T{ImGuiCol_TableRowBg,           {0.2, 0.2, 0.2, 1.0}},                    -- #333333FF (Dark Gray)
+}
+
 local function ClearResults()
     results = T{}
 end
@@ -237,32 +265,23 @@ ashita.events.register('text_in', 'HandleText', function (e)
     end
 end);
 
-local function RenderInterface()
-    imgui.PushStyleColor(ImGuiCol_Text,                 {0.0, 0.0, 0.0, 1.0});          -- #000000FF (Black)
-    imgui.PushStyleColor(ImGuiCol_Button,               {0.8, 0.7176, 0.9569, 1.0});
-    imgui.PushStyleColor(ImGuiCol_ButtonActive,         {0.8, 0.7176, 0.9569, 1.0});
-    imgui.PushStyleColor(ImGuiCol_ButtonHovered,        {0.898, 0.8353, 0.9882, 1.0});
-    imgui.PushStyleColor(ImGuiCol_FrameBg,              {0.96, 0.96, 0.96, 1.0});
-    imgui.PushStyleColor(ImGuiCol_FrameBgActive,        {0.235, 0.165, 0.235, 1.0});
-    imgui.PushStyleColor(ImGuiCol_FrameBgHovered,       {0.651, 0.882, 0.490, 0.31});
-    imgui.PushStyleColor(ImGuiCol_TextDisabled,         {0.6, 0.6, 0.6, 1.0});          -- #999999FF (Gray)
-    imgui.PushStyleColor(ImGuiCol_WindowBg,             {0.94, 0.94, 0.94, 1.0});       -- #F0F0F0FF (Light Gray)
-    imgui.PushStyleColor(ImGuiCol_ChildBg,              {0.96, 0.96, 0.96, 1.0});       -- #F5F5F5FF (White Smoke)
-    imgui.PushStyleColor(ImGuiCol_PopupBg,              {1.0, 1.0, 1.0, 0.98});         -- #FFFFFFFF (White)
-    imgui.PushStyleColor(ImGuiCol_Border,               {0.0, 0.0, 0.0, 0.3});          -- #0000004D (Dark Gray)
-    imgui.PushStyleColor(ImGuiCol_BorderShadow,         {0.0, 0.0, 0.0, 0.0});          -- #00000000 (Transparent)
-    imgui.PushStyleColor(ImGuiCol_TitleBg,              {0.96, 0.96, 0.96, 1.0});       -- #F5F5F5FF (White Smoke)
-    imgui.PushStyleColor(ImGuiCol_TitleBgActive,        {0.82, 0.82, 0.82, 1.0});       -- #D1D1D1FF (Light Gray)
-    imgui.PushStyleColor(ImGuiCol_TitleBgCollapsed,     {1.0, 1.0, 1.0, 0.51});         -- #FFFFFF82 (Semi-transparent White)
-    imgui.PushStyleColor(ImGuiCol_ScrollbarBg,          {0.82, 0.82, 0.82, 1.0});       -- #D1D1D1FF (Light Gray)
-    imgui.PushStyleColor(ImGuiCol_ScrollbarGrab,        {0.8, 0.7176, 0.9569, 1.0});    -- #CCB7F4FF (Light Purple)
-    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabActive,  {0.8, 0.7176, 0.9569, 1.0});    -- #CCB7F4FF (Light Purple)
-    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabHovered, {0.235, 0.165, 0.235, 1.0});    -- #3C2A3CFF (Dark Purple)
-    imgui.PushStyleColor(ImGuiCol_HeaderActive,         {0.439, 0.772, 0.204, 0.31});   -- #6FA93D4F (Green)
-    imgui.PushStyleColor(ImGuiCol_Header,               {0.8, 0.7176, 0.9569, 1.0});    -- #BA9DBBFF (Light Purple)
-    imgui.PushStyleColor(ImGuiCol_HeaderHovered,        {0.651, 0.882, 0.490, 0.31});   -- #A6E17D4F (Light Green)
-    imgui.PushStyleColor(ImGuiCol_TableRowBg,           {0.2, 0.2, 0.2, 1.0});          -- #333333FF (Dark Gray)
+function PushStyles(styles)
+	for _, s in pairs(styles) do
+		imgui.PushStyleColor(s[1], s[2]);
+	end
+end
 
+function PopStyles(styles)
+    for _ in pairs(styles) do
+		imgui.PopStyleColor();
+	end
+end
+
+local function RenderInterface()
+    
+	-- Push the styles to change the UI colors
+	PushStyles(pfStyles); 
+	
     if (imgui.Begin('Party Finder', interface.IsOpen, ImGuiWindowFlags_AlwaysAutoResize)) then
         -- Set the cursor position to center the content
         local contentWidth = 700;  -- Adjust the width as needed
@@ -616,6 +635,10 @@ local function RenderInterface()
     if (not interface.IsOpen[1]) then
         queryActive = false;
     end
+	
+	-- Pop the styles to restore the imgui styles stack
+	PopStyles(pfStyles); 
+	
 end
 
 ashita.events.register('d3d_present', 'HandleRender', function ()
