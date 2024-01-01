@@ -355,7 +355,7 @@ local function RenderInterface()
 
         -- Add Comment position if enabled
         if commentSetColumnEnabled[1] then
-            columnPositions.Comment = 530
+            columnPositions.Comment = 540
         end
 
         imgui.BeginGroup();
