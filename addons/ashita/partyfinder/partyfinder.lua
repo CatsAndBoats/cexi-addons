@@ -697,7 +697,7 @@ local function RenderInterface()
     end
 	
 	-- Pop the styles to restore the imgui styles stack
-	PopStyles(darkPfStyles); 
+	PopStyles(stylesToUse); 
 	
 end
 
