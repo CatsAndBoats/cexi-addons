@@ -36,8 +36,15 @@ local selectedItem = 1;
 local guiimages = images.loadTextures();
 local queryActive = false;
 local opened = false;
-local levelFilterCheckbox = { false };
+
+-- Dark Mode CheckBox
+local darkModeEnabled = {false} 
+
+-- Comment CheckBox
 local commentSetColumnEnabled = { false };
+
+-- Filter Level Checkbox
+local levelFilterCheckbox = { false };
 local levelRangeInput = { '5' }; 
 local partyFinderEntries = T{}
 local results = T{};
@@ -153,7 +160,7 @@ local seacomIconMapping = {
     ['Others'] = 6,
 }
 
-local pfStyles =
+local lightPfStyles =
 {
 	T{ImGuiCol_Text,                 {0.0, 0.0, 0.0, 1.0}},                    -- #000000FF (Black)
 	T{ImGuiCol_Button,               {0.8, 0.7176, 0.9569, 1.0}},              
@@ -180,6 +187,35 @@ local pfStyles =
 	T{ImGuiCol_HeaderHovered,        {0.651, 0.882, 0.490, 0.31}},             -- #A6E17D4F (Light Green)
 	T{ImGuiCol_TableRowBg,           {0.2, 0.2, 0.2, 1.0}},                    -- #333333FF (Dark Gray)
 }
+
+local darkPfStyles = {
+    {ImGuiCol_Text,                 {0.85, 0.85, 0.85, 1.0}}, -- Light grey text
+    {ImGuiCol_Button,               {0.2, 0.2, 0.2, 1.0}}, -- Dark grey button
+    {ImGuiCol_ButtonActive,         {0.25, 0.25, 0.25, 1.0}}, -- Slightly lighter grey button when active
+    {ImGuiCol_ButtonHovered,        {0.3, 0.3, 0.3, 1.0}}, -- Even lighter grey button on hover
+    {ImGuiCol_FrameBg,              {0.12, 0.12, 0.12, 1.0}}, -- Very dark grey background
+    {ImGuiCol_FrameBgActive,        {0.14, 0.14, 0.14, 1.0}}, -- Slightly lighter grey background when active
+    {ImGuiCol_FrameBgHovered,       {0.16, 0.16, 0.16, 1.0}}, -- Light grey background on hover
+    {ImGuiCol_TextDisabled,         {0.5, 0.5, 0.5, 1.0}}, -- Greyed out text
+    {ImGuiCol_WindowBg,             {0.08, 0.08, 0.08, 1.0}}, -- Very dark window background
+    {ImGuiCol_ChildBg,              {0.0, 0.0, 0.0, 1.0}}, -- Black child background
+    {ImGuiCol_PopupBg,              {0.08, 0.08, 0.08, 0.94}}, -- Very dark popup background
+    {ImGuiCol_Border,               {0.43, 0.43, 0.5, 0.5}}, -- Grey border
+    {ImGuiCol_BorderShadow,         {0.0, 0.0, 0.0, 0.0}}, -- Transparent border shadow
+    {ImGuiCol_TitleBg,              {0.1, 0.1, 0.1, 1.0}}, -- Dark title background
+    {ImGuiCol_TitleBgActive,        {0.2, 0.2, 0.2, 1.0}}, -- Darker title background when active
+    {ImGuiCol_TitleBgCollapsed,     {0.0, 0.0, 0.0, 0.51}}, -- Transparent title background when collapsed
+    {ImGuiCol_ScrollbarBg,          {0.02, 0.02, 0.02, 0.53}}, -- Dark scrollbar background
+    {ImGuiCol_ScrollbarGrab,        {0.31, 0.31, 0.31, 1.0}}, -- Grey scrollbar grab
+    {ImGuiCol_ScrollbarGrabActive,  {0.4, 0.4, 0.4, 1.0}}, -- Light grey scrollbar grab when active
+    {ImGuiCol_ScrollbarGrabHovered, {0.41, 0.41, 0.41, 1.0}}, -- Even lighter grey scrollbar grab on hover
+    {ImGuiCol_Header,               {0.22, 0.22, 0.22, 1.0}}, -- Dark header
+    {ImGuiCol_HeaderHovered,        {0.25, 0.25, 0.25, 1.0}}, -- Dark header on hover
+    {ImGuiCol_HeaderActive,         {0.3, 0.3, 0.3, 1.0}}, -- Dark header when active
+    {ImGuiCol_TableRowBg,           {0.14, 0.14, 0.14, 1.0}}, -- Dark table row background
+    -- ... add any other styles you need
+}
+
 
 local function ClearResults()
     results = T{}
@@ -211,12 +247,27 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
     end
 end)
 
-local function drawGuiCommentMode(jobID)
-    local total = 6
-    local ratio = 1 / total
-    local iconID = jobID - 1
+-- local function drawGuiCommentMode(jobID)
+--     local total = 6
+--     local ratio = 1 / total
+--     local iconID = jobID - 1
 
-    imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.comments)), { 22, 22 }, { ratio * iconID, (ratio * iconID) / total }, { ratio * iconID + ratio, ((ratio * iconID) / total) + 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
+--     imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.comments)), { 22, 22 }, { ratio * iconID, (ratio * iconID) / total }, { ratio * iconID + ratio, ((ratio * iconID) / total) + 1 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 });
+-- end
+
+local function drawGuiCommentMode(iconIndex)
+    local iconWidth = 22
+    local iconHeight = 22
+    local textureWidth = 132 -- The total width of your texture
+    local textureHeight = 22 -- The total height of your texture
+
+    -- Calculate the texture coordinates
+    local u1 = (iconIndex - 1) * iconWidth / textureWidth
+    local v1 = 0
+    local u2 = iconIndex * iconWidth / textureWidth
+    local v2 = 1
+
+    imgui.Image(tonumber(ffi.cast("uint32_t", guiimages.comments)), {iconWidth, iconHeight}, {u1, v1}, {u2, v2}, {1, 1, 1, 1}, {0, 0, 0, 0})
 end
 
 
@@ -280,7 +331,8 @@ end
 local function RenderInterface()
     
 	-- Push the styles to change the UI colors
-	PushStyles(pfStyles); 
+    local stylesToUse = darkModeEnabled[1] and darkPfStyles or lightPfStyles
+	PushStyles(stylesToUse); 
 	
     if (imgui.Begin('Party Finder', interface.IsOpen, ImGuiWindowFlags_AlwaysAutoResize)) then
         -- Set the cursor position to center the content
@@ -357,6 +409,14 @@ local function RenderInterface()
         if commentSetColumnEnabled[1] then
             columnPositions.Comment = 540
         end
+
+        -- Checkbox to toggle dark mode
+        imgui.SameLine();
+        imgui.Text('Dark Mode:');
+        imgui.SameLine();
+        imgui.Checkbox('##Dark_Mode_Checkbox', darkModeEnabled)
+        -- Determine which styles to use based on the dark mode toggle
+        PushStyles(stylesToUse); 
 
         imgui.BeginGroup();
         imgui.BeginChild('leftpane', { panelWidth, 225 }, true);
@@ -637,7 +697,7 @@ local function RenderInterface()
     end
 	
 	-- Pop the styles to restore the imgui styles stack
-	PopStyles(pfStyles); 
+	PopStyles(darkPfStyles); 
 	
 end
 
