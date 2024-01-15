@@ -416,7 +416,6 @@ local function RenderInterface()
         imgui.SameLine();
         imgui.Checkbox('##Dark_Mode_Checkbox', darkModeEnabled)
         -- Determine which styles to use based on the dark mode toggle
-        PushStyles(stylesToUse); 
 
         imgui.BeginGroup();
         imgui.BeginChild('leftpane', { panelWidth, 225 }, true);
