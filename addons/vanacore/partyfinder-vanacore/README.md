@@ -1,174 +1,88 @@
-# Party Finder Addon
+# Party Finder for VanaCore
 
-Custom Party Finder for the **CatsEyeXI** private server. Provides LFG/LFM listings, Duty Roulette (random BCNM matchmaking with PFP rewards), Mission Help, and Venture parties — all driven by a custom server-side packet protocol (0x1A2).
+A from-scratch rewrite of the CatsEyeXI Party Finder for VanaCore's native addon API. It speaks the same
+server protocol (packet 0x1A2 / 0x1A3) as the Ashita addon on the `main` branch, with its own window:
+glass cards, the job sprites, role icons, live badges, a floating beacon in mini mode, and the Duty Roulette,
+Mission Help and join-request flows.
 
-This addon is **only useful on CatsEyeXI** — it depends on server-side modules (`modules/catseyexi/cpp/party_finder.cpp` and the `party_finder` Lua system) and won't function on a stock LSB server.
+It speaks protocol v2 when the server does (modules `pf-protocol-v2`: deltas instead of full lists, LFM
+announcements as packets, "seen" and timeout feedback on join requests, server-side blocks, error codes) and
+falls back to v1 traffic against an older server. See `documentation/party_finder_protocol.md` in the modules repo.
 
-## Quick Start
+## Install
 
-1. `/addon load partyfinder`
-2. Press **Ctrl+G** to toggle the window (or `/pf`)
-3. Click **Create Listing** to register as LFG or LFM (party leader only for LFM)
-4. Hover over listings to see party composition, double-click to join, right-click for options
-5. As a party leader, click **Roulette** to start a random duty, or **Start Duty** for missions
+This branch is the addon itself. Put its contents in a folder named `partyfinder-vanacore` under
+`Vanacore\addons\vanacore\` (the folder name is the addon's name; a download named `PartyFinder-vanacore` must be
+renamed), then in game:
+
+```
+/addon load partyfinder-vanacore
+```
+
+It takes over `/pf` and Ctrl+G from the Ashita addon, and unloads that one if it's running (both would answer
+the same packets).
+
+Add that line to `Vanacore\scripts\boot.txt` to load it at every start. Ctrl+G opens it unless the key is
+already bound. Closing the window tucks it into a beacon at the edge of the screen; click that to bring it back.
+
+## Themes and looks
+
+Thirteen themes in settings (or `/pf theme`): each is a palette and a piece of art behind the listings, the art
+with its own opacity. Picking a theme sets its art; the Artwork page (a thumbnail grid of everything in `bg/`)
+or the Art dropdown can then swap it for any other.
+
+Themes are also files: drop `themes/<id>.lua` beside the addon (see `themes/README.txt` and `themes/midnight.lua`)
+and it joins the list. A whole look (theme, art, icon, opacities, logo motion) travels as one line: **Copy look** in
+settings or `/pf export` puts it on the clipboard; **Paste look** or `/pf import <line>` applies it.
+
+## Slots
+
+When recruiting, the new-listing sheet has a chip per open slot. Each starts as the role you picked; click a chip to say exactly what that slot wants — a role glyph, or any set of jobs from the badge grid — or use a preset (Standard, Manaburn, TP burn) and "apply to all". On a v2 server the slots travel with the listing: cards and tooltips show what is genuinely still needed as members fill them, the join confirm tells you which slot you'd fill (or that your job isn't on the list — you can still ask), the request card tells the leader where a requester fits, auto-accept turns away jobs with no open slot, and "Only listings I can join" uses them.
+
+## Pins and the roster
+
+Hover a card and click its star to pin it: pinned listings stay on top, and when a pinned party's slot opens the
+beacon pulses gold and a toast says so. While you're in a party, the action bar shows every member as a badge
+with an HP ring (hover for details).
+
+The first time the window opens, a three-step tour points out the essentials; `/pf tour` shows it again.
+
+## Handheld mode
+
+For the Steam Deck and other small screens: a narrow panel docked at the screen's edge, with compact cards, a
+category dropdown instead of the chips, and the listing sheet and settings as dialogs. Auto (the default) turns it
+on at 1280x800 or less; the setting under Window, or `/pf handheld on|off|auto`, forces it.
 
 ## Commands
 
 | Command | Action |
 |---|---|
-| `/pf` | Toggle window open/closed |
-| `/pf toggle` | Toggle between full mode and mini mode |
-| `/pf settings` | Open the settings window |
-| `/pf notify` | Toggle LFM server notifications on/off |
-| `/pf tooltips` | Toggle UI tooltips on/off |
-| `/pf block <name>` | Blacklist a player |
-| `/pf unblock <name>` | Remove from blacklist |
-| `/pf blocklist` | Show blacklisted players |
-| `/pf tutorial` | Re-show the first-time tutorial |
-| `/pf dev` | Toggle debug log (developer use) |
-| **Ctrl+G** | Cycle: closed → full → mini → full (customizable in Settings) |
+| `/pf` | The window, or tucked into the beacon; the X and Esc tuck it too |
+| `/pf hide` / `/pf show` | Hide both, or bring the window back |
+| `/pf mini` | Tuck the window into the beacon, or bring it back. Drag the beacon to move it; it stays on screen. "Start as the beacon" in settings makes that the state at login |
+| `/pf reset` | The beacon back at the right edge, scale and opacity at their defaults |
+| `/pf create` | Open the new-listing sheet |
+| `/pf refresh` | Ask the server for the listings again |
+| `/pf notify` | LFM announcements in chat on or off |
+| `/pf settings [art]` | The settings panel (`art` opens the Artwork page) |
+| `/pf tour` | The three-step tour again |
+| `/pf icon flag\|gem\|crest\|beacon` | The icon in the header and the beacon: the updated flag (FFXI's seek flag, drawn), the legacy flag (the original sprite), Social (a party crest), or the CatsEyeXI gem (also in settings; a PNG in `images/icons/` is offered too) |
+| `/pf handheld auto\|on\|off` | Handheld mode (see above) |
+| `/pf export` / `/pf import <line>` | Share a look, or apply one |
+| `/pf theme <name>` | A theme: its colours and its art. `aurora` (the default), `gems`, `banner`, `ember`, `ranger`, `inferno`, `ninja`, `harvest`, `gunslinger`, `rose`, `bard`, `jade` |
+| `/pf scale <percent>` | Window size, 50 to 300 |
+| `/pf background <name>` | The art behind the listings, by file name, or `none` (also in settings, with its own opacity) |
+| `/pf sounds [<pack>\|test]` | List the sound packs, pick one, or hear the current one |
+| `/pf block <name>` / `unblock <name>` / `blocklist` | The block list; on a v2 server it is kept there too, so blocked players' requests never reach you |
+| `/pf debug` | Packet counters and the last error |
 
-## Settings Window
-
-Open with `/pf settings` or click the **gear icon** (top-right of the main window, just left of the bell).
-
-| Setting | Default | Description |
-|---|---|---|
-| Show tooltips | on | Hover tooltips on UI elements |
-| LFM notifications in chat | on | Server-wide LFM broadcasts |
-| Confirm before withdrawing | on | Yes/No popup when clicking Withdraw |
-| Window opacity | 1.0 | Slider from 0.20 (mostly transparent) to 1.00 (opaque) |
-| Background image | bg.png | Filename in `images/` folder (blank = none) |
-| Background opacity | 0.15 | Slider from 0.0 to 1.0 for background image transparency |
-| Toggle keybind | ^G | Ashita bind string (^ = Ctrl, ! = Alt). Click "Set" to apply live. |
-
-Plus buttons for **Reset Tutorial** and **Print Blocklist**.
-
-All settings persist per character via the Ashita settings module.
-
-## Contextual Action Bar
-
-The top action bar changes based on your registration state:
-
-**Not registered:**
-```
-[Create Listing]                                    [↻] [⚙] [🔔]
-```
-
-**Registered as LFG:**
-```
->> Looking for Group - Category                     [↻] [⚙] [🔔]
-         [Withdraw]
-```
-
-**Registered as LFM:**
-```
->> Recruiting - Category (3/6)                      [↻] [⚙] [🔔]
-         [Withdraw] [Roulette] [Start Duty]
-```
-
-Only actions relevant to your current state are visible. Registering as LFM auto-switches to the LFG tab (to see potential recruits), and vice versa. The leader's LFM listing persists through duty completion for easy chaining.
-
-## Listing Cards
-
-Each listing shows the player's name, job/level/sub, zone, category, role composition (for LFM), and comment. Hover over an LFM card to see the full party composition with names and jobs. Cards are semi-transparent when a background image is set.
-
-- **Double-click** a listing to join (LFM) or invite (LFG)
-- **Right-click** for context menu (join, invite, send tell, search, block)
-- Tooltips explain available actions on hover
-
-## Compact Duty Frame
-
-When a duty commences, the main window auto-minimizes and a compact raid frame appears:
-
-```
-┌─ Active Duty ─────────────────── X ─┐
-│  >> Horlais Peak BCNM               │
-│  [WAR] Carver     NIN99/WAR49 ████  │
-│  [WHM] Testy      WHM75/SMN37 ███░  │
-└──────────────────────────────────────┘
-```
-
-- Draggable, always-on-screen during duty
-- Live HP bars (green/yellow/red) update in real-time
-- Job icons and sub jobs shown
-- Automatically appears for all party members (leader and followers)
-- Clears when you return from the battlefield
-
-## Mini Mode
-
-Click the X on the main window to collapse to a 48×48 icon. The badge shows:
-
-- **Green circle + number** when registered: count of relevant opposite listings (LFM registered → shows LFG count, and vice versa)
-- **Blue circle + number** when not registered: total listing count
-- No badge when 0 listings
-
-During active duty, mini mode shows the compact duty frame instead of the icon.
-
-## Notification Slider
-
-When someone sends a join request, a floating panel slides out from the Party Finder window — works in both full and mini mode:
-
-- **Y** (green) — Accept and invite to party (server handles the invite directly)
-- **N** (red) — Deny the request
-- Player name, job, level, and countdown timer (turns red under 10s)
-- Requests expire after 60 seconds
-
-## Real-Time Updates
-
-All listing changes are pushed immediately via `S2C_LISTINGS_CHANGED` packets:
-
-- Player registers or withdraws → all clients refresh
-- Player joins a party → LFG listing auto-removed, party size updates
-- Party disbands → stale LFM listing removed, leader notified
-- LFM registration → server-wide chat announcement
-
-No polling delays — listings are always current.
-
-## Duty Lifecycle
-
-### Zone Protection
-- **Zone lines blocked** during active duty — prevents zone exploration abuse
-- **Homepoints blocked** — prevents unlocking homepoints in unearned zones
-- **Teleport/warp allowed** — but leaving the area forfeits your participation
-
-### Duty State Notifications
-- **On arrival**: "You have a duty assignment. Proceed to the battlefield entrance to begin."
-- **During duty**: "You have an active duty in progress. Leaving the area will result in a forfeit."
-- **On forfeit (warp out)**: "You have abandoned the duty. Your participation has been forfeited."
-- **Zone line blocked**: "You cannot leave the area during an active duty."
-
-### After Duty Completion
-- Players are returned to their original location
-- PFP is awarded (with daily bonus for first clear)
-- Leader's LFM listing persists for easy duty chaining
-
-## Crash / Disconnect Recovery
-
-If your session ends mid-duty, the server detects the orphan state on your next zone-in:
-
-```
-[PartyFinder] Your previous duty was interrupted.
-[PartyFinder] You may re-form your party and re-enter the BCNM to continue.
-```
-
-Your `[PF]DutyBCNM` ticket stays valid (30-min expiry). Stale listings are purged on server restart.
-
-## Chat Colors
-
-All addon messages use SYSTEM_3 chat mode and are colored via the `customcolors` addon:
-
-- **Green** — positive (registered, accepted, ready, duty commenced)
-- **Red** — negative (withdrawn, denied, declined, forfeit, errors)
-- **Gold** — informational (join requests, settings changes, login summary)
-- **Purple** — categories and group counts
+Settings are kept per character in `Vanacore\config\addons\partyfinder-vanacore\<name>.lua`.
 
 ## Files
 
-| File | Purpose |
-|---|---|
-| `partyfinder.lua` | Main addon |
-| `images.lua` | Texture loader (includes `loadFromFile` for custom backgrounds) |
-| `imguiwrap.lua` | ImGui version compatibility wrapper |
-| `images/` | Sprite sheets (jobs, icons, modes, LFG, bell, roles, gear) + optional bg.png |
-| `sounds/` | Audio (register, withdraw, join_request, join_accepted, roulette_roll) |
+- `partyfinder-vanacore.lua`: the addon
+- `fonts/`: Inter (text) and Rajdhani (display), SIL Open Font License; licenses included
+- `images/`: the sprite sheets (`jobs.png`, `modes.png`, `lfg.png`; the role glyphs are drawn) and `gem.png`, the CatsEyeXI gem as an 11x11 frame grid (the server avatar at 128 px, 50 fps); `icons/` takes extra square PNGs for the icon picker
+- `sounds/`: sound packs, one folder each, picked in settings or with `/pf sounds <pack>`: `classic/` (the original effects, levelled and trimmed) and `glass/` (a synthesized set of soft bell tones). A pack can leave out the newer sounds (`announce`, `join_denied`, `ready`); the nearest older one plays instead. Drop a folder of WAVs (16-bit PCM) here to add a pack
+- `themes/`: theme files; `midnight.lua` is an example
+- `bg/`: art for behind the listings: `cexi_gems.jpg` (the invite banner), `cexi_banner.12x7x84@33.jpg` (the server banner as a frame grid) and nine pieces by **Redkat** (`cexi_ember`, `cexi_ranger`, `cexi_inferno`, `cexi_ninja`, `cexi_harvest`, `cexi_gunslinger`, `cexi_rose`, `cexi_bard`, `cexi_jade`), signed in the corner when shown. Any PNG or JPG dropped here is offered too; a file named `name.COLSxROWSxFRAMES@FPS.jpg` plays as an animation.
