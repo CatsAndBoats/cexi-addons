@@ -9,7 +9,8 @@ Nothing runs on the server. Buying, selling and your sales use the game's auctio
 window does, and the search server is asked for categories, stock and history the way the game asks it, so the
 addon works on any LandSandBoat-based server, CatsEyeXI live and test included.
 
-`/ah` opens it (Ctrl+A by default). Stand by an Auction Counter, as you would.
+Talking to an Auction Counter opens it in place of the game's menu (a setting; off, the game's menu comes back),
+and so does `/ah` (Ctrl+A by default) when you're near one.
 
 ## Install
 
@@ -29,8 +30,8 @@ the cheapest listing at or under your bid and you pay what you bid, as always; t
 price (recent sales are shown), and **Ask the fee**: the house quotes its listing fee, then **Put it up for sale**
 commits. **My sales** lists what you have up, with the price and when, and takes a listing down.
 
-**Settings** (the gear): only at an Auction Counter, confirm before bidding, opacity, scale, and the search server
-in use.
+**Settings** (the gear): only at an Auction Counter, talking to the counter opens this window, confirm before
+bidding, opacity, scale, and the search server in use.
 
 ## Commands
 
@@ -50,6 +51,9 @@ Settings are kept per character in `Vanacore\config\addons\auctionhouse-vanacore
 
 ## How it talks to the server
 
+- **The counter:** talking to it makes the server send `0x04C` with command `Open` (`sendMenu(AUCTION)`), nothing
+  more; the addon swallows that packet and opens its window, so the game never draws its menu and nothing is left
+  waiting server-side.
 - **Buying, selling, your sales:** packet `0x04E` out and `0x04C` in (`map/packets/c2s/0x04e_auc.h`): WorkCheck when
   the window opens, Bid, AskCommit then LotIn to sell (both carry an auction work slot 0–6 at 0x05; the server refuses
   −1 there without a word), Info for the sales list (the server's AH pagination module

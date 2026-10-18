@@ -59,7 +59,7 @@ local st = {
 }
 
 local settings = {
-    scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, search_host = '', search_port = 54002,
+    scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, take_over = true, search_host = '', search_port = 54002,
     sort = 'name', remember = {},
 }
 
@@ -254,6 +254,8 @@ local function u8(d, off) return d:byte(off + 1) or 0 end
 local function u16(d, off) return u8(d, off) + u8(d, off + 1) * 256 end
 local function rd32(d, off) return u16(d, off) + u16(d, off + 2) * 65536 end
 
+local open_window -- defined with the actions below; the packet handler needs it first
+
 local function refresh_inventory()
     local ok, inv = pcall(vana.game.container, 0)
     if not ok or type(inv) ~= 'table' then return end
@@ -274,6 +276,7 @@ local function forget_history(item)
 end
 
 local function on_sales_slot(d)
+    if not (st.sales_wait or clock() - st.sales_at < 2) then return end -- not asked for: the server's cached copy may be stale
     local slot = u8(d, 0x05)
     local stat = u8(d, 0x14)
     if stat == 0 then return end -- an empty slot
@@ -288,7 +291,15 @@ local function on_packet(e)
     st.counts.pin = st.counts.pin + 1
     local cmd, work, result, status = u8(d, 0x04), u8(d, 0x05), u8(d, 0x06), u8(d, 0x07)
     if work >= 128 then work = work - 256 end
-    if cmd == CMD.Open or cmd == CMD.WorkCheck then
+    if cmd == CMD.Open then
+        st.zone_ok = true
+        if settings.take_over then
+            -- the counter was talked to: this window opens in place of the game's menu
+            if not st.open then open_window() end
+            st.settings_open = false
+            return true
+        end
+    elseif cmd == CMD.WorkCheck then
         st.zone_ok = true
     elseif cmd == CMD.Info then
         if result == RESULT.Wait then
@@ -503,7 +514,7 @@ local function do_cancel(slot)
     send_cancel(slot)
 end
 
-local function open_window()
+open_window = function ()
     st.open = true
     st.opened_at = now_t -- ImGui's clock, the one the fade is measured against
     scan_counter()
@@ -1154,6 +1165,8 @@ local function draw_settings(dl, x, y, w, h)
     local v, ch
     v, ch = U.toggle(dl, '##t_counter', cx, cy + S(10), 'Only at an Auction Counter', settings.near_counter) settings.near_counter = v changed = changed or ch
     cy = cy + S(34)
+    v, ch = U.toggle(dl, '##t_takeover', cx, cy + S(10), "Talking to the counter opens this, not the game's menu", settings.take_over) settings.take_over = v changed = changed or ch
+    cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_confirm', cx, cy + S(10), 'Confirm before bidding', settings.confirm_buy) settings.confirm_buy = v changed = changed or ch
     cy = cy + S(40)
     text(dl, cx, cy, 'WINDOW', P.dim, F.disp, T.small)
@@ -1334,8 +1347,9 @@ end)
 
 vana.events.on('packet_in', function (e)
     if e.id == PKT.inc then
-        local ok, err = pcall(on_packet, e)
-        if not ok then fail('packet', err) end
+        local ok, block = pcall(on_packet, e)
+        if not ok then fail('packet', block)
+        elseif block then e.blocked = true return true end
     elseif e.id == 0x017 and (st.sales_wait or clock() - st.sales_at < 2) then
         -- the server's AH pagination module narrates the sales list in chat; the window shows it instead
         local d = bytes_of(e)
