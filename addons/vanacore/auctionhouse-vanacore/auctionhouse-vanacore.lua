@@ -1481,7 +1481,6 @@ local function draw_main(t)
     local alpha = settings.opacity or 1.0
     U.set_window_alpha(alpha)
     U.push_theme()
-    imgui.SetWindowFontScale(U.scale())
     local open = { st.open }
     if imgui.Begin('##auctionhouse', open, U.WINDOW_FLAGS) then
         local dl = imgui.GetWindowDrawList()
@@ -1701,6 +1700,7 @@ vana.events.on('command', function (e)
             st.counts.pin, st.counts.pout, tostring(st.search_where), SEARCH.pending(), tostring(st.counter.near), tostring(st.counter.dist and string.format('%.1f', st.counter.dist)), tostring(st.zone_ok),
             (function () local n = 0 for _ in pairs(st.lists) do n = n + 1 end return n end)(), gil(st.gil)))
         say('last error: ' .. tostring(st.last_error))
+        say('bid box: "' .. tostring(st.buy.price[1]) .. '"  query: "' .. tostring(st.query[1]) .. '"')
     else
         say('/ah [show|hide|buy|sell|sales|watch [<id or name>]|search <name>|settings|server <host[:port]>|scale <percent>|refresh|debug]')
     end
