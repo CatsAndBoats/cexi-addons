@@ -1706,6 +1706,10 @@ vana.events.on('command', function (e)
             (function () local n = 0 for _ in pairs(st.lists) do n = n + 1 end return n end)(), gil(st.gil)))
         say('last error: ' .. tostring(st.last_error))
         say('bid box: "' .. tostring(st.buy.price[1]) .. '"  query: "' .. tostring(st.query[1]) .. '"')
+        -- keys ImGui believes are held: a stuck one (a key-up the game never saw) makes text boxes misbehave
+        local held = {}
+        for k = 512, 670 do if imgui.IsKeyDown(k) then held[#held + 1] = k end end
+        say('keys ImGui holds down: ' .. (#held > 0 and table.concat(held, ', ') or 'none'))
         local ids = I.category(st.category)
         local zero, unknown, up, listed = 0, 0, 0, 0
         for _, id in ipairs(ids) do
