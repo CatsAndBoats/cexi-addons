@@ -735,9 +735,9 @@ end
 local function draw_sidebar(dl, x, y, w, h)
     panel(dl, x, y, w, h, P.glass, 0.92, S(12))
     imgui.SetCursorScreenPos({ x, y })
-    imgui.BeginChild('##cats', { w, h }, false, 8 + 16 * 0)
+    imgui.BeginChild('##cats', { w, h }, false, 0)
     local cdl = imgui.GetWindowDrawList()
-    local cy = y + S(8)
+    local cy = y + S(8) - imgui.GetScrollY() -- drawn where the scroll puts it
     for _, g in ipairs(I.GROUPS) do
         local open = st.group_open[g.id]
         if open == nil then open = (g.id == st.group) st.group_open[g.id] = open end
@@ -779,7 +779,8 @@ local function draw_sidebar(dl, x, y, w, h)
             cy = cy + S(4)
         end
     end
-    imgui.Dummy({ 1, math.max(1, cy - y - h + S(8)) })
+    imgui.SetCursorScreenPos({ x, cy + S(4) }) -- the content's end, so the child knows how far it scrolls
+    imgui.Dummy({ 1, 1 })
     imgui.EndChild()
 end
 
@@ -852,17 +853,17 @@ local function draw_list(dl, x, y, w, h, t)
     local ly = y + S(28)
     local lh = h - S(28)
     imgui.SetCursorScreenPos({ x, ly })
-    imgui.BeginChild('##items', { w, lh }, false, 8)
+    imgui.BeginChild('##items', { w, lh }, false, 0)
     local cdl = imgui.GetWindowDrawList()
-    local cy = ly
+    local scroll_y = imgui.GetScrollY()
+    local cy = ly - scroll_y
     local since = clock() - st.list_at
     local shown = 0
     if #ids == 0 then
         text_center(cdl, x, ly + S(60), w, st.results and 'Nothing by that name' or 'Nothing here', P.dim, F.disp, T.h1)
         if st.results == nil and st.search_error then text_center(cdl, x, ly + S(90), w, 'Search server: ' .. tostring(st.search_error), P.danger, F.text, T.small) end
     end
-    local scroll_y = imgui.GetScrollY()
-    local vis_top, vis_bot = ly + scroll_y - S(60), ly + scroll_y + lh + S(60)
+    local vis_top, vis_bot = ly - S(60), ly + lh + S(60)
     for i, id in ipairs(ids) do
         local rh = S(56)
         if cy + rh >= vis_top and cy <= vis_bot then
@@ -872,7 +873,8 @@ local function draw_list(dl, x, y, w, h, t)
         cy = cy + rh + S(6)
         shown = shown + 1
     end
-    imgui.Dummy({ 1, math.max(1, cy - ly - lh + S(8)) })
+    imgui.SetCursorScreenPos({ x, cy + S(2) })
+    imgui.Dummy({ 1, 1 })
     imgui.EndChild()
     -- the stock is still coming
     if st.fetching['cat' .. st.category] and st.results == nil then
@@ -1015,11 +1017,11 @@ local function draw_sell(dl, x, y, w, h, t)
     local gy = y + S(28)
     local gh = h - S(28)
     imgui.SetCursorScreenPos({ x, gy })
-    imgui.BeginChild('##bag', { bagw, gh }, false, 8)
+    imgui.BeginChild('##bag', { bagw, gh }, false, 0)
     local cdl = imgui.GetWindowDrawList()
     local cell = S(52)
-    local per = math.max(1, math.floor((bagw - S(8)) / (cell + S(6))))
-    local cx, cy = x + S(4), gy
+    local per = math.max(1, math.floor((bagw - S(16)) / (cell + S(6))))
+    local cx, cy = x + S(4), gy - imgui.GetScrollY()
     local n = 0
     for _, it in ipairs(st.inventory) do
         local r = I.get(it.id)
@@ -1051,7 +1053,8 @@ local function draw_sell(dl, x, y, w, h, t)
         if n % per == 0 then cx = x + S(4) cy = cy + cell + S(6) else cx = cx + cell + S(6) end
     end
     if n % per ~= 0 then cy = cy + cell + S(6) end
-    imgui.Dummy({ 1, math.max(1, cy - gy - gh + S(8)) })
+    imgui.SetCursorScreenPos({ x, cy + S(2) })
+    imgui.Dummy({ 1, 1 })
     imgui.EndChild()
     -- the listing box
     local px = x + bagw + S(12)
