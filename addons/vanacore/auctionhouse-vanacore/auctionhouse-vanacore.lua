@@ -73,6 +73,7 @@ local function say(text)
 end
 
 local function clock() return vana.time.clock() end
+local now_t, dt = 0, 0.016 -- ImGui's time and the frame's length, set each frame
 
 local function gil(n)
     local s = tostring(math.floor(n or 0))
@@ -504,7 +505,7 @@ end
 
 local function open_window()
     st.open = true
-    st.opened_at = clock()
+    st.opened_at = now_t -- ImGui's clock, the one the fade is measured against
     scan_counter()
     refresh_inventory()
     if logged_in() then
@@ -538,7 +539,6 @@ local text, text_mid, text_center, fit, wrap, icon = U.text, U.text_mid, U.text_
 local pill, shadow, panel, button, icon_button, hit = U.pill, U.shadow, U.panel, U.button, U.icon_button, U.hit
 local measure, with_font, u32, mix, lerp, ease = U.measure, U.with_font, U.u32, U.mix, U.lerp, U.ease
 local W = { w = 980, h = 640 }
-local now_t, dt = 0, 0.016
 local GOLD, PALE = '#FFD166', '#FFF3C4'
 
 -- the house's mark: a glass ball with a gil coin glowing inside, in the finder's style
