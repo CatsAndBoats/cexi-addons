@@ -60,7 +60,7 @@ local st = {
 
 local settings = {
     scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, take_over = true, search_host = '', search_port = 54002,
-    sort = 'name', remember = {},
+    sort = 'name', in_stock = false, remember = {},
 }
 
 local function fail(where, err)
@@ -843,6 +843,22 @@ local function draw_list(dl, x, y, w, h, t)
             ids = copy
         end
     end
+    -- the in-stock filter: only what is up right now; an item whose stock isn't known yet stays until it is
+    local hidden = 0
+    if settings.in_stock then
+        local keep = {}
+        for _, id in ipairs(ids) do
+            local single, stack = stock_of(id)
+            if (single == nil and stack == nil) or (single or 0) + (stack or 0) > 0 then keep[#keep + 1] = id end
+        end
+        hidden = #ids - #keep
+        ids = keep
+        if st.results then
+            title = 'SEARCH  ·  ' .. #ids .. ' in stock'
+        else
+            title = (I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' in stock of ' .. (#ids + hidden)
+        end
+    end
     text(dl, x + S(6), y, title, P.dim, F.disp, T.small)
     -- the sort, at the right
     local sorts = { { 'name', 'NAME' }, { 'level', 'LEVEL' }, { 'stock', 'STOCK' } }
@@ -850,6 +866,29 @@ local function draw_list(dl, x, y, w, h, t)
     for _, s in ipairs(sorts) do sw = sw + measure(s[2], F.disp, T.tiny) + S(22) + S(5) end
     local picked = U.segments(dl, '##sort', x + w - sw, y - S(6), S(24), sorts, settings.sort or 'name', nil, F.disp, T.tiny)
     if picked ~= settings.sort then settings.sort = picked save_settings() end
+    -- the in-stock chip, left of the sort
+    do
+        local label = 'IN STOCK'
+        local gs = S(12)
+        local lw = measure(label, F.disp, T.tiny)
+        local cw, ch = S(22) + gs + S(6) + lw, S(24)
+        local fx, fy = x + w - sw - cw - S(12), y - S(6)
+        imgui.SetCursorScreenPos({ fx, fy })
+        local pressed, hovered, hv = hit('##instock', cw, ch)
+        if pressed then settings.in_stock = not settings.in_stock save_settings() end
+        if hovered then with_font(F.text, T.small, imgui.SetTooltip, settings.in_stock and 'Showing only what is up for sale' or 'Show only what is up for sale') end
+        local on, color = settings.in_stock, P.ok
+        if on then
+            dl:AddRectFilled({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.28), S(9))
+            dl:AddRect({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.95), S(9), 15, 1)
+        else
+            dl:AddRectFilled({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.05 + 0.1 * hv), S(9))
+            dl:AddRect({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.22 + 0.4 * hv), S(9), 15, 1)
+        end
+        local fg = on and color or mix(color, P.dim, 0.45)
+        icon(dl, fx + S(11) + gs / 2, fy + ch / 2, on and 'square-check' or 'filter', fg, gs, on and 1 or 0.55 + 0.45 * hv)
+        text_center(dl, fx + S(11) + gs + S(6), fy + ch / 2, lw, label, fg, F.disp, T.tiny)
+    end
     local ly = y + S(28)
     local lh = h - S(28)
     imgui.SetCursorScreenPos({ x, ly })
@@ -860,7 +899,9 @@ local function draw_list(dl, x, y, w, h, t)
     local since = clock() - st.list_at
     local shown = 0
     if #ids == 0 then
-        text_center(cdl, x, ly + S(60), w, st.results and 'Nothing by that name' or 'Nothing here', P.dim, F.disp, T.h1)
+        local why = hidden > 0 and 'Nothing in stock' or (st.results and 'Nothing by that name' or 'Nothing here')
+        text_center(cdl, x, ly + S(60), w, why, P.dim, F.disp, T.h1)
+        if hidden > 0 then text_center(cdl, x, ly + S(90), w, hidden .. (hidden == 1 and ' item is' or ' items are') .. ' hidden by the in-stock filter', P.faint, F.text, T.small) end
         if st.results == nil and st.search_error then text_center(cdl, x, ly + S(90), w, 'Search server: ' .. tostring(st.search_error), P.danger, F.text, T.small) end
     end
     local vis_top, vis_bot = ly - S(60), ly + lh + S(60)
