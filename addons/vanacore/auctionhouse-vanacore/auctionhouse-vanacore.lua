@@ -478,8 +478,11 @@ end
 
 local function stock_of(item)
     local cat = I.category_of(item)
-    local row = cat and st.lists[cat] and st.lists[cat].items[item]
+    local list = cat and st.lists[cat]
+    local row = list and list.items[item]
     if row then return row.single, row.stack, true end
+    -- the search server lists only what is up: once the category's list is in, an item missing from it has nothing up
+    if list then return 0, 0, true end
     local hs, hk = history_of(item, false), history_of(item, true)
     if hs or hk then return hs and hs.stock or nil, hk and hk.stock or nil, false end
     return nil, nil, false
@@ -1701,6 +1704,14 @@ vana.events.on('command', function (e)
             (function () local n = 0 for _ in pairs(st.lists) do n = n + 1 end return n end)(), gil(st.gil)))
         say('last error: ' .. tostring(st.last_error))
         say('bid box: "' .. tostring(st.buy.price[1]) .. '"  query: "' .. tostring(st.query[1]) .. '"')
+        local ids = I.category(st.category)
+        local zero, unknown, up, listed = 0, 0, 0, 0
+        for _, id in ipairs(ids) do
+            local s1, s2 = stock_of(id)
+            if s1 == nil and s2 == nil then unknown = unknown + 1 elseif (s1 or 0) + (s2 or 0) > 0 then up = up + 1 else zero = zero + 1 end
+        end
+        if st.lists[st.category] then for _ in pairs(st.lists[st.category].items) do listed = listed + 1 end end
+        say(string.format('category %d: %d items, %d up, %d known zero, %d unknown, %d rows in the list reply, in_stock %s', st.category, #ids, up, zero, unknown, listed, tostring(settings.in_stock)))
     else
         say('/ah [show|hide|buy|sell|sales|watch [<id or name>]|search <name>|settings|server <host[:port]>|scale <percent>|refresh|debug]')
     end
