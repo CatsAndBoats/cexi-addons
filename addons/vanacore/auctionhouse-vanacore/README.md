@@ -41,7 +41,10 @@ stock coming back shows as a notice. Clicking a row opens its card.
 
 **Sell.** Your bag, with the items the house doesn't take greyed. Pick one, choose single or full stack, set a
 price (recent sales are shown), and **Ask the fee**: the house quotes its listing fee, then **Put it up for sale**
-commits. **My sales** lists what you have up, with the price and when, and takes a listing down.
+commits. **My sales** lists what you have up, with the price and when, and takes a listing down. When one of them
+sells while you're on, CatsEyeXI's server says so (its `ah_announcement` module, a system line naming the item,
+the buyer and the price): the window shows it as a notice, lists it under **Sold while you were on** on that tab
+with the gil waiting in your delivery box, and keeps the sale on the item's record. The chat line stays too.
 
 **Settings** (the gear): only at an Auction Counter, talking to the counter opens this window, confirm before
 bidding, the price graph, background checks of watched items, opacity, scale, and the search server in use.

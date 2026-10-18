@@ -57,7 +57,7 @@ local st = {
     inventory = {}, inv_at = 0, gil = 0,
     main = nil, settings_open = false, confirm = nil, last_error = nil, counts = { pin = 0, pout = 0 },
     anim = {}, list_at = 0, opened_at = 0, group_open = {}, hover = {},
-    watch_at = 0, watch_state = {}, watch_buf = {},
+    watch_at = 0, watch_state = {}, watch_buf = {}, sold = {},
 }
 
 local settings = {
@@ -575,6 +575,32 @@ local function toggle_watch(id, stack)
         U.toast('ok', 'Watching', I.name(id) .. (stack and ' (stacks)' or '') .. '  ·  its price and stock are on the Watch tab', 4, 'star')
     end
     save_settings()
+end
+
+-- one of your listings sold (the server's AH announcement module says so, by the item's server name, the buyer and the
+-- price): a notice, the sale marked on the My Sales tab, and the price kept on the item's record
+local function on_sold(name, buyer, price)
+    local id = nil
+    local lname = name:lower()
+    local hits = I.search(name, 8)
+    for _, cand in ipairs(hits) do
+        if I.name(cand):lower() == lname then id = cand break end
+    end
+    id = id or hits[1]
+    -- which listing: the server doesn't say single or stack, so the one up at that price, else the only one of the item
+    local row = nil
+    for _, r in pairs(st.sales) do
+        if r.id == id and (row == nil or (r.price == price and row.price ~= price)) then row = r end
+    end
+    local stack = row and row.stack or false
+    -- the sales list is only ever what's still up: the sold one leaves it on the next refresh, so it's remembered here
+    table.insert(st.sold, 1, { id = id, name = name, stack = stack, price = price, buyer = buyer, at = os.time() })
+    while #st.sold > 10 do table.remove(st.sold) end
+    if row then st.sales[row.slot + 1] = nil end
+    st.sales_dirty = true
+    if id then PRICES.add(id, stack, { { price = price, date = os.time(), seller = my_name(), buyer = buyer } }) end
+    local what = id and I.name(id) or name
+    U.toast('ok', 'Sold!', what .. (stack and ' (stack)' or '') .. '  ·  ' .. gil(price) .. ' gil from ' .. buyer, 8, 'sack-dollar')
 end
 
 -- ask the house about every watched item
@@ -1267,7 +1293,7 @@ local function draw_sales(dl, x, y, w, h, t)
         send_sales()
     end
     local cy = y + S(32)
-    if #rows == 0 then
+    if #rows == 0 and #st.sold == 0 then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
         text_center(dl, x, y + h / 2 + S(30), w, st.sales_open and 'Nothing up for sale' or 'Ask the house', P.text, F.disp, T.h1)
         text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and 'Sell something from your bag' or (may_trade() and 'Refresh lists what you have up' or 'Stand by an Auction Counter'), P.dim, F.text, T.small)
@@ -1279,14 +1305,32 @@ local function draw_sales(dl, x, y, w, h, t)
         item_icon(dl, row.id, x + S(14), cy + S(8), S(44), 1)
         local r = I.get(row.id)
         text(dl, x + S(68), cy + S(8), r.name .. (row.stack and ('  ·  stack of ' .. r.stack) or ''), P.text, F.disp, T.h2)
-        text(dl, x + S(68), cy + S(34), 'Slot ' .. (row.slot + 1) .. (row.at and row.at > 0 and ('  ·  listed ' .. ago(row.at)) or ''), P.dim, F.text, T.tiny)
         local pl = gil(row.price) .. ' gil'
         text(dl, x + w - S(150) - measure(pl, F.disp, T.h2), cy + S(10), pl, GOLD, F.disp, T.h2)
+        text(dl, x + S(68), cy + S(34), 'Slot ' .. (row.slot + 1) .. (row.at and row.at > 0 and ('  ·  listed ' .. ago(row.at)) or ''), P.dim, F.text, T.tiny)
         local can = may_trade() and st.cancel_pending == nil
         if button(dl, '##cancel' .. row.slot, x + w - S(130), cy + S(14), S(116), S(32), 'Take down', can and P.danger or P.faint, 'ghost', 'xmark', F.semi, T.small) and can then
             st.confirm = { kind = 'cancel', slot = row.slot, item = row.id }
         end
         cy = cy + rh + S(8)
+    end
+    -- what sold while you were on (the server's announcement), newest first
+    if #st.sold > 0 then
+        cy = cy + S(8)
+        text(dl, x + S(6), cy, 'SOLD WHILE YOU WERE ON  ·  the gil is in your delivery box', P.ok, F.disp, T.small)
+        cy = cy + S(24)
+        for i, s in ipairs(st.sold) do
+            local rh = S(48)
+            if cy + rh > y + h - S(24) then break end
+            panel(dl, x + S(4), cy, w - S(8), rh, P.card, 0.8, S(10))
+            if s.id then item_icon(dl, s.id, x + S(14), cy + S(6), S(36), 1) end
+            local what = s.id and I.name(s.id) or s.name
+            text(dl, x + S(60), cy + S(6), what .. (s.stack and ('  ·  stack') or ''), P.text, F.disp, T.body)
+            text(dl, x + S(60), cy + S(28), 'to ' .. s.buyer .. '  ·  ' .. ago(s.at), P.dim, F.text, T.tiny)
+            local pl = gil(s.price) .. ' gil'
+            text(dl, x + w - S(20) - measure(pl, F.disp, T.h2), cy + S(12), pl, P.ok, F.disp, T.h2)
+            cy = cy + rh + S(6)
+        end
     end
     text(dl, x + S(6), cy + S(4), 'Sold items pay out to your delivery box; the house holds unsold ones until you take them down.', P.faint, F.text, T.tiny)
 end
@@ -1598,12 +1642,22 @@ vana.events.on('packet_in', function (e)
         local ok, block = pcall(on_packet, e)
         if not ok then fail('packet', block)
         elseif block then e.blocked = true return true end
-    elseif e.id == 0x017 and (st.sales_wait or clock() - st.sales_at < 2) then
-        -- the server's AH pagination module narrates the sales list in chat; the window shows it instead
+    elseif e.id == 0x017 then
         local d = bytes_of(e)
-        if d and (d:find('items listed for sale', 1, true) or d:find('No results for page', 1, true) or d:find('Current page:', 1, true)) then
-            e.blocked = true
-            return true
+        local mes = d and d:sub(0x18) or ''
+        local nul = mes:find('\0', 1, true)
+        if nul then mes = mes:sub(1, nul - 1) end
+        -- the server's AH announcement module tells a seller who's online that an item sold (a system line)
+        local name, buyer, price = mes:match("^Your '(.-)' has sold to (%S+) for (%d+) gil!")
+        if name then
+            local ok, err = pcall(on_sold, name, buyer, tonumber(price))
+            if not ok then fail('sold', err) end
+        elseif st.sales_wait or clock() - st.sales_at < 2 then
+            -- the server's AH pagination module narrates the sales list in chat; the window shows it instead
+            if mes:find('items listed for sale', 1, true) or mes:find('No results for page', 1, true) or mes:find('Current page:', 1, true) then
+                e.blocked = true
+                return true
+            end
         end
     elseif e.id == 0x00B then
         -- zoning: the house's state is gone with the zone
