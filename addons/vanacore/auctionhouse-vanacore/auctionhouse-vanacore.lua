@@ -59,7 +59,7 @@ local st = {
 }
 
 local settings = {
-    scale = 100, opacity = 0.96, keybind = '^A', confirm_buy = true, near_counter = true, search_host = '', search_port = 54002,
+    scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, search_host = '', search_port = 54002,
     sort = 'name', remember = {},
 }
 
@@ -211,16 +211,22 @@ local function send(cmd, work_index, params)
     vana.packets.inject(false, PKT.out, table.concat(out))
 end
 
+-- the auction work slot a bid or a listing goes through: the first of the seven not holding one of yours
+-- (the server wants 0..6 here; it picks the real slot itself)
+local function free_slot()
+    for i = 0, 6 do if st.sales[i + 1] == nil then return i end end
+    return 0
+end
 local function send_work_check() send(CMD.WorkCheck, -1) st.work_at = clock() end
 local function send_sales() send(CMD.Info, -1) st.sales_at = clock() st.sales_wait = true end
 local function send_bid(item, price, stack)
-    send(CMD.Bid, -1, { { at = 0x08, u32 = price }, { at = 0x0C, u16 = item }, { at = 0x10, u32 = stack and 0 or 1 } })
+    send(CMD.Bid, free_slot(), { { at = 0x08, u32 = price }, { at = 0x0C, u16 = item }, { at = 0x10, u32 = stack and 0 or 1 } })
 end
 local function send_ask_commit(slot, item, price, stack)
     send(CMD.AskCommit, -1, { { at = 0x08, u32 = price }, { at = 0x0C, u16 = slot }, { at = 0x0E, u16 = item }, { at = 0x10, u32 = stack and 0 or 1 } })
 end
 local function send_lot_in(slot, price, stack)
-    send(CMD.LotIn, -1, { { at = 0x08, u32 = price }, { at = 0x0C, u16 = slot }, { at = 0x10, u32 = stack and 0 or 1 } })
+    send(CMD.LotIn, free_slot(), { { at = 0x08, u32 = price }, { at = 0x0C, u16 = slot }, { at = 0x10, u32 = stack and 0 or 1 } })
 end
 local function send_cancel(slot) send(CMD.LotCancel, slot) end
 
@@ -716,7 +722,7 @@ end
 
 -- the categories, grouped
 local function draw_sidebar(dl, x, y, w, h)
-    panel(dl, x, y, w, h, P.glass, 0.6, S(12))
+    panel(dl, x, y, w, h, P.glass, 0.92, S(12))
     imgui.SetCursorScreenPos({ x, y })
     imgui.BeginChild('##cats', { w, h }, false, 8 + 16 * 0)
     local cdl = imgui.GetWindowDrawList()
@@ -774,7 +780,7 @@ local function draw_item_row(dl, id, x, y, w, alpha)
     local pressed, hovered, hv = hit(key, w, h)
     local selected = st.selected == id
     local r = I.get(id)
-    panel(dl, x, y, w, h, selected and P.card_hi or P.card, (selected and 0.95 or 0.72 + 0.2 * hv) * alpha, S(10), selected and GOLD or (hv > 0.01 and mix(P.line, P.accent, hv) or nil), selected)
+    panel(dl, x, y, w, h, selected and P.card_hi or P.card, (selected and 1 or 0.9 + 0.1 * hv) * alpha, S(10), selected and GOLD or (hv > 0.01 and mix(P.line, P.accent, hv) or nil), selected)
     U.draw_ripples(dl, key, x, y, w, h, GOLD)
     item_icon(dl, id, x + S(10), y + S(8), S(40), alpha)
     local name = fit(r.name, F.disp, T.h2, w - S(250))
@@ -866,7 +872,7 @@ end
 -- the selected item: everything about it, its history, and the buy box
 local function draw_detail(dl, x, y, w, h, t)
     local id = st.selected
-    panel(dl, x, y, w, h, P.glass, 0.85, S(14), P.line)
+    panel(dl, x, y, w, h, P.glass, 0.97, S(14), P.line)
     if id == nil then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
         text_center(dl, x, y + h / 2 + S(30), w, 'Pick an item', P.text, F.disp, T.h1)
@@ -969,9 +975,7 @@ local function draw_detail(dl, x, y, w, h, t)
     imgui.SetCursorScreenPos({ cx, by })
     imgui.SetNextItemWidth(w - S(32) - S(110))
     with_font(F.text, T.body, function ()
-        if imgui.InputTextWithHint('##bid', hs and hs.stats and tostring(hs.stats.last) or '0', st.buy.price, 10, 1) then
-            st.buy.price[1] = (st.buy.price[1] or ''):gsub('[^%d]', '')
-        end
+        imgui.InputTextWithHint('##bid', hs and hs.stats and tostring(hs.stats.last) or '0', st.buy.price, 10, 1)
     end)
     local price = tonumber(st.buy.price[1]) or (hs and hs.stats and hs.stats.last) or 0
     local can = may_trade() and price > 0 and logged_in() and st.buy.pending == nil
@@ -1041,7 +1045,7 @@ local function draw_sell(dl, x, y, w, h, t)
     -- the listing box
     local px = x + bagw + S(12)
     local pw = w - bagw - S(12)
-    panel(dl, px, y, pw, h, P.glass, 0.85, S(14), P.line)
+    panel(dl, px, y, pw, h, P.glass, 0.97, S(14), P.line)
     local sx, sy = px + S(16), y + S(16)
     if st.sell.slot == nil or st.sell.item == nil then
         icon(dl, px + pw / 2, y + h / 2 - S(24), 'tag', P.faint, T.title)
@@ -1081,7 +1085,6 @@ local function draw_sell(dl, x, y, w, h, t)
     imgui.SetNextItemWidth(pw - S(32))
     with_font(F.text, T.body, function ()
         if imgui.InputTextWithHint('##ask', hs and hs.stats and tostring(hs.stats.last) or 'gil', st.sell.price, 10, 1) then
-            st.sell.price[1] = (st.sell.price[1] or ''):gsub('[^%d]', '')
             st.sell.fee, st.sell.asked = nil, nil
         end
     end)
@@ -1124,7 +1127,7 @@ local function draw_sales(dl, x, y, w, h, t)
     end
     for _, row in ipairs(rows) do
         local rh = S(60)
-        panel(dl, x + S(4), cy, w - S(8), rh, P.card, 0.8, S(10))
+        panel(dl, x + S(4), cy, w - S(8), rh, P.card, 0.95, S(10))
         item_icon(dl, row.id, x + S(14), cy + S(8), S(44), 1)
         local r = I.get(row.id)
         text(dl, x + S(68), cy + S(8), r.name .. (row.stack and ('  ·  stack of ' .. r.stack) or ''), P.text, F.disp, T.h2)
@@ -1156,7 +1159,7 @@ local function draw_settings(dl, x, y, w, h)
     text(dl, cx, cy, 'WINDOW', P.dim, F.disp, T.small)
     cy = cy + S(24)
     text_mid(dl, cx, cy, 'Opacity', P.dim, F.text, T.small)
-    local op = U.slider(dl, '##s_op', cx + S(80), cy, S(200), (settings.opacity or 0.96) * 100, 40, 100, '%d%%')
+    local op = U.slider(dl, '##s_op', cx + S(80), cy, S(200), (settings.opacity or 1) * 100, 40, 100, '%d%%')
     if math.abs(op / 100 - settings.opacity) > 0.001 then settings.opacity = op / 100 changed = true end
     cy = cy + S(30)
     text_mid(dl, cx, cy, 'Scale', P.dim, F.text, T.small)
@@ -1226,7 +1229,7 @@ local function draw_main(t)
     local w, h = S(W.w), S(W.h)
     imgui.SetNextWindowSize({ w, h }, U.ALWAYS)
     imgui.SetNextWindowPos({ (sw - w) / 2, (sh - h) / 2 }, U.FIRST_USE_EVER)
-    local alpha = settings.opacity or 0.96
+    local alpha = settings.opacity or 1.0
     U.set_window_alpha(alpha)
     U.push_theme()
     imgui.SetWindowFontScale(U.scale())
@@ -1239,7 +1242,7 @@ local function draw_main(t)
         st.main = { x = x, y = y, w = w, h = h }
         local fade = math.min(1, (t - st.opened_at) * 4)
         shadow(dl, x, y, w, h, S(16), fade)
-        panel(dl, x, y, w, h, P.bg, alpha * fade, S(16), P.line)
+        panel(dl, x, y, w, h, P.bg, fade, S(16), P.line)
         local hy = draw_header(dl, x, y, w, t)
         local ty = y + hy + S(10)
         draw_tabs(dl, x, ty, w)
@@ -1416,6 +1419,8 @@ vana.events.on('command', function (e)
         open_window()
         local tab = words[3]:lower()
         if tab == 'buy' or tab == 'sell' or tab == 'sales' then st.tab = tab end
+    elseif what == 'opacity' and tonumber(words[3]) then
+        settings.opacity = math.max(40, math.min(100, tonumber(words[3]))) / 100 save_settings()
     elseif what == 'scale' and tonumber(words[3]) then
         settings.scale = math.max(50, math.min(300, tonumber(words[3]))) save_settings()
     elseif what == 'refresh' then

@@ -42,6 +42,7 @@ in use.
 | `/ah pick <id or name>` | Open on an item's card |
 | `/ah server <host[:port]>` | Which search server to ask; `/ah server auto` finds it from your login again |
 | `/ah scale <percent>` | Window size, 50 to 300 |
+| `/ah opacity <percent>` | Window opacity, 40 to 100 |
 | `/ah refresh` | Forget fetched lists and histories |
 | `/ah debug` | Counters, the search server, whether a counter is near, the last error |
 
@@ -50,7 +51,8 @@ Settings are kept per character in `Vanacore\config\addons\auctionhouse-vanacore
 ## How it talks to the server
 
 - **Buying, selling, your sales:** packet `0x04E` out and `0x04C` in (`map/packets/c2s/0x04e_auc.h`): WorkCheck when
-  the window opens, Bid, AskCommit then LotIn to sell, Info for the sales list (the server's AH pagination module
+  the window opens, Bid, AskCommit then LotIn to sell (both carry an auction work slot 0–6 at 0x05; the server refuses
+  −1 there without a word), Info for the sales list (the server's AH pagination module
   pages it six at a time; its chat lines are hidden while the window is asking), LotCancel to take one down. The
   server checks the zone has an auction house; standing at a counter is the addon's own rule (settings).
 - **Categories, stock, history:** the search server (`src/search`), over TCP on the login host, port 54002. The
