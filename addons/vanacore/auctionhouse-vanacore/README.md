@@ -24,22 +24,35 @@ beside each category is how many of its items are up right now. The list shows e
 how many singles and stacks are up, and the last sale once it's known; sort it by name, level or stock, and the
 **In stock** chip hides everything with nothing up (it is remembered). The search box finds any listed item by
 name, across every category. Click an item for its card: description, the jobs that can use it, stock, the last
-ten sales for singles or stacks with **last · median · range** and the trend, and the bid box. The house fills
-the cheapest listing at or under your bid and you pay what you bid, as always; the box starts at the last sale.
+ten sales for singles or stacks with **last · median · range** and the trend, a price graph, and the bid box. The
+house fills the cheapest listing at or under your bid and you pay what you bid, as always; the box starts at the
+last sale.
+
+**The price graph.** Every sale the house ever tells this character about is kept (per server, see Files), so the
+graph grows past the ten rows the search server hands out: the line is the price over time, the dashed line the
+median of the latest ten, the marks at the left the gil scale, and hovering a point shows the sale. The graph icon
+beside **Recent sales** hides or shows it (also in Settings).
+
+**Watch.** The star on an item's card follows it (singles or stacks, whichever is picked); `/ah watch <name>` does
+too. The Watch tab is the one place to see them all: stock, the last price with how it moved over a week (or
+lately, when the record is shorter), the median, a sparkline of the last thirty sales, and a **Tell me under** price.
+Watched items are checked every five minutes while you play, house open or not, and a sale under your price or
+stock coming back shows as a notice. Clicking a row opens its card.
 
 **Sell.** Your bag, with the items the house doesn't take greyed. Pick one, choose single or full stack, set a
 price (recent sales are shown), and **Ask the fee**: the house quotes its listing fee, then **Put it up for sale**
 commits. **My sales** lists what you have up, with the price and when, and takes a listing down.
 
 **Settings** (the gear): only at an Auction Counter, talking to the counter opens this window, confirm before
-bidding, opacity, scale, and the search server in use.
+bidding, the price graph, background checks of watched items, opacity, scale, and the search server in use.
 
 ## Commands
 
 | Command | Action |
 |---|---|
 | `/ah` | Open or close the window (Esc closes it too) |
-| `/ah buy` / `sell` / `sales` | Open on that tab |
+| `/ah buy` / `sell` / `sales` / `watch` | Open on that tab |
+| `/ah watch <id or name>` | Follow an item on the Watch tab, or stop |
 | `/ah search <name>` | Open with a name search |
 | `/ah pick <id or name>` | Open on an item's card |
 | `/ah server <host[:port]>` | Which search server to ask; `/ah server auto` finds it from your login again |
@@ -48,7 +61,9 @@ bidding, opacity, scale, and the search server in use.
 | `/ah refresh` | Forget fetched lists and histories |
 | `/ah debug` | Counters, the search server, whether a counter is near, the last error |
 
-Settings are kept per character in `Vanacore\config\addons\auctionhouse-vanacore\<name>.lua`.
+Settings and the watch list are kept per character in `Vanacore\config\addons\auctionhouse-vanacore\<name>.lua`; the
+price record is `prices-<search host>.lua` beside it, one per server, up to 160 sales per item and kind, series
+with no sale in 120 days dropped.
 
 ## How it talks to the server
 
@@ -75,6 +90,7 @@ Settings are kept per character in `Vanacore\config\addons\auctionhouse-vanacore
 - `auctionhouse-vanacore.lua` — the addon: state, the game packets, the window
 - `search.lua`, `bf_tables.lua` — the search-server client and LandSandBoat's Blowfish boxes
 - `items.lua` — the game's item data through the resource manager, icon textures, the catalogue and name search
+- `prices.lua` — the price record (every sale seen, per server) and the graphs drawn from it
 - `catalogue.lua` — every item the house lists (`item_basic.aH > 0`), with its category, stack size, level, jobs
   and slot. Regenerate from the server database when items change:
   `SELECT b.itemid, b.aH, b.stackSize, b.flags, COALESCE(e.level,0), COALESCE(e.jobs,0), COALESCE(e.slot,0) FROM item_basic b LEFT JOIN item_equipment e ON e.itemId = b.itemid WHERE b.aH > 0 ORDER BY b.itemid`

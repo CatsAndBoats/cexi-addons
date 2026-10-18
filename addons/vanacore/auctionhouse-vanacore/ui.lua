@@ -110,6 +110,7 @@ local FA = {
     ['chevron-left'] = 0xF053, ['layer-group'] = 0xF5FD, receipt = 0xF543, store = 0xF54E, gavel = 0xF0E3, cube = 0xF1B2,
     ['circle-minus'] = 0xF056, ['circle-plus'] = 0xF055, ['hand-holding-dollar'] = 0xF4C0, ['money-bill'] = 0xF0D6, ['arrows-rotate'] = 0xF021,
     ['box-open'] = 0xF49E, ['wand-magic-sparkles'] = 0xE2CA, ['circle-dot'] = 0xF192, ['square-check'] = 0xF14A, ['list-ul'] = 0xF0CA,
+    ['chart-line'] = 0xF201, ['chart-simple'] = 0xE473, ['star-half-stroke'] = 0xF5C0, binoculars = 0xF1E5, ['bell-on'] = 0xF8FA,
 }
 local fa_cache = {}
 local function fa(name)

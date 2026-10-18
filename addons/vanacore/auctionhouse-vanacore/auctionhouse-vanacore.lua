@@ -24,6 +24,7 @@ local bit = require('bit')
 local U = require('ui')
 local I = require('items')
 local SEARCH = require('search')
+local PRICES = require('prices')
 local P = U.P
 local S = U.S
 local T = U.sizes()
@@ -56,11 +57,13 @@ local st = {
     inventory = {}, inv_at = 0, gil = 0,
     main = nil, settings_open = false, confirm = nil, last_error = nil, counts = { pin = 0, pout = 0 },
     anim = {}, list_at = 0, opened_at = 0, group_open = {}, hover = {},
+    watch_at = 0, watch_state = {}, watch_buf = {},
 }
 
 local settings = {
     scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, take_over = true, search_host = '', search_port = 54002,
     sort = 'name', in_stock = false, remember = {},
+    chart = true, watch = {}, watch_poll = true, watch_every = 300,
 }
 
 local function fail(where, err)
@@ -180,6 +183,9 @@ local function configure_search()
     SEARCH.port = tonumber(settings.search_port) or 54002
     SEARCH.log = function (text) fail('search', text) end
     st.search_where = host .. ':' .. SEARCH.port
+    -- the price log is per server: what sells on the test server says nothing about live
+    PRICES.save(true)
+    PRICES.load(settings_dir() .. '\\prices-' .. (host:gsub('[^%w%.%-]', '_')) .. '.lua')
 end
 
 -------------------------------------------------------------------------------
@@ -377,6 +383,40 @@ end
 -- Fetching: category lists, histories
 -------------------------------------------------------------------------------
 
+-------------------------------------------------------------------------------
+-- The watch list: items you follow; their price and stock are checked, and you're told when they move
+-------------------------------------------------------------------------------
+
+local function watch_key(id, stack) return id .. '/' .. (stack and 1 or 0) end
+
+local function watch_entry(id, stack)
+    for i, e in ipairs(settings.watch) do
+        if e.id == id and (e.stack or false) == (stack or false) then return e, i end
+    end
+    return nil
+end
+
+-- after a history reply for a watched item: an alert when it sold under your price, or came back in stock
+local function check_watch(item, stack)
+    local e = watch_entry(item, stack)
+    if e == nil then return end
+    local key = watch_key(item, stack)
+    local hs = st.hist[key]
+    if hs == nil then return end
+    local state = st.watch_state[key]
+    local name = I.name(item) .. (stack and ' (stack)' or '')
+    local last = hs.stats and hs.stats.last or nil
+    if state ~= nil then
+        if e.under and last and last <= e.under and state.last ~= last then
+            U.toast('ok', 'Price alert', name .. ' sold for ' .. gil(last) .. ', under your ' .. gil(e.under), 8, 'bell')
+        end
+        if (hs.stock or 0) > 0 and (state.stock or 0) == 0 then
+            U.toast('info', 'Back in stock', name .. ': ' .. hs.stock .. ' up now', 6, 'box-open')
+        end
+    end
+    st.watch_state[key] = { last = last, stock = hs.stock or 0, at = clock() }
+end
+
 local function fetch_list(cat, force)
     local have = st.lists[cat]
     if not force and have and clock() - have.at < LIMITS.list then return end
@@ -422,6 +462,8 @@ local function fetch_history(item, stack, force)
             end
         end
         st.hist[key] = { sales = r.sales, stock = r.stock, category = r.category, stats = stats, at = clock() }
+        PRICES.add(item, stack, r.sales)
+        check_watch(item, stack)
         -- stock we learnt here keeps the list fresh too
         local cat = I.category_of(item)
         if cat and st.lists[cat] and st.lists[cat].items[item] then
@@ -512,6 +554,28 @@ local function do_cancel(slot)
     if not may_trade() then say('Stand by an Auction Counter.') return end
     st.cancel_pending = slot
     send_cancel(slot)
+end
+
+-- follow an item (singles or stacks), or stop
+local function toggle_watch(id, stack)
+    stack = stack or false
+    local e, i = watch_entry(id, stack)
+    if e then
+        table.remove(settings.watch, i)
+        st.watch_state[watch_key(id, stack)] = nil
+        U.toast('dim', 'No longer watching', I.name(id) .. (stack and ' (stacks)' or ''), 3, 'star')
+    else
+        settings.watch[#settings.watch + 1] = { id = id, stack = stack, added = os.time() }
+        fetch_history(id, stack)
+        U.toast('ok', 'Watching', I.name(id) .. (stack and ' (stacks)' or '') .. '  ·  its price and stock are on the Watch tab', 4, 'star')
+    end
+    save_settings()
+end
+
+-- ask the house about every watched item
+local function poll_watch()
+    st.watch_at = clock()
+    for _, e in ipairs(settings.watch) do fetch_history(e.id, e.stack, true) end
 end
 
 open_window = function ()
@@ -689,18 +753,21 @@ end
 
 local function draw_tabs(dl, x, y, w)
     local h = S(40)
-    local tabs = { { 'buy', 'BUY', 'cart-shopping' }, { 'sell', 'SELL', 'tag' }, { 'sales', 'MY SALES', 'receipt' } }
+    local tabs = { { 'buy', 'BUY', 'cart-shopping' }, { 'sell', 'SELL', 'tag' }, { 'sales', 'MY SALES', 'receipt' }, { 'watch', 'WATCH', 'star' } }
     local tx = x + S(24)
     for _, tab in ipairs(tabs) do
         local on = st.tab == tab[1]
         local lw = measure(tab[2], F.disp, T.body)
-        local tw = lw + S(44)
+        local count = tab[1] == 'watch' and #settings.watch > 0 and tostring(#settings.watch) or nil
+        local cw = count and (measure(count, F.disp, T.tiny) + S(20)) or 0
+        local tw = lw + S(44) + cw
         imgui.SetCursorScreenPos({ tx, y })
         local pressed, _, hv = hit('##tab' .. tab[1], tw, h)
         if pressed then st.tab = tab[1] end
         local col = on and GOLD or mix(P.dim, P.text, hv)
         icon(dl, tx + S(14), y + h / 2, tab[3], col, T.small)
         text_mid(dl, tx + S(30), y + h / 2, tab[2], col, F.disp, T.body)
+        if count then pill(dl, tx + S(30) + lw + S(6), y + h / 2 - S(9), count, mix(col, P.ink, 0.75), col, F.disp, T.tiny, S(7)) end
         if on then
             dl:AddRectFilledMultiColor({ tx + S(4), y + h - S(4) }, { tx + tw - S(8), y + h - S(2) }, u32(GOLD, 0.2), u32(GOLD, 1), u32(P.accent2, 1), u32(P.accent2, 0.2))
         end
@@ -936,7 +1003,12 @@ local function draw_detail(dl, x, y, w, h, t)
     local r = I.get(id)
     local cx, cy = x + S(16), y + S(16)
     item_icon(dl, id, cx, cy, S(56), 1)
-    text(dl, cx + S(68), cy, fit(r.name, F.disp, T.h1, w - S(100)), GOLD, F.disp, T.h1)
+    -- the star: follow this item (single or stack, whichever is picked) on the watch tab
+    local watched = watch_entry(id, st.stack) ~= nil
+    if icon_button(dl, '##star', x + w - S(44), y + S(10), S(28), 'star', watched and GOLD or P.dim, watched and 'Stop watching' or ('Watch this item' .. (r.stack > 1 and (st.stack and ' (stacks)' or ' (singles)') or ''))) then
+        toggle_watch(id, st.stack)
+    end
+    text(dl, cx + S(68), cy, fit(r.name, F.disp, T.h1, w - S(130)), GOLD, F.disp, T.h1)
     local line = I.jobs_line(id)
     if r.stack > 1 then line = (line ~= '' and (line .. '  ·  ') or '') .. 'Stacks of ' .. r.stack end
     text(dl, cx + S(68), cy + S(28), fit(line ~= '' and line or (I.CATEGORY_NAME[I.category_of(id) or 0] or ''), F.text, T.small, w - S(100)), P.dim, F.text, T.small)
@@ -979,7 +1051,11 @@ local function draw_detail(dl, x, y, w, h, t)
     -- the history
     local hs = history_of(id, st.stack)
     text(dl, cx, cy, 'RECENT SALES', P.accent, F.disp, T.small)
-    if st.fetching[id .. '/' .. (st.stack and 1 or 0)] then text(dl, x + w - S(16) - measure('fetching…', F.text, T.tiny), cy + S(2), 'fetching…', P.cyan, F.text, T.tiny) end
+    if st.fetching[id .. '/' .. (st.stack and 1 or 0)] then text(dl, x + w - S(48) - measure('fetching…', F.text, T.tiny), cy + S(2), 'fetching…', P.cyan, F.text, T.tiny) end
+    if icon_button(dl, '##chart_toggle', x + w - S(42), cy - S(5), S(24), 'chart-line', settings.chart and P.cyan or P.faint, settings.chart and 'Hide the price graph' or 'Show the price graph') then
+        settings.chart = not settings.chart save_settings()
+    end
+    local hy = cy
     cy = cy + S(22)
     local bottom = y + h - S(96)
     if hs == nil then
@@ -1003,10 +1079,22 @@ local function draw_detail(dl, x, y, w, h, t)
             local flat = math.abs(s.trend) <= 0.02
             local tcol = flat and P.dim or (up and P.danger or P.ok)
             local tl = flat and 'steady' or string.format('%s%.0f%%', up and '+' or '', s.trend * 100)
-            icon(dl, x + w - S(28), cy + S(16), flat and 'minus' or (up and 'arrow-trend-up' or 'arrow-trend-down'), tcol, T.small)
-            text(dl, x + w - S(40) - measure(tl, F.semi, T.tiny), cy + S(11), tl, tcol, F.semi, T.tiny)
+            -- shown up on the header line, beside the graph toggle
+            icon(dl, x + w - S(56), hy + S(7), flat and 'minus' or (up and 'arrow-trend-up' or 'arrow-trend-down'), tcol, T.small)
+            text(dl, x + w - S(68) - measure(tl, F.semi, T.tiny), hy + S(2), tl, tcol, F.semi, T.tiny)
         end
         cy = cy + S(38)
+        -- the graph: every sale this character has seen, not only the house's last ten
+        if settings.chart then
+            local series = PRICES.series(id, st.stack)
+            local gh = S(112)
+            panel(dl, cx, cy, w - S(32), gh, P.well, 0.6, S(8))
+            PRICES.chart(dl, cx + S(4), cy + S(4), w - S(40), gh - S(8), series, { color = P.cyan, median = s.median, key = '##chart' .. id })
+            local n = #series
+            local note = n .. (n == 1 and ' sale' or ' sales') .. ' on record'
+            text(dl, x + w - S(20) - measure(note, F.text, T.tiny - 1), cy + S(6), note, P.faint, F.text, T.tiny - 1)
+            cy = cy + gh + S(8)
+        end
         -- the rows: price, when, who
         for i, sale in ipairs(hs.sales) do
             if cy + S(18) > bottom then break end
@@ -1198,6 +1286,106 @@ local function draw_sales(dl, x, y, w, h, t)
     text(dl, x + S(6), cy + S(4), 'Sold items pay out to your delivery box; the house holds unsold ones until you take them down.', P.faint, F.text, T.tiny)
 end
 
+-- WATCH: the items you follow, each with its stock, last price, how it moved, a sparkline, and a price to be told at
+local function draw_watch(dl, x, y, w, h, t)
+    local list = settings.watch
+    text(dl, x + S(6), y, 'WATCHING  ·  ' .. #list .. (#list == 1 and ' item' or ' items'), P.dim, F.disp, T.small)
+    local checked = st.watch_at > 0 and ('checked ' .. ago(os.time() - math.floor(clock() - st.watch_at))) or (settings.watch_poll and 'checks every ' .. math.floor((settings.watch_every or 300) / 60) .. ' min' or 'background checks are off')
+    text(dl, x + w - S(142) - measure(checked, F.text, T.tiny), y + S(3), checked, P.faint, F.text, T.tiny)
+    local busy = SEARCH.pending() > 0
+    if button(dl, '##watch_refresh', x + w - S(130), y - S(6), S(124), S(26), busy and 'Asking…' or 'Check now', busy and P.faint or P.accent, 'ghost', 'rotate-right', F.semi, T.tiny) and not busy and #list > 0 then
+        poll_watch()
+    end
+    local ly, lh = y + S(32), h - S(32)
+    if #list == 0 then
+        glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
+        text_center(dl, x, y + h / 2 + S(30), w, 'Nothing watched yet', P.text, F.disp, T.h1)
+        text_center(dl, x, y + h / 2 + S(54), w, "Star an item on its card: its stock, price and trend show here, and you're told when it sells under your price", P.dim, F.text, T.small)
+        return
+    end
+    -- their histories stay fresh while this is open
+    for _, e in ipairs(list) do fetch_history(e.id, e.stack) end
+    imgui.SetCursorScreenPos({ x, ly })
+    imgui.BeginChild('##watch', { w, lh }, false, 0)
+    local cdl = imgui.GetWindowDrawList()
+    local cy = ly - imgui.GetScrollY()
+    local remove = nil
+    for i, e in ipairs(list) do
+        local rh = S(78)
+        local id, key = e.id, watch_key(e.id, e.stack)
+        local r = I.get(id)
+        local hs = st.hist[key]
+        local series = PRICES.series(id, e.stack)
+        panel(cdl, x + S(4), cy, w - S(12), rh, P.card, 0.95, S(10))
+        -- the name takes you to its card
+        imgui.SetCursorScreenPos({ x + S(4), cy })
+        local pressed, hovered, hv = hit('##w' .. key, S(300), rh)
+        if pressed then
+            local cat = I.category_of(id)
+            if cat then st.category, st.group = cat, I.group_of(cat).id st.group_open[st.group] = true fetch_list(cat) end
+            st.tab = 'buy'
+            st.stack = e.stack or false
+            st.results = nil
+            select_item(id)
+        end
+        if hovered then with_font(F.text, T.small, imgui.SetTooltip, 'Open its card') end
+        if hv > 0 then cdl:AddRectFilled({ x + S(4), cy }, { x + S(304), cy + rh }, u32(P.card_hi, 0.6 * hv), S(10)) end
+        item_icon(cdl, id, x + S(14), cy + S(15), S(48), 1)
+        local line = I.jobs_line(id)
+        if line == '' then line = I.CATEGORY_NAME[I.category_of(id) or 0] or '' end
+        text(cdl, x + S(72), cy + S(10), fit(r.name .. (e.stack and ('  ·  stack of ' .. r.stack) or ''), F.disp, T.h2, S(222)), mix(P.text, GOLD, hv), F.disp, T.h2)
+        text(cdl, x + S(72), cy + S(34), fit(line, F.text, T.tiny, S(222)), P.dim, F.text, T.tiny)
+        stock_pills(cdl, x + S(72), cy + S(52), id, 1, false)
+        -- the sparkline: the last thirty sales on record
+        local sx = x + S(314)
+        PRICES.spark(cdl, sx, cy + S(16), S(150), S(46), series, P.cyan, 30)
+        -- the last price, the median, and how it moved over a week (from the record) or lately (from the house)
+        local px = sx + S(166)
+        if hs and hs.stats then
+            local s = hs.stats
+            local pl = gil(s.last)
+            text(cdl, px, cy + S(12), pl, GOLD, F.disp, T.h2)
+            local change, label, tcol = PRICES.change(series, 7 * 86400), nil, nil
+            if change then
+                label = string.format('%s%.0f%% in 7d', change > 0 and '+' or '', change * 100)
+                tcol = math.abs(change) <= 0.02 and P.dim or (change > 0 and P.danger or P.ok)
+            elseif s.trend then
+                label = math.abs(s.trend) <= 0.02 and 'steady' or string.format('%s%.0f%% lately', s.trend > 0 and '+' or '', s.trend * 100)
+                tcol = math.abs(s.trend) <= 0.02 and P.dim or (s.trend > 0 and P.danger or P.ok)
+            end
+            if label then pill(cdl, px + measure(pl, F.disp, T.h2) + S(10), cy + S(13), label, mix(tcol, P.ink, 0.78), tcol, F.disp, T.tiny, S(7)) end
+            text(cdl, px, cy + S(40), 'median ' .. gil(s.median) .. '  ·  sold ' .. ago(hs.sales[1].date), P.dim, F.text, T.tiny)
+            text(cdl, px, cy + S(56), #series .. (#series == 1 and ' sale' or ' sales') .. ' on record', P.faint, F.text, T.tiny - 1)
+        elseif hs then
+            text(cdl, px, cy + S(14), 'No ' .. (e.stack and 'stacks' or 'singles') .. ' sold lately', P.dim, F.text, T.small)
+        else
+            text(cdl, px, cy + S(14), st.fetching[key] and 'Asking the house…' or (st.search_error and 'Search server: ' .. tostring(st.search_error) or '—'), st.search_error and P.danger or P.faint, F.text, T.small)
+        end
+        -- the price to be told at
+        local ax = x + w - S(8) - S(40) - S(100)
+        icon(cdl, ax + S(6), cy + S(16), 'bell', e.under and P.warn or P.faint, T.tiny)
+        text(cdl, ax + S(16), cy + S(10), 'TELL ME UNDER', e.under and P.warn or P.faint, F.disp, T.tiny - 1)
+        local buf = st.watch_buf[key]
+        if buf == nil then buf = { e.under and tostring(e.under) or '' } st.watch_buf[key] = buf end
+        imgui.SetCursorScreenPos({ ax, cy + S(28) })
+        imgui.SetNextItemWidth(S(100))
+        local changed
+        with_font(F.text, T.small, function () changed = imgui.InputTextWithHint('##under' .. key, 'any price', buf, 10, 1) end)
+        if changed then
+            local v = tonumber(buf[1])
+            e.under = (v and v > 0) and math.floor(v) or nil
+            save_settings()
+        end
+        if icon_button(cdl, '##unwatch' .. key, x + w - S(42), cy + S(25), S(28), 'xmark', P.dim, 'Stop watching') then remove = i end
+        cy = cy + rh + S(8)
+    end
+    text(cdl, x + S(6), cy + S(2), (settings.watch_poll and 'Checked every ' .. math.floor((settings.watch_every or 300) / 60) .. ' minutes while you play, house open or not' or 'Background checks are off (settings)') .. '  ·  a sale under your price, or stock coming back, shows as a notice', P.faint, F.text, T.tiny)
+    imgui.SetCursorScreenPos({ x, cy + S(22) })
+    imgui.Dummy({ 1, 1 })
+    imgui.EndChild()
+    if remove then toggle_watch(list[remove].id, list[remove].stack) end
+end
+
 local function draw_settings(dl, x, y, w, h)
     panel(dl, x, y, w, h, P.glass, 0.98, S(14), P.accent2, true)
     local cx, cy = x + S(20), y + S(16)
@@ -1212,6 +1400,10 @@ local function draw_settings(dl, x, y, w, h)
     v, ch = U.toggle(dl, '##t_takeover', cx, cy + S(10), "Talking to the counter opens this, not the game's menu", settings.take_over) settings.take_over = v changed = changed or ch
     cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_confirm', cx, cy + S(10), 'Confirm before bidding', settings.confirm_buy) settings.confirm_buy = v changed = changed or ch
+    cy = cy + S(34)
+    v, ch = U.toggle(dl, '##t_chart', cx, cy + S(10), "Price graph on an item's card", settings.chart) settings.chart = v changed = changed or ch
+    cy = cy + S(34)
+    v, ch = U.toggle(dl, '##t_watch', cx, cy + S(10), 'Check watched items every ' .. math.floor((settings.watch_every or 300) / 60) .. ' min, even with this closed', settings.watch_poll) settings.watch_poll = v changed = changed or ch
     cy = cy + S(40)
     text(dl, cx, cy, 'WINDOW', P.dim, F.disp, T.small)
     cy = cy + S(24)
@@ -1317,6 +1509,8 @@ local function draw_main(t)
             draw_detail(dl, lx + lw + S(12), by, dw, bh, t)
         elseif st.tab == 'sell' then
             draw_sell(dl, x + S(16), by, w - S(32), bh, t)
+        elseif st.tab == 'watch' then
+            draw_watch(dl, x + S(16), by, w - S(32), bh, t)
         else
             draw_sales(dl, x + S(16), by, w - S(32), bh, t)
         end
@@ -1343,6 +1537,11 @@ local function tick()
     now_t = t
     if not U.frame(dt, scale, t) then return end
     SEARCH.poll()
+    PRICES.save()
+    -- the watch list, checked in the background
+    if settings.watch_poll and #settings.watch > 0 and logged_in() and clock() - st.watch_at > (settings.watch_every or 300) then
+        poll_watch()
+    end
     if st.open then
         if clock() - st.counter.at > LIMITS.scan then scan_counter() end
         if st.buy.pending and clock() - st.buy.pending.at > LIMITS.reply then
@@ -1379,6 +1578,7 @@ end)
 
 vana.events.on('unload', function ()
     save_settings()
+    PRICES.save(true)
     SEARCH.cancel_all()
     I.release_icons()
     U.release_textures()
@@ -1476,7 +1676,19 @@ vana.events.on('command', function (e)
     elseif what == 'tab' and words[3] then
         open_window()
         local tab = words[3]:lower()
-        if tab == 'buy' or tab == 'sell' or tab == 'sales' then st.tab = tab end
+        if tab == 'buy' or tab == 'sell' or tab == 'sales' or tab == 'watch' then st.tab = tab end
+    elseif what == 'watch' then
+        if words[3] == nil then
+            open_window()
+            st.tab = 'watch'
+        else
+            local id = tonumber(words[3])
+            if id == nil then
+                local hits = I.search(table.concat(words, ' ', 3), 1)
+                id = hits[1]
+            end
+            if id and I.rows[id] then toggle_watch(id, false) else say('No such item in the house') end
+        end
     elseif what == 'opacity' and tonumber(words[3]) then
         settings.opacity = math.max(40, math.min(100, tonumber(words[3]))) / 100 save_settings()
     elseif what == 'scale' and tonumber(words[3]) then
@@ -1490,7 +1702,7 @@ vana.events.on('command', function (e)
             (function () local n = 0 for _ in pairs(st.lists) do n = n + 1 end return n end)(), gil(st.gil)))
         say('last error: ' .. tostring(st.last_error))
     else
-        say('/ah [show|hide|buy|sell|sales|search <name>|settings|server <host[:port]>|scale <percent>|refresh|debug]')
+        say('/ah [show|hide|buy|sell|sales|watch [<id or name>]|search <name>|settings|server <host[:port]>|scale <percent>|refresh|debug]')
     end
     return true
 end)
