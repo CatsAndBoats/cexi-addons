@@ -81,7 +81,9 @@ with no sale in 120 days dropped.
   MD5 of the payload inside. One detail worth knowing if you port this: the server reads its key as *signed* bytes,
   so any key byte of 0x80 or more sign-extends across the word in its key schedule, and the cipher's round function
   is LandSandBoat's own, not textbook Blowfish. Both are reproduced. Sockets are non-blocking and stepped from the
-  frame; the game never waits on the network.
+  frame; the game never waits on the network. A category list carries every item of the category (or, with the
+  server's `OMIT_NO_HISTORY`, every one that has ever been listed), with its single and stack counts; the stack count
+  of anything that doesn't stack is −1 (0xFFFFFFFF), which the addon reads as none.
 - The search host is read from VanaCore's log ("Game start: on <host>"), the host you logged in to; override it
   with `/ah server`.
 

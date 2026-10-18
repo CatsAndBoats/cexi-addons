@@ -427,7 +427,8 @@ local function fetch_list(cat, force)
         if r == nil then fail('list', err) st.search_error = err return end
         st.search_error = nil
         local items = {}
-        for _, it in ipairs(r.items) do items[it.id] = { single = it.single, stack = it.stack } end
+        -- the server sends -1 (0xFFFFFFFF) as the stack count of anything that doesn't stack: that is none, not many
+        for _, it in ipairs(r.items) do items[it.id] = { single = it.single < 0x80000000 and it.single or 0, stack = it.stack < 0x80000000 and it.stack or 0 } end
         st.lists[cat] = { items = items, at = clock(), total = r.total }
         st.list_at = clock()
     end)
@@ -461,6 +462,7 @@ local function fetch_history(item, stack, force)
                 stats.trend = (a - b) / b
             end
         end
+        if r.stock >= 0x80000000 then r.stock = 0 end -- -1: doesn't stack
         st.hist[key] = { sales = r.sales, stock = r.stock, category = r.category, stats = stats, at = clock() }
         PRICES.add(item, stack, r.sales)
         check_watch(item, stack)
