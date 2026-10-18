@@ -3,12 +3,8 @@
 local imgui = vana.imgui
 local U = {}
 
--- the palette: Party Finder's Aurora theme, with the shared text and status colours
-local P = {
-    bg = '#0B0D14', glass = '#12151F', card = '#171B29', card_hi = '#1F2538', line = '#262C3F', well = '#090B11',
-    accent = '#7C8CFF', accent2 = '#B07CFF', cyan = '#5BE0FF',
-    text = '#F1F3F9', dim = '#8F97AD', faint = '#5A627C', ok = '#5EE39A', warn = '#FFCC5B', danger = '#FF6B6B', gold = '#FFD166', ink = '#0B0D14',
-}
+-- the palette in use: filled from the theme (U.apply_theme); every colour is looked up from it as it's drawn
+local P = {}
 U.P = P
 local JOBS = {
     [1] = 'WAR', [2] = 'MNK', [3] = 'WHM', [4] = 'BLM', [5] = 'RDM', [6] = 'THF', [7] = 'PLD', [8] = 'DRK',
@@ -23,6 +19,99 @@ local JOB_COLOR = {
     NIN = '#6E7BD9', DRG = '#5BA8D9', SMN = '#5CD6C8', BLU = '#5BB7FF', COR = '#F0A35C', PUP = '#B9B9B9',
     DNC = '#F27FB2', SCH = '#8FB3FF', GEO = '#B5D96E', RUN = '#7A8FFF',
 }
+-- the themes: Party Finder's, palettes only (their art stays with Party Finder)
+local THEMES = {
+    { id = 'aurora', name = 'Aurora', art = 'none', focus = 0.5, palette = {
+        bg = '#0B0D14', glass = '#12151F', card = '#171B29', card_hi = '#1F2538', line = '#262C3F', well = '#090B11',
+        accent = '#7C8CFF', accent2 = '#B07CFF', cyan = '#5BE0FF' } },
+    { id = 'gems', name = 'Gems', art = 'cexi_gems', focus = 0.55, palette = {
+        bg = '#07100B', glass = '#0C1912', card = '#102118', card_hi = '#162C20', line = '#1F3A2B', well = '#050B08',
+        accent = '#35E08C', accent2 = '#B07CFF', cyan = '#7CFFC4' } },
+    { id = 'banner', name = 'Banner', art = 'cexi_banner', focus = 0.5, palette = {
+        bg = '#07100B', glass = '#0C1912', card = '#102118', card_hi = '#162C20', line = '#1F3A2B', well = '#050B08',
+        accent = '#4ADE80', accent2 = '#C9A6FF', cyan = '#9FFFD6' } },
+    { id = 'ember', name = 'Ember', art = 'cexi_ember', focus = 0.4, palette = {
+        bg = '#140B08', glass = '#1C110C', card = '#231510', card_hi = '#2E1C15', line = '#3A241B', well = '#0E0705',
+        accent = '#FF7A45', accent2 = '#FFB36B', cyan = '#FFD166' } },
+    { id = 'ranger', name = 'Ranger', art = 'cexi_ranger', focus = 0.4, palette = {
+        bg = '#0B1110', glass = '#111A18', card = '#15211F', card_hi = '#1D2C29', line = '#28393A', well = '#070C0B',
+        accent = '#5CC8B0', accent2 = '#9A7BFF', cyan = '#7FE0C9' } },
+    { id = 'inferno', name = 'Inferno', art = 'cexi_inferno', focus = 0.4, palette = {
+        bg = '#140707', glass = '#1C0B0B', card = '#241010', card_hi = '#301616', line = '#40201F', well = '#0D0404',
+        accent = '#FF4A2A', accent2 = '#FF8C42', cyan = '#FFC65B' } },
+    { id = 'ninja', name = 'Ninja', art = 'cexi_ninja', focus = 0.45, palette = {
+        bg = '#0A0C12', glass = '#10131C', card = '#151A26', card_hi = '#1C2333', line = '#28304A', well = '#06080D',
+        accent = '#5B8CFF', accent2 = '#5EC4D9', cyan = '#8FE3FF' } },
+    { id = 'harvest', name = 'Harvest', art = 'cexi_harvest', focus = 0.45, palette = {
+        bg = '#0F0A16', glass = '#160F21', card = '#1C142B', card_hi = '#261B3A', line = '#352A4C', well = '#09060E',
+        accent = '#9D7BFF', accent2 = '#FFB347', cyan = '#FFD166' } },
+    { id = 'gunslinger', name = 'Gunslinger', art = 'cexi_gunslinger', focus = 0.4, palette = {
+        bg = '#0D0E10', glass = '#141618', card = '#1A1D21', card_hi = '#23272C', line = '#30353B', well = '#08090B',
+        accent = '#B9C4CC', accent2 = '#D7B46A', cyan = '#E8EEF2' } },
+    { id = 'rose', name = 'Rose', art = 'cexi_rose', focus = 0.4, palette = {
+        bg = '#150A10', glass = '#1D0F17', card = '#26141E', card_hi = '#321B28', line = '#43263A', well = '#0D060A',
+        accent = '#FF6FA5', accent2 = '#FFA3C7', cyan = '#FFC2DB' } },
+    { id = 'bard', name = 'Bard', art = 'cexi_bard', focus = 0.35, palette = {
+        bg = '#130D1A', glass = '#1B1326', card = '#221931', card_hi = '#2E2240', line = '#3E3055', well = '#0C0812',
+        accent = '#C98BFF', accent2 = '#FF8AD6', cyan = '#E9C6FF' } },
+    { id = 'jade', name = 'Jade', art = 'cexi_jade', focus = 0.4, palette = {
+        bg = '#081412', glass = '#0E1C1A', card = '#122422', card_hi = '#192F2C', line = '#254240', well = '#050D0C',
+        accent = '#4FD1C5', accent2 = '#FF8FB8', cyan = '#A8F0E6' } },
+}
+local ARTISTS = {} -- (a theme file may name one; unused here)
+local THEME_BY_ID = {}
+for _, t in ipairs(THEMES) do THEME_BY_ID[t.id] = t end
+local SHARED = { text = '#F1F3F9', dim = '#8F97AD', faint = '#5A627C', ok = '#5EE39A', warn = '#FFCC5B', danger = '#FF6B6B', gold = '#FFD166', ink = '#0B0D14' }
+local BUILTIN_THEME_COUNT = #THEMES
+local function load_theme_files()
+    local dir = vana.paths.addon .. '\\themes'
+    for i = #THEMES, BUILTIN_THEME_COUNT + 1, -1 do THEME_BY_ID[THEMES[i].id] = nil table.remove(THEMES, i) end
+    for _, t in ipairs(THEMES) do THEME_BY_ID[t.id] = t end
+    if not vana.fs.exists(dir) then return end
+    local ok, names = pcall(vana.fs.list, dir, '.+\\.[lL][uU][aA]', 'files')
+    if not ok or names == nil then return end
+    table.sort(names)
+    for _, file in ipairs(names) do
+        local f = io.open(dir .. '\\' .. file, 'rb')
+        if f then
+            local text = f:read('*a')
+            f:close()
+            local chunk = loadstring(text, '=' .. file)
+            if chunk then
+                setfenv(chunk, {})
+                local good, theme = pcall(chunk)
+                if good and type(theme) == 'table' and type(theme.palette) == 'table' then
+                    local id = file:gsub('%.[lL][uU][aA]$', ''):lower()
+                    theme.id = id
+                    theme.name = theme.name or id
+                    theme.art = theme.art or 'none'
+                    theme.focus = tonumber(theme.focus) or 0.5
+                    theme.file = file
+                    if THEME_BY_ID[id] then
+                        for i, t in ipairs(THEMES) do if t.id == id then THEMES[i] = theme end end
+                    else
+                        THEMES[#THEMES + 1] = theme
+                    end
+                    THEME_BY_ID[id] = theme
+                    if theme.artist and theme.art ~= 'none' then ARTISTS[theme.art] = theme.artist end
+                else
+                    vana.log('auctionhouse-vanacore: themes\\' .. file .. (good and ' is not a theme table' or (': ' .. tostring(theme))))
+                end
+            else
+                vana.log('auctionhouse-vanacore: themes\\' .. file .. " didn't parse")
+            end
+        end
+    end
+end
+local function apply_theme(id)
+    local theme = THEME_BY_ID[id] or THEMES[1]
+    for k, v in pairs(SHARED) do P[k] = v end
+    for k, v in pairs(THEMES[1].palette) do P[k] = v end
+    for k, v in pairs(theme.palette) do if type(v) == 'string' and v:match('^#%x%x%x%x%x%x') then P[k] = v end end
+    return theme
+end
+apply_theme('aurora')
+U.THEMES, U.THEME_BY_ID, U.apply_theme, U.load_theme_files = THEMES, THEME_BY_ID, apply_theme, load_theme_files
 local function rgba(hex, a)
     local alpha = #hex >= 9 and tonumber(hex:sub(8, 9), 16) / 255 or 1
     return { tonumber(hex:sub(2, 3), 16) / 255, tonumber(hex:sub(4, 5), 16) / 255, tonumber(hex:sub(6, 7), 16) / 255, alpha * (a or 1) }

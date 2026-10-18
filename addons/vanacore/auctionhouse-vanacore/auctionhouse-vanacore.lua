@@ -63,7 +63,7 @@ local st = {
 local settings = {
     scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, take_over = true, search_host = '', search_port = 54002,
     sort = 'name', in_stock = false, remember = {},
-    chart = true, watch = {}, watch_poll = true, watch_every = 300,
+    chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora',
 }
 
 local function fail(where, err)
@@ -155,6 +155,14 @@ local function load_settings()
             for k, v in pairs(data) do settings[k] = v end
         end
     end
+end
+
+-- one of Party Finder's themes (or a themes\\<id>.lua of the player's own), kept with the settings
+local function set_theme(id)
+    local theme = U.apply_theme(id)
+    settings.theme = theme.id
+    save_settings()
+    return theme
 end
 
 -------------------------------------------------------------------------------
@@ -1440,6 +1448,21 @@ local function draw_settings(dl, x, y, w, h)
     local cx, cy = x + S(20), y + S(16)
     icon(dl, cx + S(8), cy + S(10), 'sliders', P.accent2, T.body)
     text(dl, cx + S(26), cy, 'SETTINGS', P.accent2, F.disp, T.h2)
+    -- the theme, in the right-hand column: Party Finder's palettes, by the same names
+    do
+        local rx, ry = x + math.floor(w * 0.58), y + S(52)
+        text(dl, rx, ry, 'THEME', P.dim, F.disp, T.small)
+        local opts = {}
+        for _, th in ipairs(U.THEMES) do opts[#opts + 1] = { id = th.id, name = th.name } end
+        local current = settings.theme or 'aurora'
+        local picked = U.dropdown(dl, '##ah_theme', rx, ry + S(40), S(170), opts, current)
+        if picked ~= current then set_theme(picked) end
+        local th = U.THEME_BY_ID[settings.theme or 'aurora'] or U.THEMES[1]
+        for i, k in ipairs({ 'accent', 'accent2', 'cyan', 'card_hi' }) do
+            dl:AddCircleFilled({ rx + S(170) + S(20) + (i - 1) * S(16), ry + S(40) }, S(6), u32(th.palette[k] or P[k]), 16)
+        end
+        text(dl, rx, ry + S(64), "The same themes as Party Finder  ·  /ah theme <name>", P.faint, F.text, T.tiny)
+    end
     if icon_button(dl, '##settings_close', x + w - S(44), y + S(10), S(28), 'xmark', P.dim, 'Close') then st.settings_open = false end
     cy = cy + S(36)
     local changed = false
@@ -1619,6 +1642,8 @@ end
 
 vana.events.on('load', function ()
     load_settings()
+    U.load_theme_files()
+    U.apply_theme(settings.theme or 'aurora')
     configure_search()
     ensure_bind()
     vana.log('auctionhouse-vanacore ' .. addon.version .. ' loaded; search server ' .. tostring(st.search_where))
@@ -1747,6 +1772,16 @@ vana.events.on('command', function (e)
             end
             if id and I.rows[id] then toggle_watch(id, false) else say('No such item in the house') end
         end
+    elseif what == 'theme' then
+        local id = (words[3] or ''):lower()
+        if U.THEME_BY_ID[id] then
+            set_theme(id)
+            say('Theme: ' .. U.THEME_BY_ID[id].name)
+        else
+            local names = {}
+            for _, th in ipairs(U.THEMES) do names[#names + 1] = th.id end
+            say('Themes: ' .. table.concat(names, ', '))
+        end
     elseif what == 'opacity' and tonumber(words[3]) then
         settings.opacity = math.max(40, math.min(100, tonumber(words[3]))) / 100 save_settings()
     elseif what == 'scale' and tonumber(words[3]) then
@@ -1773,7 +1808,7 @@ vana.events.on('command', function (e)
         if st.lists[st.category] then for _ in pairs(st.lists[st.category].items) do listed = listed + 1 end end
         say(string.format('category %d: %d items, %d up, %d known zero, %d unknown, %d rows in the list reply, in_stock %s', st.category, #ids, up, zero, unknown, listed, tostring(settings.in_stock)))
     else
-        say('/ah [show|hide|buy|sell|sales|watch [<id or name>]|search <name>|settings|server <host[:port]>|scale <percent>|refresh|debug]')
+        say('/ah [show|hide|buy|sell|sales|watch [<id or name>]|search <name>|settings|theme <name>|server <host[:port]>|scale <percent>|refresh|debug]')
     end
     return true
 end)

@@ -46,8 +46,14 @@ sells while you're on, CatsEyeXI's server says so (its `ah_announcement` module,
 the buyer and the price): the window shows it as a notice, lists it under **Sold while you were on** on that tab
 with the gil waiting in your delivery box, and keeps the sale on the item's record. The chat line stays too.
 
-**Settings** (the gear): only at an Auction Counter, talking to the counter opens this window, confirm before
+**Settings** (the gear): the theme, only at an Auction Counter, talking to the counter opens this window, confirm before
 bidding, the price graph, background checks of watched items, opacity, scale, and the search server in use.
+
+**Themes.** The same twelve themes as Party Finder, by the same names (Aurora, Gems, Banner, Ember, Ranger, Inferno,
+Ninja, Harvest, Gunslinger, Rose, Bard, Jade): their colours only, the art stays with Party Finder. Pick one in
+Settings or with `/ah theme <name>`. A `themes\<id>.lua` in the addon's folder adds one of your own or replaces a
+built-in one, in Party Finder's format (`return { name = '…', palette = { bg = '#…', glass, card, card_hi, line,
+well, accent, accent2, cyan } }`).
 
 ## Commands
 
@@ -59,6 +65,7 @@ bidding, the price graph, background checks of watched items, opacity, scale, an
 | `/ah search <name>` | Open with a name search |
 | `/ah pick <id or name>` | Open on an item's card |
 | `/ah server <host[:port]>` | Which search server to ask; `/ah server auto` finds it from your login again |
+| `/ah theme <name>` | Switch theme; `/ah theme` lists them |
 | `/ah scale <percent>` | Window size, 50 to 300 |
 | `/ah opacity <percent>` | Window opacity, 40 to 100 |
 | `/ah refresh` | Forget fetched lists and histories |
@@ -100,6 +107,6 @@ with no sale in 120 days dropped.
   and slot. Regenerate from the server database when items change:
   `SELECT b.itemid, b.aH, b.stackSize, b.flags, COALESCE(e.level,0), COALESCE(e.jobs,0), COALESCE(e.slot,0) FROM item_basic b LEFT JOIN item_equipment e ON e.itemId = b.itemid WHERE b.aH > 0 ORDER BY b.itemid`
   into `{id,cat,stack,flags,level,jobs,slot},` rows.
-- `ui.lua` — the drawing kit, generated from the Party Finder addon's helpers by `tools/make_ui.py` so the two look
-  the same; edit there, not here
+- `ui.lua` — the drawing kit and the themes, generated from the Party Finder addon's helpers by `tools/make_ui.py`
+  so the two look the same; edit there, not here
 - `fonts/` — Inter and Rajdhani (SIL Open Font License, licenses included); `images/jobs.png` — the job sprites

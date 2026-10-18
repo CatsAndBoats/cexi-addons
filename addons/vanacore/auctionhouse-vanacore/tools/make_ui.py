@@ -35,12 +35,8 @@ parts.append('''-- The drawing kit: the Party Finder addon's helpers, gathered s
 local imgui = vana.imgui
 local U = {}
 
--- the palette: Party Finder's Aurora theme, with the shared text and status colours
-local P = {
-    bg = '#0B0D14', glass = '#12151F', card = '#171B29', card_hi = '#1F2538', line = '#262C3F', well = '#090B11',
-    accent = '#7C8CFF', accent2 = '#B07CFF', cyan = '#5BE0FF',
-    text = '#F1F3F9', dim = '#8F97AD', faint = '#5A627C', ok = '#5EE39A', warn = '#FFCC5B', danger = '#FF6B6B', gold = '#FFD166', ink = '#0B0D14',
-}
+-- the palette in use: filled from the theme (U.apply_theme); every colour is looked up from it as it's drawn
+local P = {}
 U.P = P
 local JOBS = {
     [1] = 'WAR', [2] = 'MNK', [3] = 'WHM', [4] = 'BLM', [5] = 'RDM', [6] = 'THF', [7] = 'PLD', [8] = 'DRK',
@@ -50,6 +46,18 @@ local JOBS = {
 U.JOBS = JOBS
 ''')
 parts += block(r'^local JOB_COLOR = \{', r'^\}')
+# Party Finder's themes: the same palettes by the same ids, so a player's pick reads the same in both; the art that
+# comes with some of them is Party Finder's and isn't used here
+parts.append('-- the themes: Party Finder\'s, palettes only (their art stays with Party Finder)')
+parts += block(r'^local THEMES = \{', r'^\}')
+parts.append('local ARTISTS = {} -- (a theme file may name one; unused here)')
+parts += block(r'^local THEME_BY_ID = \{\}', r'^for _, t in ipairs\(THEMES\)')
+parts += block(r'^local SHARED = \{', r'^local SHARED = \{')
+parts += block(r'^local BUILTIN_THEME_COUNT', r'^local BUILTIN_THEME_COUNT')
+parts += [l.replace('partyfinder-vanacore', 'auctionhouse-vanacore') for l in func('load_theme_files')]
+parts += func('apply_theme')
+parts.append("apply_theme('aurora')")
+parts.append('U.THEMES, U.THEME_BY_ID, U.apply_theme, U.load_theme_files = THEMES, THEME_BY_ID, apply_theme, load_theme_files')
 parts += fix(func('rgba'))
 parts.append('local WINDOW_ALPHA = 1 -- the window opacity while the main window draws')
 parts += fix(func('u32'))
