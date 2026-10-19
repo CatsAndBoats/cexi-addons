@@ -107,6 +107,6 @@ with no sale in 120 days dropped.
   and slot. Regenerate from the server database when items change:
   `SELECT b.itemid, b.aH, b.stackSize, b.flags, COALESCE(e.level,0), COALESCE(e.jobs,0), COALESCE(e.slot,0) FROM item_basic b LEFT JOIN item_equipment e ON e.itemId = b.itemid WHERE b.aH > 0 ORDER BY b.itemid`
   into `{id,cat,stack,flags,level,jobs,slot},` rows.
-- `ui.lua` — the drawing kit and the themes, generated from the Party Finder addon's helpers by `tools/make_ui.py`
+- `ui.lua` — the drawing kit and the themes, generated from the Party Finder addon's helpers by this repo's `tools/make_ui.py`
   so the two look the same; edit there, not here
 - `fonts/` — Inter and Rajdhani (SIL Open Font License, licenses included); `images/jobs.png` — the job sprites

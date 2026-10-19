@@ -1,8 +1,10 @@
 """Builds ui.lua, the auction house addon's drawing kit, out of the Party Finder addon's helper functions so the two look
 the same. Functions are copied by name; the animation state they kept in `st` moves to a module table."""
-import re, sys
-SRC = '/private/tmp/claude-501/-Users-tal-gc-tracker/a1d64971-1a75-4bcd-903b-311fb1372d59/scratchpad/build/partyfinder-vanacore.lua'
-OUT = sys.argv[1]
+import os, re, sys
+# run from anywhere: python tools/make_ui.py [out]; the source is Party Finder's addon in this repo
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC = os.path.join(ROOT, 'addons', 'vanacore', 'partyfinder-vanacore', 'partyfinder-vanacore.lua')
+OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'addons', 'vanacore', 'auctionhouse-vanacore', 'ui.lua')
 lines = open(SRC).read().split('\n')
 
 def func(name):
