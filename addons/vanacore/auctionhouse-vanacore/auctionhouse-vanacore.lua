@@ -40,7 +40,7 @@ local RESULT = { Ok = 1, Fail = 197, Wait = 246, Unable = 0xC5, Full = 0xE5 }
 
 -- how far from a counter the house still serves you (yalms), how long fetched lists and histories stay fresh (s),
 -- how often the sales list may be asked for (the server says 5 s), how long to wait on the server before saying so
-local LIMITS = { counter = 6, list = 90, history = 45, sales = 5.5, reply = 6, scan = 0.5, inventory = 2 }
+local LIMITS = { counter = 6, list = 90, history = 45, sales = 5.5, reply = 6, scan = 0.5, inventory = 2, retry = 8 }
 
 -------------------------------------------------------------------------------
 -- State and settings
@@ -57,7 +57,7 @@ local st = {
     inventory = {}, inv_at = 0, gil = 0,
     main = nil, settings_open = false, confirm = nil, last_error = nil, counts = { pin = 0, pout = 0 },
     anim = {}, list_at = 0, opened_at = 0, group_open = {}, hover = {},
-    watch_at = 0, watch_state = {}, watch_buf = {}, sold = {},
+    watch_at = 0, watch_state = {}, watch_buf = {}, sold = {}, hist_fail = {},
 }
 
 local settings = {
@@ -65,6 +65,14 @@ local settings = {
     sort = 'name', in_stock = false, remember = {},
     chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora',
 }
+
+local function copy(v)
+    if type(v) ~= 'table' then return v end
+    local t = {}
+    for k, x in pairs(v) do t[k] = copy(x) end
+    return t
+end
+local DEFAULTS = copy(settings) -- what a character with no settings file starts from
 
 local function fail(where, err)
     st.last_error = where .. ': ' .. tostring(err)
@@ -93,8 +101,12 @@ local function ago(unix)
     return math.floor(d / (86400 * 30)) .. 'mo ago'
 end
 
+-- your own entity: at your party slot's index (0x400 is only the first player who entered the zone, not you)
 local function me()
-    local ok, e = pcall(vana.game.entity, 0x400)
+    local okp, party = pcall(vana.game.party)
+    local m = okp and type(party) == 'table' and type(party.members) == 'table' and party.members[1] or nil
+    if m == nil or m.target_index == nil or m.target_index == 0 then return nil end
+    local ok, e = pcall(vana.game.entity, m.target_index)
     if ok and type(e) == 'table' and e.name and e.name ~= '' then return e end
     return nil
 end
@@ -145,9 +157,20 @@ local function save_settings()
     f:close()
 end
 
+-- the character's own settings (read again when the character changes, or when its name is first known)
 local function load_settings()
+    for k in pairs(settings) do settings[k] = nil end
+    for k, v in pairs(DEFAULTS) do settings[k] = copy(v) end
+    st.settings_for = my_name()
     local path = settings_file()
-    if not vana.fs.exists(path) then return end
+    if not vana.fs.exists(path) then
+        -- a first run: sized for the screen, since 100% is tiny on a 4K or Retina one
+        local ok, _, sh = pcall(vana.ui.screen)
+        if ok and type(sh) == 'number' and sh > 0 then
+            settings.scale = math.max(100, math.min(250, math.floor(sh / 1080 * 10 + 0.5) * 10))
+        end
+        return
+    end
     local ok, chunk = pcall(loadfile, path)
     if ok and chunk then
         local ok2, data = pcall(chunk)
@@ -369,9 +392,10 @@ local function on_packet(e)
         st.buy.pending = nil
         local item, price, qty = u16(d, 0x0C), rd32(d, 0x08), rd32(d, 0x10)
         if result == RESULT.Ok then
+            -- (the game says it in chat too: "You buy the ... for ... gil")
             U.toast('ok', 'Bought ' .. I.name(item), (qty > 1 and (qty .. ' for ') or '') .. gil(price) .. ' gil', 5, 'cart-shopping')
-            say('Bought ' .. I.name(item) .. (qty > 1 and (' x' .. qty) or '') .. ' for ' .. gil(price) .. ' gil.')
             forget_history(item)
+            st.inv_at = 0 -- the gil changes a moment after this reply: read the bag again on the next frame or two
             local cat = I.category_of(item)
             if cat and st.lists[cat] and st.lists[cat].items[item] then
                 local row = st.lists[cat].items[item]
@@ -429,10 +453,13 @@ local function fetch_list(cat, force)
     local have = st.lists[cat]
     if not force and have and clock() - have.at < LIMITS.list then return end
     if st.fetching['cat' .. cat] then return end
+    -- after a failure, not again for a few seconds (rows on screen ask for their category's list every frame)
+    if st.hist_fail['cat' .. cat] and clock() - st.hist_fail['cat' .. cat] < LIMITS.retry then return end
     st.fetching['cat' .. cat] = clock()
     SEARCH.list(cat, function (r, err)
         st.fetching['cat' .. cat] = nil
-        if r == nil then fail('list', err) st.search_error = err return end
+        if r == nil then fail('list', err) st.search_error = err st.hist_fail['cat' .. cat] = clock() return end
+        st.hist_fail['cat' .. cat] = nil
         st.search_error = nil
         local items = {}
         -- the server sends -1 (0xFFFFFFFF) as the stack count of anything that doesn't stack: that is none, not many
@@ -447,10 +474,13 @@ local function fetch_history(item, stack, force)
     local have = st.hist[key]
     if not force and have and clock() - have.at < LIMITS.history then return end
     if st.fetching[key] then return end
+    -- after a failure, not again for a few seconds: an unreachable server would otherwise be asked every frame
+    if st.hist_fail[key] and clock() - st.hist_fail[key] < LIMITS.retry then return end
     st.fetching[key] = clock()
     SEARCH.history(item, stack, function (r, err)
         st.fetching[key] = nil
-        if r == nil then fail('history', err) st.search_error = err return end
+        if r == nil then fail('history', err) st.search_error = err st.hist_fail[key] = clock() return end
+        st.hist_fail[key] = nil
         st.search_error = nil
         table.sort(r.sales, function (a, b) return a.date > b.date end)
         local prices = {}
@@ -460,14 +490,20 @@ local function fetch_history(item, stack, force)
         if #prices > 0 then
             local mid = math.floor((#prices + 1) / 2)
             stats = { n = #prices, low = prices[1], high = prices[#prices], median = #prices % 2 == 1 and prices[mid] or math.floor((prices[mid] + prices[mid + 1]) / 2), last = r.sales[1].price }
-            -- the trend: the newest three against the three before them
+            -- the trend: the newest three sales against the ones before them, by their medians so that one odd sale
+            -- (a stack sold for ten times the rest) doesn't swing it
             if #r.sales >= 4 then
-                local recent, older, nr, no = 0, 0, 0, 0
-                for i, sale in ipairs(r.sales) do
-                    if i <= 3 then recent, nr = recent + sale.price, nr + 1 else older, no = older + sale.price, no + 1 end
+                local function median(list)
+                    table.sort(list)
+                    local m = math.floor((#list + 1) / 2)
+                    return #list % 2 == 1 and list[m] or (list[m] + list[m + 1]) / 2
                 end
-                local a, b = recent / nr, older / no
-                stats.trend = (a - b) / b
+                local recent, older = {}, {}
+                for i, sale in ipairs(r.sales) do
+                    if i <= 3 then recent[#recent + 1] = sale.price else older[#older + 1] = sale.price end
+                end
+                local a, b = median(recent), median(older)
+                if b > 0 then stats.trend = (a - b) / b end
             end
         end
         if r.stock >= 0x80000000 then r.stock = 0 end -- -1: doesn't stack
@@ -509,6 +545,19 @@ local function select_item(id)
     if r.stack > 1 then fetch_history(id, true) end
 end
 
+-- search results span categories, and a category's list is where its stock comes from: the first few are asked for
+local function fetch_result_lists()
+    local seen, n = {}, 0
+    for _, id in ipairs(st.results or {}) do
+        local cat = I.category_of(id)
+        if cat and not seen[cat] then
+            seen[cat], n = true, n + 1
+            fetch_list(cat)
+            if n >= 6 then break end
+        end
+    end
+end
+
 -------------------------------------------------------------------------------
 -- Where you are: the counter, the zone
 -------------------------------------------------------------------------------
@@ -541,6 +590,7 @@ end
 local function do_buy(item, price, stack)
     if not may_trade() then say('Stand by an Auction Counter to buy.') return end
     if price <= 0 then return end
+    if price > 999999999 then U.toast('danger', 'Too high', 'The house takes bids up to 999,999,999 gil', 4, 'ban') return end
     if price > st.gil then U.toast('danger', 'Not enough gil', 'You have ' .. gil(st.gil) .. ' gil', 4, 'coins') return end
     st.buy.pending = { item = item, price = price, stack = stack, at = clock() }
     send_bid(item, price, stack)
@@ -548,6 +598,7 @@ end
 
 local function do_ask(slot, item, price, stack)
     if not may_trade() then say('Stand by an Auction Counter to sell.') return end
+    if price > 999999999 then U.toast('danger', 'Too high', 'The house takes prices up to 999,999,999 gil', 4, 'ban') return end
     st.sell.pending = true
     st.sell.at = clock()
     st.sell.ask_price = price
@@ -566,6 +617,7 @@ end
 local function do_cancel(slot)
     if not may_trade() then say('Stand by an Auction Counter.') return end
     st.cancel_pending = slot
+    st.cancel_at = clock()
     send_cancel(slot)
 end
 
@@ -588,17 +640,23 @@ end
 -- one of your listings sold (the server's AH announcement module says so, by the item's server name, the buyer and the
 -- price): a notice, the sale marked on the My Sales tab, and the price kept on the item's record
 local function on_sold(name, buyer, price)
-    local id = nil
+    -- which listing: one of yours. The server names the item by its internal name (underscores as spaces), which can
+    -- differ from the name the game shows, so your listings are matched by price first, then by name
     local lname = name:lower()
-    local hits = I.search(name, 8)
-    for _, cand in ipairs(hits) do
-        if I.name(cand):lower() == lname then id = cand break end
-    end
-    id = id or hits[1]
-    -- which listing: the server doesn't say single or stack, so the one up at that price, else the only one of the item
     local row = nil
     for _, r in pairs(st.sales) do
-        if r.id == id and (row == nil or (r.price == price and row.price ~= price)) then row = r end
+        if r.price == price and (row == nil or I.name(r.id):lower() == lname) then row = r end
+    end
+    if row == nil then
+        for _, r in pairs(st.sales) do
+            if I.name(r.id):lower() == lname then row = r break end
+        end
+    end
+    local id = row and row.id or nil
+    if id == nil then
+        for _, cand in ipairs(I.search(name, 8)) do
+            if I.name(cand):lower() == lname then id = cand break end
+        end
     end
     local stack = row and row.stack or false
     -- the sales list is only ever what's still up: the sold one leaves it on the next refresh, so it's remembered here
@@ -606,7 +664,12 @@ local function on_sold(name, buyer, price)
     while #st.sold > 10 do table.remove(st.sold) end
     if row then st.sales[row.slot + 1] = nil end
     st.sales_dirty = true
-    if id then PRICES.add(id, stack, { { price = price, date = os.time(), seller = my_name(), buyer = buyer } }) end
+    -- the price record gets the sale from the house's own history, with its time (recording it here too would count it
+    -- twice)
+    if id then
+        forget_history(id)
+        fetch_history(id, stack, true)
+    end
     local what = id and I.name(id) or name
     U.toast('ok', 'Sold!', what .. (stack and ' (stack)' or '') .. '  ·  ' .. gil(price) .. ' gil from ' .. buyer, 8, 'sack-dollar')
 end
@@ -634,7 +697,8 @@ local function ensure_bind()
     local ok, list = pcall(vana.binds.list)
     if ok and type(list) == 'table' then
         for _, b in pairs(list) do
-            local key = type(b) == 'table' and (b.key or b[1]) or nil
+            -- spec is the bind as written ('^A'); key is only the letter ('A')
+            local key = type(b) == 'table' and (b.spec or b[1]) or nil
             local cmd = type(b) == 'table' and (b.command or b[2]) or nil
             if type(key) == 'string' and key:lower() == settings.keybind:lower() then
                 if type(cmd) == 'string' and cmd:find('/ah', 1, true) then return end
@@ -824,7 +888,7 @@ local function draw_tabs(dl, x, y, w)
         end)
         if changed then
             local q = st.query[1] or ''
-            if #q >= 2 then st.results, st.result_total = I.search(q, 80) else st.results = nil end
+            if #q >= 2 then st.results, st.result_total = I.search(q, 80) fetch_result_lists() else st.results = nil end
             st.list_at = clock()
         end
         icon(dl, sx + sw - S(16), y + h / 2, (st.query[1] or '') ~= '' and 'xmark' or 'magnifying-glass', P.dim, T.small)
@@ -894,6 +958,9 @@ end
 local function draw_item_row(dl, id, x, y, w, alpha)
     local h = S(56)
     local key = '##item' .. id
+    -- a search result from a category not fetched yet: its list carries the stock (only rows on screen are drawn)
+    local cat = I.category_of(id)
+    if cat and st.lists[cat] == nil then fetch_list(cat) end
     imgui.SetCursorScreenPos({ x, y })
     local pressed, hovered, hv = hit(key, w, h)
     local selected = st.selected == id
@@ -915,7 +982,7 @@ local function draw_item_row(dl, id, x, y, w, alpha)
     end
     if pressed then
         U.ripple_at(key)
-        select_item(selected and nil or id)
+        if selected then select_item(nil) else select_item(id) end
     end
     if hovered and imgui.IsMouseDoubleClicked(0) and not selected then select_item(id) end
     return h
@@ -928,6 +995,9 @@ local function draw_list(dl, x, y, w, h, t)
     else
         ids = I.category(st.category)
         title = (I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' items'
+    end
+    -- the sort, for a category and for search results alike (NAME keeps a search's best matches first)
+    do
         if settings.sort == 'level' then
             local copy = {}
             for i, id in ipairs(ids) do copy[i] = id end
@@ -1089,6 +1159,8 @@ local function draw_detail(dl, x, y, w, h, t)
     end
     -- the history
     local hs = history_of(id, st.stack)
+    -- gone after a purchase or a sale (it changed): asked for again (fetch_history waits out a failure)
+    if hs == nil then fetch_history(id, st.stack) end
     text(dl, cx, cy, 'RECENT SALES', P.accent, F.disp, T.small)
     if st.fetching[id .. '/' .. (st.stack and 1 or 0)] then text(dl, x + w - S(48) - measure('fetching…', F.text, T.tiny), cy + S(2), 'fetching…', P.cyan, F.text, T.tiny) end
     if icon_button(dl, '##chart_toggle', x + w - S(42), cy - S(5), S(24), 'chart-line', settings.chart and P.cyan or P.faint, settings.chart and 'Hide the price graph' or 'Show the price graph') then
@@ -1126,7 +1198,8 @@ local function draw_detail(dl, x, y, w, h, t)
         -- the graph: every sale this character has seen, not only the house's last ten
         if settings.chart then
             local series = PRICES.series(id, st.stack)
-            local gh = S(112)
+            -- leaves room for at least three rows of sales under it
+            local gh = math.max(S(64), math.min(S(112), bottom - cy - S(8) - S(19) * 3))
             panel(dl, cx, cy, w - S(32), gh, P.well, 0.6, S(8))
             PRICES.chart(dl, cx + S(4), cy + S(4), w - S(40), gh - S(8), series, { color = P.cyan, median = s.median, key = '##chart' .. id })
             local n = #series
@@ -1134,16 +1207,23 @@ local function draw_detail(dl, x, y, w, h, t)
             text(dl, x + w - S(20) - measure(note, F.text, T.tiny - 1), cy + S(6), note, P.faint, F.text, T.tiny - 1)
             cy = cy + gh + S(8)
         end
-        -- the rows: price, when, who
-        for i, sale in ipairs(hs.sales) do
-            if cy + S(18) > bottom then break end
-            local pl = gil(sale.price)
-            text(dl, cx, cy, pl, i == 1 and GOLD or P.text, F.semi, T.small)
-            local when = ago(sale.date)
-            text(dl, cx + S(96), cy, when, P.dim, F.text, T.small)
-            local who = fit(sale.seller .. ' → ' .. sale.buyer, F.text, T.tiny, w - S(190))
-            text(dl, x + w - S(16) - measure(who, F.text, T.tiny), cy + S(2), who, P.faint, F.text, T.tiny)
-            cy = cy + S(19)
+        -- the rows: price, when, who, in an area of their own that scrolls (with the graph shown, ten don't fit)
+        local rows_h = bottom - cy
+        if rows_h > S(18) then
+            imgui.SetCursorScreenPos({ cx, cy })
+            imgui.BeginChild('##hist_rows', { w - S(24), rows_h }, false, 0)
+            local cdl = imgui.GetWindowDrawList()
+            local ry = cy - imgui.GetScrollY()
+            for i, sale in ipairs(hs.sales) do
+                text(cdl, cx, ry, gil(sale.price), i == 1 and GOLD or P.text, F.semi, T.small)
+                text(cdl, cx + S(96), ry, ago(sale.date), P.dim, F.text, T.small)
+                local who = fit(sale.seller .. ' → ' .. sale.buyer, F.text, T.tiny, w - S(190))
+                text(cdl, x + w - S(16) - measure(who, F.text, T.tiny), ry + S(2), who, P.faint, F.text, T.tiny)
+                ry = ry + S(19)
+            end
+            imgui.SetCursorScreenPos({ cx, ry })
+            imgui.Dummy({ 1, 1 })
+            imgui.EndChild()
         end
     end
     -- the buy box, at the bottom
@@ -1555,6 +1635,8 @@ local function draw_main(t)
     U.push_theme()
     local open = { st.open }
     if imgui.Begin('##auctionhouse', open, U.WINDOW_FLAGS) then
+        -- drawn under pcall so an error can't skip End and the theme's pop: an unbalanced ImGui stack takes the game down
+        local drew, err = pcall(function ()
         local dl = imgui.GetWindowDrawList()
         local x, y = imgui.GetWindowPos()
         local cx, cy = math.max(0, math.min(x, sw - w)), math.max(0, math.min(y, sh - h))
@@ -1585,9 +1667,12 @@ local function draw_main(t)
         else
             draw_sales(dl, x + S(16), by, w - S(32), bh, t)
         end
-        if imgui.IsWindowFocused() and imgui.IsKeyPressed(U.KEY_ESCAPE) then
+        -- RootAndChildWindows (3): the lists, the bag and the sidebar are child windows, and a click there focuses them
+        if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) then
             if st.confirm then st.confirm = nil elseif st.settings_open then st.settings_open = false else st.open = false end
         end
+        end)
+        if not drew then fail('window', err) end
     end
     imgui.End()
     if not open[1] then st.open = false end
@@ -1610,19 +1695,34 @@ local function tick()
     SEARCH.poll()
     PRICES.save()
     -- the watch list, checked in the background
+    -- a character logged in (or switched to) since the settings were read: its own settings, search host and key
+    local name = my_name()
+    if name ~= '' and name ~= st.settings_for then
+        load_settings()
+        U.apply_theme(settings.theme or 'aurora')
+        configure_search()
+        ensure_bind()
+    end
     if settings.watch_poll and #settings.watch > 0 and logged_in() and clock() - st.watch_at > (settings.watch_every or 300) then
         poll_watch()
     end
+    -- replies that never came, noticed whether or not the window is open
+    if st.buy.pending and clock() - st.buy.pending.at > LIMITS.reply then
+        st.buy.pending = nil
+        U.toast('danger', 'No answer', 'The house did not answer your bid', 5, 'hourglass-end')
+    end
+    if st.sell.pending and clock() - st.sell.at > LIMITS.reply then
+        st.sell.pending = false
+        U.toast('danger', 'No answer', 'The house did not answer', 5, 'hourglass-end')
+    end
+    if st.cancel_pending ~= nil and clock() - (st.cancel_at or 0) > LIMITS.reply then
+        st.cancel_pending = nil
+        U.toast('danger', 'No answer', 'The house did not answer the take-down: refresh My Sales to see where it stands', 6, 'hourglass-end')
+    end
     if st.open then
         if clock() - st.counter.at > LIMITS.scan then scan_counter() end
-        if st.buy.pending and clock() - st.buy.pending.at > LIMITS.reply then
-            st.buy.pending = nil
-            U.toast('danger', 'No answer', 'The house did not answer your bid', 5, 'hourglass-end')
-        end
-        if st.sell.pending and clock() - st.sell.at > LIMITS.reply then
-            st.sell.pending = false
-            U.toast('danger', 'No answer', 'The house did not answer', 5, 'hourglass-end')
-        end
+        -- the bag and the gil, kept current (a purchase or a fee changes the gil a moment after the house replies)
+        if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
         if st.sales_dirty and clock() - st.sales_at > LIMITS.sales and may_trade() then
             st.sales_dirty = false
             send_sales()
@@ -1687,7 +1787,8 @@ vana.events.on('packet_in', function (e)
     elseif e.id == 0x00B then
         -- zoning: the house's state is gone with the zone
         st.open = false
-        st.sales, st.sales_open = {}, false
+        st.sales, st.sales_open, st.sales_wait = {}, false, false
+        st.cancel_pending = nil -- the server drops a take-down with the zone, without a reply
         st.lists = {}
         st.counter.near = false
     end
@@ -1712,10 +1813,16 @@ vana.events.on('command', function (e)
         st.tab = 'buy'
         st.query[1] = table.concat(words, ' ', 3)
         st.results, st.result_total = I.search(st.query[1], 80)
+        fetch_result_lists()
     elseif what == 'server' then
         local arg = words[3] or ''
         if arg == '' then say('Search server: ' .. tostring(st.search_where))
-        elseif arg == 'auto' then settings.search_host, settings.search_port = '', 54002 save_settings() configure_search() say('Search server: ' .. st.search_where)
+        elseif arg == 'auto' then
+            settings.search_host, settings.search_port = '', 54002
+            save_settings()
+            configure_search()
+            st.lists, st.hist = {}, {} -- the old server's stock and sales
+            say('Search server: ' .. st.search_where)
         else
             local host, port = arg:match('^([^:]+):?(%d*)$')
             settings.search_host = host or arg
@@ -1808,7 +1915,7 @@ vana.events.on('command', function (e)
         if st.lists[st.category] then for _ in pairs(st.lists[st.category].items) do listed = listed + 1 end end
         say(string.format('category %d: %d items, %d up, %d known zero, %d unknown, %d rows in the list reply, in_stock %s', st.category, #ids, up, zero, unknown, listed, tostring(settings.in_stock)))
     else
-        say('/ah [show|hide|buy|sell|sales|watch [<id or name>]|search <name>|settings|theme <name>|server <host[:port]>|scale <percent>|refresh|debug]')
+        say('/ah [show|hide|buy|sell|sales|watch [<id or name>]|search <name>|pick <id or name>|settings|theme <name>|server <host[:port]|auto>|scale <percent>|opacity <percent>|refresh|debug]')
     end
     return true
 end)

@@ -7,7 +7,9 @@ take it down. Item names, descriptions, stats and icons come from the game's own
 
 Nothing runs on the server. Buying, selling and your sales use the game's auction packets exactly as the native
 window does, and the search server is asked for categories, stock and history the way the game asks it, so the
-addon works on any LandSandBoat-based server, CatsEyeXI live and test included.
+addon works on any LandSandBoat-based server, CatsEyeXI live and test included, with two exceptions that
+need CatsEyeXI's server modules: **My Sales** lists your sales only because its `ah_pagination` module sends them
+when asked (on a stock server that tab stays empty), and sold notices come from its `ah_announcement` module.
 
 Talking to an Auction Counter opens it in place of the game's menu (a setting; off, the game's menu comes back),
 and so does `/ah` (Ctrl+A by default) when you're near one.

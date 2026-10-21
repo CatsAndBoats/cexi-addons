@@ -44,6 +44,7 @@ end
 function L.save(force)
     if path == nil or not dirty then return end
     if not force and os.time() - saved_at < 10 then return end
+    saved_at = os.time() -- tried now: a folder that can't be written isn't tried again every frame
     local dir = path:match('^(.*)\\[^\\]+$')
     if dir then pcall(vana.fs.create_dir, dir) end
     local f = io.open(path, 'w')
@@ -138,9 +139,10 @@ local function mouse_pos()
 end
 
 local function short_gil(n)
-    if n >= 1000000 then return string.format('%.1fM', n / 1000000):gsub('%.0M', 'M') end
+    n = math.floor(n + 0.5) -- gil is whole: the graph's middle mark is often a half
+    if n >= 1000000 then return (string.format('%.1fM', n / 1000000):gsub('%.0M', 'M')) end
     if n >= 10000 then return string.format('%.0fK', n / 1000) end
-    if n >= 1000 then return string.format('%.1fK', n / 1000):gsub('%.0K', 'K') end
+    if n >= 1000 then return (string.format('%.1fK', n / 1000):gsub('%.0K', 'K')) end
     return tostring(n)
 end
 
