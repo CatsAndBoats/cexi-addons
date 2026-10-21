@@ -699,8 +699,16 @@ local function save_settings()
 end
 
 local function load_settings()
+    st.settings_for = my_name()
     local f = io.open(settings_file(), 'rb') or io.open(old_settings_file(), 'rb')
-    if f == nil then return end
+    if f == nil then
+        -- a first run: sized for the screen, since 100% is tiny on a 4K or Retina one
+        local okscr, _, sh = pcall(vana.ui.screen)
+        if okscr and type(sh) == 'number' and sh > 0 then
+            settings.scale = math.max(100, math.min(250, math.floor(sh / 1080 * 10 + 0.5) * 10))
+        end
+        return
+    end
     local text = f:read('*a')
     f:close()
     local chunk = loadstring(text)
@@ -883,7 +891,7 @@ end
 local function on_entry(d)
     local entry = {
         category = u8(d, 0x05), job = u8(d, 0x06), level = u8(d, 0x07), zone = u16(d, 0x08), content = u16(d, 0x0A),
-        id = rd32(d, 0x0C), name = str(d, 0x10, 16), comment = str(d, 0x20, 64), role = u8(d, 0x60),
+        id = rd32(d, 0x0C), name = str(d, 0x10, 16), comment = str(d, 0x20, 64), role = u8(d, 0x60) <= 4 and u8(d, 0x60) or 0, -- (0 to 4: another client can send anything)
         type = u8(d, 0x61), party_size = u8(d, 0x62), auto = u8(d, 0x63), min_level = u8(d, 0x64),
         sub = u8(d, 0x65), sub_level = u8(d, 0x66), mode = u8(d, 0x67),
         tanks = u8(d, 0x68), healers = u8(d, 0x69), supports = u8(d, 0x6A), dps = u8(d, 0x6B),
@@ -959,6 +967,17 @@ local function on_end_list(d)
     elseif st.registered and mine == nil then
         st.registered = false
     end
+    -- a request waiting on a party whose listing is gone (withdrawn, or the party filled): it won't be answered
+    -- (a few seconds' grace, for a list that was on its way when the request went out)
+    local pj = st.pending_join
+    if pj and clock() - pj.at > 5 then
+        local still = false
+        for _, e in ipairs(st.entries) do if e.name:lower() == pj.name then still = true break end end
+        if not still then
+            toast('dim', pj.display .. "'s listing is gone", 'Your request ends with it. Try another party', 6, 'hourglass-end')
+            st.pending_join = nil
+        end
+    end
     if not st.summary_shown and settings.notify and #st.entries > 0 then
         st.summary_shown = true
         local lfg, lfm = count_type(1), count_type(2)
@@ -968,7 +987,7 @@ local function on_end_list(d)
 end
 
 local function on_join_request(d)
-    local req = { job = u8(d, 0x05), level = u8(d, 0x06), role = u8(d, 0x07), name = str(d, 0x08, 16), at = clock() }
+    local req = { job = u8(d, 0x05), level = u8(d, 0x06), role = u8(d, 0x07) <= 4 and u8(d, 0x07) or 0, name = str(d, 0x08, 16), at = clock() }
     if settings.blacklist[req.name:lower()] then
         send_join_respond(req.name, false, 2, 'You are blocked.')
         return
@@ -1291,8 +1310,10 @@ local function ensure_bind()
     if ok and list then
         for _, b in ipairs(list) do
             if b.spec == settings.keybind then
-                if b.command:find('/pf', 1, true) then st.bound = true end
-                return -- someone else's key (the old /pf): leave it
+                -- someone else's key: left alone. Ours already: bound again all the same, because on a reload the
+                -- unloading copy's /unbind is queued and runs after this load, which would leave the key unbound
+                if not (type(b.command) == 'string' and b.command:find('/pf', 1, true)) then return end
+                break
             end
         end
     end
@@ -1330,6 +1351,8 @@ local function fit(str, font, size, max_w)
     if measure(str, font, size) <= max_w then return str end
     local n = #str
     while n > 1 and measure(str:sub(1, n) .. '…', font, size) > max_w do n = n - 1 end
+    -- not in the middle of a character of several bytes ('·', '→'): half of one draws as garbage
+    while n > 1 and (str:byte(n + 1) or 0) >= 0x80 and (str:byte(n + 1) or 0) < 0xC0 do n = n - 1 end
     return str:sub(1, n) .. '…'
 end
 
@@ -3239,7 +3262,7 @@ local function draw_settings(dl, x, y, w, t)
         local th = THEME_BY_ID[settings.theme or 'aurora'] or THEMES[1]
         local sx = c2 + S(170) + S(14)
         for i, k in ipairs({ 'accent', 'accent2', 'cyan', 'card_hi' }) do
-            dl:AddCircleFilled({ sx + (i - 1) * S(16), cy }, S(6), u32(th.palette[k]), 16)
+            dl:AddCircleFilled({ sx + (i - 1) * S(16), cy }, S(6), u32(th.palette[k] or P[k]), 16)
         end
     end
     cy = cy + S(32)
@@ -3309,7 +3332,7 @@ local function draw_settings(dl, x, y, w, t)
     text_mid(dl, c2, cy, 'Scale', P.dim, F.text, T.small)
     -- the scale is applied when the slider is let go: applying it mid-drag moves the slider under the mouse
     st.scale_edit = st.scale_edit or settings.scale
-    v, _, released = slider(dl, '##s_scale', c2 + S(64), cy, c2w - S(64) - S(56), st.scale_edit, 60, 200, '%d%%')
+    v, _, released = slider(dl, '##s_scale', c2 + S(64), cy, c2w - S(64) - S(56), st.scale_edit, 50, 300, '%d%%')
     st.scale_edit = math.floor(v + 0.5)
     if released then settings.scale = st.scale_edit changed = true end
     if not imgui.IsItemActive() and not released then st.scale_edit = settings.scale end
@@ -3795,7 +3818,8 @@ local function draw_orb(t)
         -- the duty frame under it
         if st.duty.phase > 0 then
             local fw = S(320)
-            local party = vana.game.party()
+            local okp, party = pcall(vana.game.party)
+            if not okp or type(party) ~= 'table' or type(party.members) ~= 'table' then party = { members = {} } end
             local rows = {}
             local my_zone = party.members[1] and party.members[1].zone or 0
             for i = 1, 6 do
@@ -3882,8 +3906,13 @@ local function draw_main(t)
     imgui.SetNextWindowSize({ w, h }, ALWAYS)
     local open = { true }
     if imgui.Begin('##lfg_main', open, WINDOW_FLAGS) then
+        -- drawn under pcall so an error can't skip End: an unbalanced ImGui stack takes the game down
+        local drew, err = pcall(function ()
         local dl = imgui.GetWindowDrawList()
         local x, y = imgui.GetWindowPos()
+        -- kept on the screen (a larger scale grows the window past its edge)
+        local cx, cy0 = math.max(0, math.min(x, sw - w)), math.max(0, math.min(y, sh - h))
+        if cx ~= x or cy0 ~= y then imgui.SetWindowPos({ cx, cy0 }) x, y = cx, cy0 end
         -- the glass body: shadow, fill, a vignette, the edge light; the window's opacity fades all of it
         local appear = ease(math.min(1, (now_t - st.opened_at) / 0.35))
         WINDOW_ALPHA = math.max(0.3, math.min(1, settings.opacity or 0.96)) * appear
@@ -3912,11 +3941,14 @@ local function draw_main(t)
         draw_list(dl, inner_x, list_y, inner_w, list_h, t)
         draw_action_bar(dl, inner_x, y + h - S(16) - bar_h, inner_w, t)
         st.main = { x = x, y = y, w = w, h = h }
-        if imgui.IsWindowFocused() and imgui.IsKeyPressed(KEY_ESCAPE) then
+        -- RootAndChildWindows (3): the list is a child window, and a click there focuses it
+        if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(KEY_ESCAPE) then
             if st.create and st.create.open then st.create.open = false
             elseif st.settings_open then st.settings_open = false
             else st.mini = true end
         end
+        end)
+        if not drew then fail('window', err) end
     end
     imgui.End()
     WINDOW_ALPHA = 1
@@ -3938,6 +3970,11 @@ local function tick()
         load_fonts()
         load_textures()
         return -- the fonts are ready from the next frame
+    end
+    if my_name() ~= '' and my_name() ~= st.settings_for then
+        load_settings()
+        st.bound = false
+        ensure_bind()
     end
 
     if in_event() then
@@ -4172,7 +4209,7 @@ vana.events.on('command', function (e)
             tostring(st.registered), tostring(st.pfp), tostring(st.mode), tostring(st.server_version), tostring(st.gen), tostring(st.counts.last_flags), st.counts.removes or 0, tostring(F.text ~= F.icons), tostring(TEX.jobs ~= nil)))
         say('last error: ' .. tostring(st.last_error))
     else
-        say('/pf [mini|hide|show|reset|create|refresh|notify|settings [art]|handheld auto|on|off|tour|theme <name>|export|import <look>|scale <percent>|background <name>|block <name>|unblock <name>|blocklist|debug]')
+        say('/pf [mini|hide|show|reset|create|refresh|notify|settings [art]|handheld auto|on|off|tour|theme <name>|sounds <pack>|icon <name>|glyphs|export|import <look>|scale <percent>|background <name>|block <name>|unblock <name>|blocklist|debug]')
     end
     return true
 end)

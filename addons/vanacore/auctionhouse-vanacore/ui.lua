@@ -314,6 +314,8 @@ local function fit(str, font, size, max_w)
     if measure(str, font, size) <= max_w then return str end
     local n = #str
     while n > 1 and measure(str:sub(1, n) .. '…', font, size) > max_w do n = n - 1 end
+    -- not in the middle of a character of several bytes ('·', '→'): half of one draws as garbage
+    while n > 1 and (str:byte(n + 1) or 0) >= 0x80 and (str:byte(n + 1) or 0) < 0xC0 do n = n - 1 end
     return str:sub(1, n) .. '…'
 end
 
