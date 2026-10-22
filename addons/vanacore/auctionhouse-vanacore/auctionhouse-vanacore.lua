@@ -1219,11 +1219,21 @@ local function draw_list(dl, x, y, w, h, t)
             title = (I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' ' .. what .. ' of ' .. total
         end
     end
-    text(dl, x + S(6), y, title, P.dim, F.disp, T.small)
-    -- the sort, at the right
+    -- the sort, at the right; the title and the fetching note keep to the room left of it
     local sorts = { { 'name', 'NAME' }, { 'level', 'LEVEL' }, { 'stock', 'STOCK' } }
     local sw = 0
     for _, s in ipairs(sorts) do sw = sw + measure(s[2], F.disp, T.tiny) + S(22) + S(5) end
+    local room = w - sw - S(12) - S(6)
+    title = fit(title, F.disp, T.small, room)
+    text(dl, x + S(6), y, title, P.dim, F.disp, T.small)
+    -- the stock is still coming: said after the title, shorter or not at all when the line is full
+    if st.fetching['cat' .. st.category] and st.results == nil then
+        local left = room - measure(title, F.disp, T.small) - S(10)
+        local note = nil
+        if measure('fetching stock…', F.text, T.tiny) <= left then note = 'fetching stock…'
+        elseif measure('fetching…', F.text, T.tiny) <= left then note = 'fetching…' end
+        if note then text(dl, x + S(6) + measure(title, F.disp, T.small) + S(10), y + S(2), note, P.cyan, F.text, T.tiny) end
+    end
     local picked = U.segments(dl, '##sort', x + w - sw, y - S(6), S(24), sorts, settings.sort or 'name', nil, F.disp, T.tiny)
     if picked ~= settings.sort then settings.sort = picked save_settings() end
     local ly = y + S(28)
@@ -1256,10 +1266,6 @@ local function draw_list(dl, x, y, w, h, t)
     imgui.SetCursorScreenPos({ x, cy + S(2) })
     imgui.Dummy({ 1, 1 })
     imgui.EndChild()
-    -- the stock is still coming
-    if st.fetching['cat' .. st.category] and st.results == nil then
-        text(dl, x + w - S(120), y, 'fetching stock…', P.cyan, F.text, T.tiny)
-    end
 end
 
 -- the selected item: everything about it, its history, and the buy box
