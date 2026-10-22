@@ -63,7 +63,7 @@ local st = {
 local settings = {
     scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, take_over = true, search_host = '', search_port = 54002,
     sort = 'name', in_stock = false, remember = {},
-    chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora',
+    chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false,
 }
 
 local function copy(v)
@@ -558,6 +558,31 @@ local function fetch_result_lists()
     end
 end
 
+-- who would wear it: your main job and its level (your party slot) and your race (your entity), read once a second
+local function wearer()
+    local w = st.wearer
+    if w and clock() - w.at < 1 then return w end
+    local okp, party = pcall(vana.game.party)
+    local m = okp and type(party) == 'table' and type(party.members) == 'table' and party.members[1] or nil
+    local e = me()
+    w = { job = m and m.main_job or 0, level = m and m.main_job_level or 0, race = e and e.race or 0, at = clock() }
+    st.wearer = w
+    return w
+end
+
+-- whether you can wear it as you are: gear (it names jobs) for your main job, at or under your level, and for your race.
+-- The game's own masks: jobs bit n for job n, races bit n for race n (1 Hume male ... 8 Galka; 0x1FE all of them)
+local function can_equip(id)
+    local r = I.get(id)
+    if r.missing or (r.jobs or 0) == 0 then return false end
+    local w = wearer()
+    if w.job == 0 then return false end
+    if bit.band(r.jobs, bit.lshift(1, w.job)) == 0 then return false end
+    if (r.level or 0) > w.level then return false end
+    if w.race > 0 and (r.races or 0) ~= 0 and bit.band(r.races, bit.lshift(1, w.race)) == 0 then return false end
+    return true
+end
+
 -------------------------------------------------------------------------------
 -- Where you are: the counter, the zone
 -------------------------------------------------------------------------------
@@ -854,6 +879,30 @@ local function draw_header(dl, x, y, w, t)
     return h
 end
 
+-- a filter chip: a pill that's on or off, its icon and label; returns pressed and its width
+local function chip_width(label)
+    return S(22) + S(12) + S(6) + measure(label, F.disp, T.tiny)
+end
+local function filter_chip(dl, key, fx, fy, label, on, color, tip, icon_on, icon_off)
+    local gs, ch = S(12), S(24)
+    local lw = measure(label, F.disp, T.tiny)
+    local cw = chip_width(label)
+    imgui.SetCursorScreenPos({ fx, fy })
+    local pressed, hovered, hv = hit(key, cw, ch)
+    if hovered and tip then with_font(F.text, T.small, imgui.SetTooltip, tip) end
+    if on then
+        dl:AddRectFilled({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.28), S(9))
+        dl:AddRect({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.95), S(9), 15, 1)
+    else
+        dl:AddRectFilled({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.05 + 0.1 * hv), S(9))
+        dl:AddRect({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.22 + 0.4 * hv), S(9), 15, 1)
+    end
+    local fg = on and color or mix(color, P.dim, 0.45)
+    icon(dl, fx + S(11) + gs / 2, fy + ch / 2, on and icon_on or icon_off, fg, T.tiny, on and 1 or 0.55 + 0.45 * hv) -- (a font size: icon() scales it)
+    text_center(dl, fx + S(11) + gs + S(6), fy + ch / 2, lw, label, fg, F.disp, T.tiny)
+    return pressed, cw
+end
+
 local function draw_tabs(dl, x, y, w)
     local h = S(40)
     local tabs = { { 'buy', 'BUY', 'cart-shopping' }, { 'sell', 'SELL', 'tag' }, { 'sales', 'MY SALES', 'receipt' }, { 'watch', 'WATCH', 'star' } }
@@ -876,10 +925,25 @@ local function draw_tabs(dl, x, y, w)
         end
         tx = tx + tw + S(6)
     end
-    -- the search box, on the buy tab
+    -- the search box, on the buy tab, and the list's filters beside it (they filter search results too)
     if st.tab == 'buy' then
         local sw = S(300)
         local sx = x + w - S(24) - sw
+        local fy = y + (h - S(24)) / 2
+        local cx = sx - S(12) - chip_width('USABLE')
+        local wr = wearer()
+        local who = wr.job > 0 and ((U.JOBS[wr.job] or '?') .. wr.level) or 'you'
+        local tip = settings.usable and ('Showing only gear your ' .. who .. ' can wear') or ('Show only gear your ' .. who .. ' can wear (job, level and race)')
+        if filter_chip(dl, '##usable', cx, fy, 'USABLE', settings.usable, GOLD, tip, 'user-check', 'user') then
+            settings.usable = not settings.usable
+            save_settings()
+        end
+        cx = cx - S(8) - chip_width('IN STOCK')
+        tip = settings.in_stock and 'Showing only what is up for sale' or 'Show only what is up for sale'
+        if filter_chip(dl, '##instock', cx, fy, 'IN STOCK', settings.in_stock, P.ok, tip, 'square-check', 'filter') then
+            settings.in_stock = not settings.in_stock
+            save_settings()
+        end
         imgui.SetCursorScreenPos({ sx, y + S(4) })
         imgui.SetNextItemWidth(sw)
         local changed
@@ -969,7 +1033,10 @@ local function draw_item_row(dl, id, x, y, w, alpha)
     U.draw_ripples(dl, key, x, y, w, h, GOLD)
     item_icon(dl, id, x + S(10), y + S(8), S(40), alpha)
     local name = fit(r.name, F.disp, T.h2, w - S(250))
-    text(dl, x + S(60), y + S(8), name, selected and GOLD or P.text, F.disp, T.h2, alpha)
+    -- gear you can wear as you are shows yellow; gear you can't, dimmed; anything else as it was
+    local ncol = P.text
+    if (r.jobs or 0) ~= 0 then ncol = can_equip(id) and mix(P.text, GOLD, 0.75) or mix(P.text, P.dim, 0.6) end
+    text(dl, x + S(60), y + S(8), name, selected and GOLD or ncol, F.disp, T.h2, alpha)
     local line = I.jobs_line(id)
     if r.stack > 1 then line = (line ~= '' and (line .. '  ·  ') or '') .. 'Stacks of ' .. r.stack end
     text(dl, x + S(60), y + S(33), fit(line, F.text, T.tiny, w - S(250)), P.dim, F.text, T.tiny, alpha * 0.9)
@@ -1019,20 +1086,28 @@ local function draw_list(dl, x, y, w, h, t)
             ids = copy
         end
     end
-    -- the in-stock filter: only what is up right now; an item whose stock isn't known yet stays until it is
-    local hidden = 0
+    -- the filters: what's up right now (an item whose stock isn't known yet stays until it is), and what you can wear
+    local total = #ids
     if settings.in_stock then
         local keep = {}
         for _, id in ipairs(ids) do
             local single, stack = stock_of(id)
             if (single == nil and stack == nil) or (single or 0) + (stack or 0) > 0 then keep[#keep + 1] = id end
         end
-        hidden = #ids - #keep
         ids = keep
+    end
+    if settings.usable then
+        local keep = {}
+        for _, id in ipairs(ids) do if can_equip(id) then keep[#keep + 1] = id end end
+        ids = keep
+    end
+    local hidden = total - #ids
+    if settings.in_stock or settings.usable then
+        local what = settings.in_stock and settings.usable and 'usable, in stock' or settings.usable and 'usable' or 'in stock'
         if st.results then
-            title = 'SEARCH  ·  ' .. #ids .. ' in stock'
+            title = 'SEARCH  ·  ' .. #ids .. ' ' .. what
         else
-            title = (I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' in stock of ' .. (#ids + hidden)
+            title = (I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' ' .. what .. ' of ' .. total
         end
     end
     text(dl, x + S(6), y, title, P.dim, F.disp, T.small)
@@ -1042,29 +1117,6 @@ local function draw_list(dl, x, y, w, h, t)
     for _, s in ipairs(sorts) do sw = sw + measure(s[2], F.disp, T.tiny) + S(22) + S(5) end
     local picked = U.segments(dl, '##sort', x + w - sw, y - S(6), S(24), sorts, settings.sort or 'name', nil, F.disp, T.tiny)
     if picked ~= settings.sort then settings.sort = picked save_settings() end
-    -- the in-stock chip, left of the sort
-    do
-        local label = 'IN STOCK'
-        local gs = S(12)
-        local lw = measure(label, F.disp, T.tiny)
-        local cw, ch = S(22) + gs + S(6) + lw, S(24)
-        local fx, fy = x + w - sw - cw - S(12), y - S(6)
-        imgui.SetCursorScreenPos({ fx, fy })
-        local pressed, hovered, hv = hit('##instock', cw, ch)
-        if pressed then settings.in_stock = not settings.in_stock save_settings() end
-        if hovered then with_font(F.text, T.small, imgui.SetTooltip, settings.in_stock and 'Showing only what is up for sale' or 'Show only what is up for sale') end
-        local on, color = settings.in_stock, P.ok
-        if on then
-            dl:AddRectFilled({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.28), S(9))
-            dl:AddRect({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.95), S(9), 15, 1)
-        else
-            dl:AddRectFilled({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.05 + 0.1 * hv), S(9))
-            dl:AddRect({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.22 + 0.4 * hv), S(9), 15, 1)
-        end
-        local fg = on and color or mix(color, P.dim, 0.45)
-        icon(dl, fx + S(11) + gs / 2, fy + ch / 2, on and 'square-check' or 'filter', fg, gs, on and 1 or 0.55 + 0.45 * hv)
-        text_center(dl, fx + S(11) + gs + S(6), fy + ch / 2, lw, label, fg, F.disp, T.tiny)
-    end
     local ly = y + S(28)
     local lh = h - S(28)
     imgui.SetCursorScreenPos({ x, ly })
@@ -1075,9 +1127,11 @@ local function draw_list(dl, x, y, w, h, t)
     local since = clock() - st.list_at
     local shown = 0
     if #ids == 0 then
-        local why = hidden > 0 and 'Nothing in stock' or (st.results and 'Nothing by that name' or 'Nothing here')
+        local why = hidden == 0 and (st.results and 'Nothing by that name' or 'Nothing here')
+            or (settings.in_stock and settings.usable and 'Nothing up that you can wear')
+            or (settings.usable and 'Nothing here you can wear') or 'Nothing in stock'
         text_center(cdl, x, ly + S(60), w, why, P.dim, F.disp, T.h1)
-        if hidden > 0 then text_center(cdl, x, ly + S(90), w, hidden .. (hidden == 1 and ' item is' or ' items are') .. ' hidden by the in-stock filter', P.faint, F.text, T.small) end
+        if hidden > 0 then text_center(cdl, x, ly + S(90), w, hidden .. (hidden == 1 and ' item is' or ' items are') .. ' hidden by ' .. (settings.in_stock and settings.usable and 'the filters' or settings.usable and 'the Usable filter' or 'the In stock filter'), P.faint, F.text, T.small) end
         if st.results == nil and st.search_error then text_center(cdl, x, ly + S(90), w, 'Search server: ' .. tostring(st.search_error), P.danger, F.text, T.small) end
     end
     local vis_top, vis_bot = ly - S(60), ly + lh + S(60)
