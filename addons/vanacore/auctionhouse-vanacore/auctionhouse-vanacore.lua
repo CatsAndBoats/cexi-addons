@@ -781,6 +781,82 @@ local measure, with_font, u32, mix, lerp, ease = U.measure, U.with_font, U.u32, 
 local W = { w = 980, h = 640 }
 local GOLD, PALE = '#FFD166', '#FFF3C4'
 
+-- A text box that shows it has the keyboard. The game draws at the screen's full resolution, so ImGui's own caret
+-- is one physical pixel and all but vanishes on a Retina or 4K screen, and its active frame is barely lighter than
+-- its idle one. This adds a gold ring with a soft glow while typing, a lighter edge on hover, a caret of a few pixels
+-- that blinks (and holds still while you type), a dimmer placeholder so a hint never looks like a value, and, for
+-- prices, the whole number selected on click so typing replaces it. Enter in a price box does what its button does
+-- (asks the fee; a bid goes to its confirmation, never straight through).
+-- ImGui keeps the real caret position to itself; ours sits at the end of the text, which is where it is after a click
+-- that selects all, or after typing. Once the caret could have moved elsewhere (arrows, Home/End, a click inside the
+-- box), ours steps aside and ImGui's, now gold, carries on.
+-- ImGui 1.92's numbers (its input flags were renumbered in 1.91: AutoSelectAll is 1 << 12 now)
+local FIELD = { CharsDecimal = 1, AutoSelectAll = 4096, InputTextCursor = 33, TextDisabled = 1, TextSelectedBg = 53, active_frame = -10 }
+local field_state = {}
+local function field(id, hint, buf, width, size, numeric)
+    local im = imgui
+    local fs = field_state[id]
+    if fs == nil then fs = { trust = false, last = buf[1] or '', edit_at = 0 } field_state[id] = fs end
+    im.SetNextItemWidth(width)
+    im.PushStyleColor(FIELD.InputTextCursor, U.rgba(GOLD))
+    im.PushStyleColor(FIELD.TextDisabled, U.rgba(P.faint))
+    im.PushStyleColor(FIELD.TextSelectedBg, U.rgba(GOLD, 0.28))
+    local changed, caret_x
+    local ok, err = pcall(with_font, F.text, size, function ()
+        changed = im.InputTextWithHint(id, hint, buf, numeric and 10 or 48, numeric and (FIELD.CharsDecimal + FIELD.AutoSelectAll) or 0)
+        caret_x = im.CalcTextSize(buf[1] or '')
+    end)
+    im.PopStyleColor(3)
+    if not ok then error(err, 0) end
+    local x0, y0 = im.GetItemRectMin()
+    local w, h = im.GetItemRectSize()
+    local dl = im.GetWindowDrawList()
+    local active, hovered = im.IsItemActive(), im.IsItemHovered()
+    local now = clock()
+    local text_now = buf[1] or ''
+    if im.IsItemActivated() then
+        -- a price is selected whole by the click, so the caret is at its end; an empty box has it there too
+        fs.trust = numeric or text_now == ''
+        fs.edit_at = now
+    elseif active then
+        for _, k in ipairs({ 513, 514, 519, 520 }) do -- Left, Right, Home, End
+            if im.IsKeyPressed(k) then fs.trust = false end
+        end
+        if im.IsMouseClicked(0) and hovered then fs.trust = false end
+    end
+    if text_now ~= fs.last then
+        fs.last, fs.edit_at = text_now, now
+        -- typing at the end keeps the caret there (the box doesn't scroll for a number this short)
+    end
+    local r = S(9)
+    if active then
+        for i = 3, 1, -1 do
+            local g = S(2) * i
+            dl:AddRect({ x0 - g, y0 - g }, { x0 + w + g, y0 + h + g }, u32(GOLD, 0.07 * (4 - i)), r + g, 0, S(2))
+        end
+        dl:AddRect({ x0, y0 }, { x0 + w, y0 + h }, u32(GOLD, 0.9), r, 0, math.max(1, S(1.5)))
+        if fs.trust then
+            local since = now - fs.edit_at
+            if since < 0.5 or (since % 1.0) < 0.55 then
+                local cx = x0 + S(12) + (tonumber(caret_x) or 0) + 1
+                local fh = S(size)
+                local cy = y0 + (h - fh) / 2
+                dl:AddRectFilled({ cx, cy }, { cx + math.max(2, S(2)), cy + fh }, u32(GOLD, 0.95), 1)
+            end
+        end
+    elseif hovered then
+        dl:AddRect({ x0, y0 }, { x0 + w, y0 + h }, u32(P.accent, 0.45), r, 0, math.max(1, S(1)))
+        im.SetMouseCursor(1) -- the text beam
+    else
+        dl:AddRect({ x0, y0 }, { x0 + w, y0 + h }, u32(P.line, 0.9), r, 0, 1)
+    end
+    -- Enter leaves the box; tell the caller, so a price can go straight on to its button
+    local submitted = im.IsItemDeactivated() and (im.IsKeyPressed(525) or im.IsKeyPressed(627))
+    -- Esc in a box only leaves the box: the window's own Esc stands down while a box had the keyboard a frame ago
+    if active then FIELD.active_frame = im.GetFrameCount() end
+    return changed, active, submitted
+end
+
 -- the house's mark: a glass ball with a gil coin glowing inside, in the finder's style
 local function glass_gil(dl, cx, cy, size, t, alpha)
     alpha = alpha or 1
@@ -982,11 +1058,7 @@ local function draw_tabs(dl, x, y, w)
             save_settings()
         end
         imgui.SetCursorScreenPos({ sx, y + S(4) })
-        imgui.SetNextItemWidth(sw)
-        local changed
-        with_font(F.text, T.small, function ()
-            changed = imgui.InputTextWithHint('##ahsearch', 'Search every item by name', st.query, 48)
-        end)
+        local changed = field('##ahsearch', 'Search every item by name', st.query, sw, T.small, false)
         if changed then
             local q = st.query[1] or ''
             if #q >= 2 then st.results, st.result_total = I.search(q, 80) fetch_result_lists() else st.results = nil end
@@ -1325,13 +1397,11 @@ local function draw_detail(dl, x, y, w, h, t)
     text(dl, x + w - S(16) - measure(hint, F.text, T.tiny), by + S(2), hint, P.faint, F.text, T.tiny)
     by = by + S(22)
     imgui.SetCursorScreenPos({ cx, by })
-    imgui.SetNextItemWidth(w - S(32) - S(110))
-    with_font(F.text, T.body, function ()
-        imgui.InputTextWithHint('##bid', hs and hs.stats and tostring(hs.stats.last) or '0', st.buy.price, 10, 1)
-    end)
+    local _, _, entered = field('##bid', hs and hs.stats and ('last sold ' .. tostring(hs.stats.last)) or 'gil', st.buy.price, w - S(32) - S(110), T.body, true)
     local price = tonumber(st.buy.price[1]) or (hs and hs.stats and hs.stats.last) or 0
     local can = may_trade() and price > 0 and logged_in() and st.buy.pending == nil
     local label = st.buy.pending and 'Bidding…' or 'Bid'
+    if entered and can and settings.confirm_buy then st.confirm = { kind = 'buy', item = id, price = price, stack = st.stack } end
     if button(dl, '##bid_btn', x + w - S(16) - S(104), by, S(104), S(34), label, can and GOLD or P.faint, can and 'solid' or 'ghost', 'gavel') and can then
         if settings.confirm_buy then
             st.confirm = { kind = 'buy', item = id, price = price, stack = st.stack }
@@ -1435,12 +1505,8 @@ local function draw_sell(dl, x, y, w, h, t)
     text(dl, sx, sy, 'ASKING PRICE', GOLD, F.disp, T.small)
     sy = sy + S(20)
     imgui.SetCursorScreenPos({ sx, sy })
-    imgui.SetNextItemWidth(pw - S(32))
-    with_font(F.text, T.body, function ()
-        if imgui.InputTextWithHint('##ask', hs and hs.stats and tostring(hs.stats.last) or 'gil', st.sell.price, 10, 1) then
-            st.sell.fee, st.sell.asked = nil, nil
-        end
-    end)
+    local edited, _, entered = field('##ask', hs and hs.stats and ('type a price · last sold ' .. tostring(hs.stats.last)) or 'type a price in gil', st.sell.price, pw - S(32), T.body, true)
+    if edited then st.sell.fee, st.sell.asked = nil, nil end
     sy = sy + S(40)
     local price = tonumber(st.sell.price[1]) or 0
     local can = may_trade() and price > 0 and not st.sell.pending
@@ -1454,7 +1520,7 @@ local function draw_sell(dl, x, y, w, h, t)
     else
         text(dl, sx, sy, 'The house quotes its fee before you commit', P.faint, F.text, T.tiny)
         sy = sy + S(26)
-        if button(dl, '##ask_btn', sx, sy, pw - S(32), S(36), st.sell.pending and 'Asking…' or 'Ask the fee', can and P.accent or P.faint, can and 'solid' or 'ghost', 'receipt') and can then
+        if (button(dl, '##ask_btn', sx, sy, pw - S(32), S(36), st.sell.pending and 'Asking…' or 'Ask the fee', can and P.accent or P.faint, can and 'solid' or 'ghost', 'receipt') or entered) and can then
             do_ask(st.sell.slot, id, price, st.sell.stack)
         end
     end
@@ -1596,9 +1662,7 @@ local function draw_watch(dl, x, y, w, h, t)
         local buf = st.watch_buf[key]
         if buf == nil then buf = { e.under and tostring(e.under) or '' } st.watch_buf[key] = buf end
         imgui.SetCursorScreenPos({ ax, cy + S(28) })
-        imgui.SetNextItemWidth(S(100))
-        local changed
-        with_font(F.text, T.small, function () changed = imgui.InputTextWithHint('##under' .. key, 'any price', buf, 10, 1) end)
+        local changed = field('##under' .. key, 'any price', buf, S(100), T.small, true)
         if changed then
             local v = tonumber(buf[1])
             e.under = (v and v > 0) and math.floor(v) or nil
@@ -1759,7 +1823,7 @@ local function draw_main(t)
             draw_sales(dl, x + S(16), by, w - S(32), bh, t)
         end
         -- RootAndChildWindows (3): the lists, the bag and the sidebar are child windows, and a click there focuses them
-        if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) then
+        if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and imgui.GetFrameCount() - FIELD.active_frame > 1 then
             if st.confirm then st.confirm = nil elseif st.settings_open then st.settings_open = false else st.open = false end
         end
         end)

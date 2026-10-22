@@ -52,6 +52,10 @@ sells while you're on, CatsEyeXI's server says so (its `ah_announcement` module,
 the buyer and the price): the window shows it as a notice, lists it under **Sold while you were on** on that tab
 with the gil waiting in your delivery box, and keeps the sale on the item's record. The chat line stays too.
 
+**Typing a price.** The box you're typing in glows gold with a blinking caret; clicking a price box selects the
+number so typing replaces it. Enter in the asking price asks the fee, Enter in the bid box opens the bid's
+confirmation (never a bid straight away), and Esc leaves the box, then a second Esc closes the window.
+
 **Settings** (the gear): the theme, bid and sell only at an auction clerk, talking to a clerk opens this window, confirm before
 bidding, the price graph, background checks of watched items, opacity, scale, and the search server in use.
 
