@@ -101,21 +101,31 @@ function C.stats(id)
     end
     local def = s:match('DEF:%s*%+?(%d+)')
     if def then add('DEF', tonumber(def)) end
-    if (r.dmg or 0) > 0 then
-        add('DMG', r.dmg)
-        if (r.delay or 0) > 0 and r.delay < 999 then add('Delay', r.delay) end
+    -- damage and delay as the description gives them: CatsEyeXI's rebalanced weapons change the text ("DMG:45") and
+    -- leave the record's own field at retail (71), and the server goes by the text. The field only when there's none.
+    -- Hand-to-hand writes them as additions to the base ("DMG:+17 Delay:+84"): no damage a second from those.
+    local dsign, dtext = s:match('DMG:%s*(%+?)(%d+)')
+    local lsign, ltext = s:match('Delay:%s*(%+?)(%d+)')
+    local dmg = tonumber(dtext) or ((r.dmg or 0) > 0 and r.dmg or nil)
+    local delay = tonumber(ltext) or ((r.delay or 0) > 0 and r.delay < 999 and r.delay or nil)
+    if dmg and dmg > 0 then
+        add('DMG', dmg)
+        if delay then add('Delay', delay) end
+        out.added = dsign == '+' or lsign == '+'
     end
     s = s:gsub('DEF:%s*[%+%-]?%d+', ''):gsub('DMG:%s*[%+%-]?%d+', ''):gsub('Delay:%s*[%+%-]?%d+', '')
     local cond = false
+    local pet = '' -- a companion's line wraps ("Pet: Accuracy+8" / "Ranged Accuracy+8"): what follows is still the pet's
     for raw in (s .. '\n'):gmatch('([^\n]*)\n') do
         local line = trim(raw)
         if line ~= '' and cond then
             out.notes[#out.notes + 1] = line
         elseif line ~= '' then
-            local prefix = ''
+            local prefix = pet
             local head, rest = line:match('^([^:%+%-]+):%s*(.*)$')
             if head and companion(head) then
                 prefix, line = trim(head) .. ': ', rest
+                pet = prefix
             elseif head then
                 cond = true
                 out.notes[#out.notes + 1] = line
@@ -123,7 +133,7 @@ function C.stats(id)
             end
             if line then
                 -- phrases that carry a number or a capital but aren't stats: kept as notes, the stats around them read
-                for _, pat in ipairs({ 'Cannot [Ee]quip %a+', 'Converts %d+ %u%u to %u%u' }) do
+                for _, pat in ipairs({ 'Cannot [Ee]quip %a+', 'Converts %d+ %u%u to %u%u', '^Lv%.? ?%d+' }) do
                     line = line:gsub(pat, function (m) out.notes[#out.notes + 1] = m return '' end)
                 end
                 line = trim(line:gsub('%s+', ' '))
@@ -184,7 +194,7 @@ function C.diff(new_id, old_id)
     for i, k in ipairs(keys) do met[k] = i end
     local av, bv = a.v, b.v
     -- weapons: what DMG and Delay come to, damage a second (60 delay is a second)
-    if (av.dmg or 0) > 0 and (av.delay or 0) > 0 then
+    if (av.dmg or 0) > 0 and (av.delay or 0) > 0 and not a.added and not b.added then
         keys[#keys + 1] = 'dps'
         met.dps = #keys
     end
@@ -522,8 +532,12 @@ function C.card(id, mx, my, ctx)
         for _, s in ipairs(slots) do
             local wid = wearing(s)
             local replaced = s == cmp.slot
-            local tagtxt = (replaced and pair) and ('REPLACES · ' .. (SLOT[s] or ''):upper()) or ('EQUIPPED · ' .. (SLOT[s] or ''):upper())
-            local c = { id = wid, tag = { tagtxt, replaced and P.accent or P.dim, (replaced and pair) and 'arrow-right' or 'shirt' },
+            local where = (SLOT[s] or ''):upper()
+            local tag
+            if wid == nil then tag = { 'EMPTY · ' .. where, P.faint, 'plus' }
+            elseif replaced and pair then tag = { 'REPLACES · ' .. where, P.accent, 'arrow-right' }
+            else tag = { 'EQUIPPED · ' .. where, replaced and P.accent or P.dim, 'shirt' } end
+            local c = { id = wid, tag = tag,
                 quiet = true, accent = P.accent, ghost = 'Nothing in ' .. (SLOT[s] or 'that slot') }
             if wid then
                 c.sub = sub_of(wid, s)
