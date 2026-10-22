@@ -1,0 +1,65 @@
+name: Publish to R2
+
+# Publishes the VanaCore addons in addons/vanacore/ to the VanaCore build on R2, into its addons\vanacore\ folder, the
+# way CatsAndBoats/launcher's Addon Updater publishes the Ashita addons in its addons.json: only files that changed go
+# up, then launcher.json and the build's state, so the launcher fetches them on its next check. Only the vanacore tag's
+# build for now (the "tags" input). See .github/scripts/publish_r2.py.
+#
+# Secrets, the launcher repository's: R2_S3_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, and optionally
+# CLOUDFLARE_ZONE_ID + CLOUDFLARE_API_TOKEN for the cache purge.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List what would change and write nothing
+        type: boolean
+        default: false
+      addons:
+        description: Comma-separated addon folder names (blank = every addon in addons/vanacore)
+        type: string
+        default: ""
+      tags:
+        description: Comma-separated build tags to publish to
+        type: string
+        default: vanacore
+
+# One publish at a time from this repository. The launcher's own R2 writers (Addon Updater, VanaCore Release) are in
+# its r2-publish group, which doesn't reach across repositories: publish_r2.py reads launcher.json and the state again
+# just before writing them, so the window for a clash is a second or so.
+concurrency:
+  group: r2-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish addons
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Guards the diff and the file checks themselves: if either is broken, this fails before R2 is touched
+      - name: Self-check
+        run: python3 .github/scripts/test_publish_r2.py
+
+      - name: Publish
+        env:
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          ONLY: ${{ inputs.addons }}
+          TAGS: ${{ inputs.tags }}
+        run: |
+          flags=()
+          if [ "$DRY_RUN" = "true" ]; then flags+=(--dry-run); fi
+          python3 .github/scripts/publish_r2.py --only "$ONLY" --tags "$TAGS" "${flags[@]}"
