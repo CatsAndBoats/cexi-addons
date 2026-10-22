@@ -11,8 +11,10 @@ addon works on any LandSandBoat-based server, CatsEyeXI live and test included, 
 need CatsEyeXI's server modules: **My Sales** lists your sales only because its `ah_pagination` module sends them
 when asked (on a stock server that tab stays empty), and sold notices come from its `ah_announcement` module.
 
-Talking to an Auction Counter opens it in place of the game's menu (a setting; off, the game's menu comes back),
-and so does `/ah` (Ctrl+A by default) when you're near one.
+Talking to any auction clerk opens it in place of the game's menu (a setting; off, the game's menu comes back):
+the city Auction Counters and the outpost clerks of Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Nashmau and the
+rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default) opens it anywhere
+for browsing; bidding and selling need you at a clerk, which `/ah` knows once you've talked to one there (below).
 
 ## Install
 
@@ -50,7 +52,7 @@ sells while you're on, CatsEyeXI's server says so (its `ah_announcement` module,
 the buyer and the price): the window shows it as a notice, lists it under **Sold while you were on** on that tab
 with the gil waiting in your delivery box, and keeps the sale on the item's record. The chat line stays too.
 
-**Settings** (the gear): the theme, only at an Auction Counter, talking to the counter opens this window, confirm before
+**Settings** (the gear): the theme, bid and sell only at an auction clerk, talking to a clerk opens this window, confirm before
 bidding, the price graph, background checks of watched items, opacity, scale, and the search server in use.
 
 **Themes.** The same twelve themes as Party Finder, by the same names (Aurora, Gems, Banner, Ember, Ranger, Inferno,
@@ -73,7 +75,7 @@ well, accent, accent2, cyan } }`).
 | `/ah scale <percent>` | Window size, 50 to 300 |
 | `/ah opacity <percent>` | Window opacity, 40 to 100 |
 | `/ah refresh` | Forget fetched lists and histories |
-| `/ah debug` | Counters, the search server, whether a counter is near, the last error |
+| `/ah debug` | Counters, the search server, whether you're at a clerk, the last error |
 
 Settings and the watch list are kept per character in `Vanacore\config\addons\auctionhouse-vanacore\<name>.lua`; the
 price record is `prices-<search host>.lua` beside it, one per server, up to 160 sales per item and kind, series
@@ -81,14 +83,16 @@ with no sale in 120 days dropped.
 
 ## How it talks to the server
 
-- **The counter:** talking to it makes the server send `0x04C` with command `Open` (`sendMenu(AUCTION)`), nothing
-  more; the addon swallows that packet and opens its window, so the game never draws its menu and nothing is left
-  waiting server-side.
+- **The counter:** talking to any auction clerk makes the server send `0x04C` with command `Open`
+  (`sendMenu(AUCTION)`), nothing more; the addon swallows that packet and opens its window, so the game never draws
+  its menu and nothing is left waiting server-side. No NPC names are looked at. The Open is the server's word that
+  this is an auction house, and where you stood when it came is kept in your settings, per zone (`spots`): within 8
+  yalms of a kept spot counts as at the counter, so `/ah` there later can bid and sell too.
 - **Buying, selling, your sales:** packet `0x04E` out and `0x04C` in (`map/packets/c2s/0x04e_auc.h`): WorkCheck when
   the window opens, Bid, AskCommit then LotIn to sell (both carry an auction work slot 0–6 at 0x05; the server refuses
   −1 there without a word), Info for the sales list (the server's AH pagination module
   pages it six at a time; its chat lines are hidden while the window is asking), LotCancel to take one down. The
-  server checks the zone has an auction house; standing at a counter is the addon's own rule (settings).
+  server checks the zone has an auction house; standing at a clerk is the addon's own rule (settings).
 - **Categories, stock, history:** the search server (`src/search`), over TCP on the login host, port 54002. The
   addon speaks its protocol itself (`search.lua`): a length-prefixed packet, Blowfish over the body with a key made
   from 16 fixed bytes, 4 random bytes sent in the clear and, for the reply, 4 more carried inside the request; an

@@ -6,7 +6,9 @@
     you have up. It speaks the game's own auction packets (0x04E / 0x04C) for buying, selling and your sales, and asks
     the search server directly, the way the game does, for categories, stock and history. Nothing server-side.
 
-    /ah opens it. Stand by an Auction Counter, as you would.
+    /ah opens it. Talk to an auction clerk, as you would: whatever the clerk is called, in a city or an outpost, the
+    server answers with the house's Open packet, and that is what lets you bid and sell (and where you stood is kept,
+    so /ah there later can trade as well).
 ]]
 
 addon.name    = 'auctionhouse-vanacore'
@@ -38,9 +40,9 @@ local PKT = { out = 0x04E, inc = 0x04C, size = 60 }
 local CMD = { Open = 0x02, AskCommit = 0x04, Info = 0x05, WorkCheck = 0x0A, LotIn = 0x0B, LotCancel = 0x0C, LotCheck = 0x0D, Bid = 0x0E }
 local RESULT = { Ok = 1, Fail = 197, Wait = 246, Unable = 0xC5, Full = 0xE5 }
 
--- how far from a counter the house still serves you (yalms), how long fetched lists and histories stay fresh (s),
+-- how far from a spot the house was opened at it still serves you (yalms), how long fetched lists and histories stay fresh (s),
 -- how often the sales list may be asked for (the server says 5 s), how long to wait on the server before saying so
-local LIMITS = { counter = 6, list = 90, history = 45, sales = 5.5, reply = 6, scan = 0.5, inventory = 2, retry = 8 }
+local LIMITS = { counter = 8, list = 90, history = 45, sales = 5.5, reply = 6, scan = 0.5, inventory = 2, retry = 8 }
 
 -------------------------------------------------------------------------------
 -- State and settings
@@ -61,7 +63,7 @@ local st = {
 }
 
 local settings = {
-    scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, take_over = true, search_host = '', search_port = 54002,
+    scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, take_over = true, spots = {}, search_host = '', search_port = 54002,
     sort = 'name', in_stock = false, remember = {},
     chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false,
 }
@@ -292,6 +294,7 @@ local function u16(d, off) return u8(d, off) + u8(d, off + 1) * 256 end
 local function rd32(d, off) return u16(d, off) + u16(d, off + 2) * 65536 end
 
 local open_window -- defined with the actions below; the packet handler needs it first
+local remember_spot -- the same, with the counter below
 
 local function refresh_inventory()
     local ok, inv = pcall(vana.game.container, 0)
@@ -329,7 +332,11 @@ local function on_packet(e)
     local cmd, work, result, status = u8(d, 0x04), u8(d, 0x05), u8(d, 0x06), u8(d, 0x07)
     if work >= 128 then work = work - 256 end
     if cmd == CMD.Open then
+        -- a clerk was talked to (or a GM's !ah): this is the house's own word that you may trade here
         st.zone_ok = true
+        st.server_opened = true
+        pcall(remember_spot)
+        st.counter.at = 0 -- look again next frame, should the window be up already
         if settings.take_over then
             -- the counter was talked to: this window opens in place of the game's menu
             if not st.open then open_window() end
@@ -585,23 +592,53 @@ end
 
 -------------------------------------------------------------------------------
 -- Where you are: the counter, the zone
+--
+-- No NPC names: clerks are called many things (Auction Counter in the cities, people in Jeuno, Rabao, Norg,
+-- Tavnazia, Nashmau and the rest), but talking to any of them makes the server send 0x04C Open. Each time it does,
+-- the spot you stand on is kept for that zone, and being within a few yalms of a kept spot is being at the counter.
 -------------------------------------------------------------------------------
 
-local function scan_counter()
+local function here()
     local e = me()
-    if e == nil then st.counter.near = false return end
+    if e == nil or type(e.x) ~= 'number' then return nil, nil end
+    local okp, party = pcall(vana.game.party)
+    local m = okp and type(party) == 'table' and type(party.members) == 'table' and party.members[1] or nil
+    return e, m and tonumber(m.zone) or nil
+end
+
+remember_spot = function ()
+    local e, zone = here()
+    if e == nil or zone == nil then return end
+    if type(settings.spots) ~= 'table' then settings.spots = {} end
+    local list = type(settings.spots[zone]) == 'table' and settings.spots[zone] or {}
+    local near = LIMITS.counter / 2
+    for _, p in ipairs(list) do
+        local dx, dy, dz = p[1] - e.x, p[2] - e.y, p[3] - e.z
+        if dx * dx + dy * dy + dz * dz <= near * near then return end -- known already
+    end
+    if #list >= 16 then table.remove(list, 1) end
+    local r = function (v) return math.floor(v * 10 + 0.5) / 10 end
+    list[#list + 1] = { r(e.x), r(e.y), r(e.z) }
+    settings.spots[zone] = list
+    save_settings()
+end
+
+local function scan_counter()
+    st.counter.at = clock()
+    local e, zone = here()
+    local list = e and zone and type(settings.spots) == 'table' and settings.spots[zone] or nil
     local best = nil
-    for i = 0, 1023 do
-        local ok, ent = pcall(vana.game.entity, i)
-        if ok and type(ent) == 'table' and ent.name == 'Auction Counter' and ent.x then
-            local dx, dy, dz = ent.x - e.x, ent.y - e.y, ent.z - e.z
+    if type(list) == 'table' then
+        for _, p in ipairs(list) do
+            local dx, dy, dz = p[1] - e.x, p[2] - e.y, p[3] - e.z
             local d = math.sqrt(dx * dx + dy * dy + dz * dz)
             if best == nil or d < best then best = d end
         end
     end
     st.counter.dist = best
+    -- where you are can't be read: the server's word alone
+    if e == nil then st.counter.near = st.server_opened == true return end
     st.counter.near = best ~= nil and best <= LIMITS.counter
-    st.counter.at = clock()
 end
 
 local function may_trade()
@@ -613,7 +650,7 @@ end
 -------------------------------------------------------------------------------
 
 local function do_buy(item, price, stack)
-    if not may_trade() then say('Stand by an Auction Counter to buy.') return end
+    if not may_trade() then say('Talk to an auction clerk to buy.') return end
     if price <= 0 then return end
     if price > 999999999 then U.toast('danger', 'Too high', 'The house takes bids up to 999,999,999 gil', 4, 'ban') return end
     if price > st.gil then U.toast('danger', 'Not enough gil', 'You have ' .. gil(st.gil) .. ' gil', 4, 'coins') return end
@@ -622,7 +659,7 @@ local function do_buy(item, price, stack)
 end
 
 local function do_ask(slot, item, price, stack)
-    if not may_trade() then say('Stand by an Auction Counter to sell.') return end
+    if not may_trade() then say('Talk to an auction clerk to sell.') return end
     if price > 999999999 then U.toast('danger', 'Too high', 'The house takes prices up to 999,999,999 gil', 4, 'ban') return end
     st.sell.pending = true
     st.sell.at = clock()
@@ -640,7 +677,7 @@ local function do_list()
 end
 
 local function do_cancel(slot)
-    if not may_trade() then say('Stand by an Auction Counter.') return end
+    if not may_trade() then say('Talk to an auction clerk.') return end
     st.cancel_pending = slot
     st.cancel_at = clock()
     send_cancel(slot)
@@ -832,7 +869,7 @@ local function draw_header(dl, x, y, w, t)
     if not logged_in() then where = 'Not logged in'
     elseif st.counter.near then where = 'At the counter'
     elseif st.counter.dist then where = string.format('Counter %.0f yalms away', st.counter.dist)
-    else where = 'No counter nearby' end
+    else where = 'Talk to an auction clerk to trade' end
     local sub = where
     if st.lists[st.category] then
         local n = 0
@@ -1303,7 +1340,7 @@ local function draw_detail(dl, x, y, w, h, t)
         end
     end
     if not may_trade() then
-        text(dl, cx, by + S(40), 'Stand by an Auction Counter to bid', P.warn, F.text, T.tiny)
+        text(dl, cx, by + S(40), 'Talk to an auction clerk to bid', P.warn, F.text, T.tiny)
     elseif price > st.gil then
         text(dl, cx, by + S(40), "That's more gil than you have", P.warn, F.text, T.tiny)
     elseif hs and hs.stats and price > 0 and price < hs.stats.low then
@@ -1421,7 +1458,7 @@ local function draw_sell(dl, x, y, w, h, t)
             do_ask(st.sell.slot, id, price, st.sell.stack)
         end
     end
-    if not may_trade() then text(dl, sx, sy + S(44), 'Stand by an Auction Counter to sell', P.warn, F.text, T.tiny) end
+    if not may_trade() then text(dl, sx, sy + S(44), 'Talk to an auction clerk to sell', P.warn, F.text, T.tiny) end
 end
 
 -- MY SALES
@@ -1438,7 +1475,7 @@ local function draw_sales(dl, x, y, w, h, t)
     if #rows == 0 and #st.sold == 0 then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
         text_center(dl, x, y + h / 2 + S(30), w, st.sales_open and 'Nothing up for sale' or 'Ask the house', P.text, F.disp, T.h1)
-        text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and 'Sell something from your bag' or (may_trade() and 'Refresh lists what you have up' or 'Stand by an Auction Counter'), P.dim, F.text, T.small)
+        text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and 'Sell something from your bag' or (may_trade() and 'Refresh lists what you have up' or 'Talk to an auction clerk'), P.dim, F.text, T.small)
         return
     end
     for _, row in ipairs(rows) do
@@ -1601,9 +1638,9 @@ local function draw_settings(dl, x, y, w, h)
     cy = cy + S(36)
     local changed = false
     local v, ch
-    v, ch = U.toggle(dl, '##t_counter', cx, cy + S(10), 'Only at an Auction Counter', settings.near_counter) settings.near_counter = v changed = changed or ch
+    v, ch = U.toggle(dl, '##t_counter', cx, cy + S(10), 'Bid and sell only at an auction clerk', settings.near_counter) settings.near_counter = v changed = changed or ch
     cy = cy + S(34)
-    v, ch = U.toggle(dl, '##t_takeover', cx, cy + S(10), "Talking to the counter opens this, not the game's menu", settings.take_over) settings.take_over = v changed = changed or ch
+    v, ch = U.toggle(dl, '##t_takeover', cx, cy + S(10), "Talking to a clerk opens this, not the game's menu", settings.take_over) settings.take_over = v changed = changed or ch
     cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_confirm', cx, cy + S(10), 'Confirm before bidding', settings.confirm_buy) settings.confirm_buy = v changed = changed or ch
     cy = cy + S(34)
@@ -1845,6 +1882,7 @@ vana.events.on('packet_in', function (e)
         st.cancel_pending = nil -- the server drops a take-down with the zone, without a reply
         st.lists = {}
         st.counter.near = false
+        st.server_opened = false
     end
 end)
 
@@ -1951,6 +1989,7 @@ vana.events.on('command', function (e)
         st.lists, st.hist = {}, {}
         if st.open then fetch_list(st.category) if st.selected then select_item(st.selected) end end
     elseif what == 'debug' then
+        scan_counter() -- measured now, not when the window last looked
         say(string.format('in %d, out %d, search %s pending %d, counter %s (%s), zone ok %s, lists %d, gil %s',
             st.counts.pin, st.counts.pout, tostring(st.search_where), SEARCH.pending(), tostring(st.counter.near), tostring(st.counter.dist and string.format('%.1f', st.counter.dist)), tostring(st.zone_ok),
             (function () local n = 0 for _ in pairs(st.lists) do n = n + 1 end return n end)(), gil(st.gil)))
