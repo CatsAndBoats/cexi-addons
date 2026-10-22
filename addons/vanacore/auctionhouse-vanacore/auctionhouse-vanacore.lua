@@ -1046,7 +1046,7 @@ local function draw_tabs(dl, x, y, w)
         local cx = sx - S(12) - chip_width('USABLE')
         local wr = wearer()
         local who = wr.job > 0 and ((U.JOBS[wr.job] or '?') .. wr.level) or 'you'
-        local tip = settings.usable and ('Showing only gear your ' .. who .. ' can wear') or ('Show only gear your ' .. who .. ' can wear (job, level and race)')
+        local tip = settings.usable and ('Hiding gear your ' .. who .. " can't wear") or ('Hide gear your ' .. who .. " can't wear (job, level and race); everything else stays")
         if filter_chip(dl, '##usable', cx, fy, 'USABLE', settings.usable, GOLD, tip, 'user-check', 'user') then
             settings.usable = not settings.usable
             save_settings()
@@ -1215,7 +1215,8 @@ local function draw_list(dl, x, y, w, h, t)
     end
     if settings.usable then
         local keep = {}
-        for _, id in ipairs(ids) do if can_equip(id) then keep[#keep + 1] = id end end
+        -- only gear is judged: food, medicines, materials and the rest (no jobs named) anyone can use
+        for _, id in ipairs(ids) do if (I.get(id).jobs or 0) == 0 or can_equip(id) then keep[#keep + 1] = id end end
         ids = keep
     end
     local hidden = total - #ids
