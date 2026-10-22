@@ -794,11 +794,13 @@ local GOLD, PALE = '#FFD166', '#FFF3C4'
 -- ImGui 1.92's numbers (its input flags were renumbered in 1.91: AutoSelectAll is 1 << 12 now)
 local FIELD = { CharsDecimal = 1, AutoSelectAll = 4096, InputTextCursor = 33, TextDisabled = 1, TextSelectedBg = 53, active_frame = -10 }
 local field_state = {}
-local function field(id, hint, buf, width, size, numeric)
+local function field(id, hint, buf, width, size, numeric, overlap)
     local im = imgui
     local fs = field_state[id]
     if fs == nil then fs = { trust = false, last = buf[1] or '', edit_at = 0 } field_state[id] = fs end
     im.SetNextItemWidth(width)
+    -- a button laid over the box (the search box's clear) needs this to get the click: ImGui gives it to the first item
+    if overlap then im.SetNextItemAllowOverlap() end
     im.PushStyleColor(FIELD.InputTextCursor, U.rgba(GOLD))
     im.PushStyleColor(FIELD.TextDisabled, U.rgba(P.faint))
     im.PushStyleColor(FIELD.TextSelectedBg, U.rgba(GOLD, 0.28))
@@ -1065,16 +1067,25 @@ local function draw_tabs(dl, x, y, w)
             save_settings()
         end
         imgui.SetCursorScreenPos({ sx, y + S(4) })
-        local changed = field('##ahsearch', 'Search every item by name', st.query, sw, T.small, false)
+        local changed = field('##ahsearch', 'Search every item by name', st.query, sw, T.small, false, true)
         if changed then
             local q = st.query[1] or ''
             if #q >= 2 then st.results, st.result_total = I.search(q, 80) fetch_result_lists() else st.results = nil end
             st.list_at = clock()
         end
-        icon(dl, sx + sw - S(16), y + h / 2, (st.query[1] or '') ~= '' and 'xmark' or 'magnifying-glass', P.dim, T.small)
         if (st.query[1] or '') ~= '' then
-            imgui.SetCursorScreenPos({ sx + sw - S(28), y + S(6) })
-            if (hit('##clearq', S(24), S(24))) then st.query[1] = '' st.results = nil end
+            imgui.SetCursorScreenPos({ sx + sw - S(30), y + S(5) })
+            local cleared, _, chv = hit('##clearq', S(26), S(26))
+            if chv > 0.01 then dl:AddCircleFilled({ sx + sw - S(16), y + h / 2 }, S(11), u32(P.text, 0.10 * chv), 20) end
+            icon(dl, sx + sw - S(16), y + h / 2, 'xmark', mix(P.dim, P.text, chv), T.small)
+            if imgui.IsItemHovered() then imgui.SetMouseCursor(7) with_font(F.text, T.small, imgui.SetTooltip, 'Clear the search') end
+            if cleared then
+                st.query[1] = ''
+                st.results, st.result_total = nil, 0
+                st.list_at = clock()
+            end
+        else
+            icon(dl, sx + sw - S(16), y + h / 2, 'magnifying-glass', P.dim, T.small)
         end
     end
     dl:AddLine({ x + S(16), y + h }, { x + w - S(16), y + h }, u32(P.line), 1)
