@@ -25,7 +25,8 @@ to `Vanacore\scripts\boot.txt`. Needs VanaCore 0.7.47 or newer (its `vana.imgui`
 
 **Buy.** Categories are grouped on the left (Weapons, Armor, Scrolls, Items, Materials, Food, Others); a count
 beside each category is how many of its items are up right now. The list shows each item's icon, level and jobs,
-how many singles and stacks are up, and the last sale once it's known; sort it by name, level or stock, and the
+how many singles and stacks are up, and the last sale once it's known; sort it by name, level or stock (names A to Z, level and stock highest first; click the sort in use again
+to turn it round, and its arrow shows which way it runs), and the
 **In stock** chip hides everything with nothing up, and the **Usable** chip shows only gear your current main job,
 at its level, and your race can wear (both beside the search box, both remembered). Gear you can wear has a yellow
 name in the list and gear you can't is dimmed. The search box finds any listed item by

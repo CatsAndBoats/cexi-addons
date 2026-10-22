@@ -635,6 +635,7 @@ end
 
 local function segments(dl, key, x, y, h, options, value, color_of, font, size)
     local cx = x
+    local clicked = nil
     for i, opt in ipairs(options) do
         local label, glyph, tip = opt[2], opt.glyph, opt.tip
         local bare = glyph ~= nil and label == '' -- a glyph on its own: no pill around it, a ring marks the pick
@@ -643,7 +644,7 @@ local function segments(dl, key, x, y, h, options, value, color_of, font, size)
         local tw = bare and (gs + S(10)) or (S(22) + lw + gs + ((glyph and label ~= '') and S(6) or 0))
         imgui.SetCursorScreenPos({ cx, y })
         local pressed, hovered, hv = hit(key .. i, tw, h)
-        if pressed then value = opt[1] end
+        if pressed then value = opt[1] clicked = opt[1] end
         if hovered and tip then with_font(F.text, T.small, imgui.SetTooltip, tip) end
         local on = value == opt[1]
         local color = color_of and color_of(opt) or P.accent
@@ -673,7 +674,7 @@ local function segments(dl, key, x, y, h, options, value, color_of, font, size)
             cx = cx + tw + S(5)
         end
     end
-    return value, cx - x
+    return value, cx - x, clicked
 end
 
 local function toggle(dl, key, x, cy, label, value)

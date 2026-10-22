@@ -1164,6 +1164,13 @@ local function draw_item_row(dl, id, x, y, w, alpha)
     return h
 end
 
+-- each sort's own way round: names A to Z, level and stock highest first; clicking the sort again turns it round
+local SORT_DESC = { name = false, level = true, stock = true }
+local function sort_desc()
+    if settings.sort_desc ~= nil then return settings.sort_desc == true end
+    return SORT_DESC[settings.sort or 'name'] == true
+end
+
 local function draw_list(dl, x, y, w, h, t)
     local ids, title
     if st.results then
@@ -1172,27 +1179,28 @@ local function draw_list(dl, x, y, w, h, t)
         ids = I.category(st.category)
         title = (I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' items'
     end
-    -- the sort, for a category and for search results alike (NAME keeps a search's best matches first)
+    -- the sort, for a category and for search results alike (NAME A to Z keeps a search's best matches first, and a
+    -- category comes A to Z already); ties go A to Z by name
     do
+        local desc = sort_desc()
+        local function by(value)
+            local copy = {}
+            for i, id in ipairs(ids) do copy[i] = id end
+            table.sort(copy, function (a, b)
+                local va, vb = value(a), value(b)
+                if va ~= vb then if desc then return va > vb else return va < vb end end
+                local na, nb = I.name(a), I.name(b)
+                if na ~= nb then return na < nb end
+                return a < b
+            end)
+            ids = copy
+        end
         if settings.sort == 'level' then
-            local copy = {}
-            for i, id in ipairs(ids) do copy[i] = id end
-            table.sort(copy, function (a, b)
-                local la, lb = I.get(a).level, I.get(b).level
-                if la ~= lb then return la > lb end
-                return I.name(a) < I.name(b)
-            end)
-            ids = copy
+            by(function (id) return I.get(id).level or 0 end)
         elseif settings.sort == 'stock' then
-            local copy = {}
-            for i, id in ipairs(ids) do copy[i] = id end
-            table.sort(copy, function (a, b)
-                local sa1, sa2 = stock_of(a) local sb1, sb2 = stock_of(b)
-                local ta, tb = (sa1 or 0) + (sa2 or 0), (sb1 or 0) + (sb2 or 0)
-                if ta ~= tb then return ta > tb end
-                return I.name(a) < I.name(b)
-            end)
-            ids = copy
+            by(function (id) local s1, s2 = stock_of(id) return (s1 or 0) + (s2 or 0) end)
+        elseif desc then
+            by(function (id) return I.name(id) end)
         end
     end
     -- the filters: what's up right now (an item whose stock isn't known yet stays until it is), and what you can wear
@@ -1220,9 +1228,27 @@ local function draw_list(dl, x, y, w, h, t)
         end
     end
     -- the sort, at the right; the title and the fetching note keep to the room left of it
-    local sorts = { { 'name', 'NAME' }, { 'level', 'LEVEL' }, { 'stock', 'STOCK' } }
+    local current, desc = settings.sort or 'name', sort_desc()
+    local WAYS = { name = { 'A to Z', 'Z to A' }, level = { 'lowest first', 'highest first' }, stock = { 'fewest first', 'most first' } }
+    local sorts = {}
+    for _, s in ipairs({ { 'name', 'NAME' }, { 'level', 'LEVEL' }, { 'stock', 'STOCK' } }) do
+        local on = s[1] == current
+        local d = SORT_DESC[s[1]] -- (not `on and desc or …`: a false desc would fall through to the default)
+        if on then d = desc end
+        local way = WAYS[s[1]]
+        sorts[#sorts + 1] = { s[1], s[2],
+            -- a small triangle: which way round, bright on the sort in use, faint on the others
+            glyph = function (gdl, gx, gy, gs, a)
+                local hw, hh = gs * 0.24, gs * 0.2
+                local col = u32(on and P.accent or P.dim, on and 1 or 0.35 + 0.4 * (a - 0.55) / 0.45)
+                if d then gdl:AddTriangleFilled({ gx - hw, gy - hh }, { gx + hw, gy - hh }, { gx, gy + hh }, col)
+                else gdl:AddTriangleFilled({ gx - hw, gy + hh }, { gx + hw, gy + hh }, { gx, gy - hh }, col) end
+            end,
+            tip = on and ('Sorted ' .. way[d and 2 or 1] .. '; click for ' .. way[d and 1 or 2]) or ('Sort ' .. way[d and 2 or 1]) }
+    end
+    local gs = S(24) - S(8)
     local sw = 0
-    for _, s in ipairs(sorts) do sw = sw + measure(s[2], F.disp, T.tiny) + S(22) + S(5) end
+    for _, s in ipairs(sorts) do sw = sw + measure(s[2], F.disp, T.tiny) + S(22) + gs + S(6) + S(5) end
     local room = w - sw - S(12) - S(6)
     title = fit(title, F.disp, T.small, room)
     text(dl, x + S(6), y, title, P.dim, F.disp, T.small)
@@ -1234,8 +1260,14 @@ local function draw_list(dl, x, y, w, h, t)
         elseif measure('fetching…', F.text, T.tiny) <= left then note = 'fetching…' end
         if note then text(dl, x + S(6) + measure(title, F.disp, T.small) + S(10), y + S(2), note, P.cyan, F.text, T.tiny) end
     end
-    local picked = U.segments(dl, '##sort', x + w - sw, y - S(6), S(24), sorts, settings.sort or 'name', nil, F.disp, T.tiny)
-    if picked ~= settings.sort then settings.sort = picked save_settings() end
+    local _, _, clicked = U.segments(dl, '##sort', x + w - sw, y - S(6), S(24), sorts, current, nil, F.disp, T.tiny)
+    if clicked == current then
+        settings.sort_desc = not desc
+        save_settings()
+    elseif clicked then
+        settings.sort, settings.sort_desc = clicked, SORT_DESC[clicked]
+        save_settings()
+    end
     local ly = y + S(28)
     local lh = h - S(28)
     imgui.SetCursorScreenPos({ x, ly })
