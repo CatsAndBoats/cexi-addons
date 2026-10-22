@@ -20,6 +20,21 @@ Each folder has its own README with what it does, its commands and how it talks 
 Party Finder needs the server's Party Finder module (`party_finder` in the CatsEyeXI modules repo); the Auction House
 runs on any LandSandBoat server and needs nothing server-side.
 
+## Publishing to the launcher
+
+**Actions → Publish to R2 → Run workflow** puts the VanaCore addons into the launcher's VanaCore build, at
+`Vanacore\addons\vanacore\<folder>`, so players get them with the build and the launcher keeps them current. Only the
+files that changed go up. Tick *dry run* to see what would change first; *addons* narrows it to some folders, *tags*
+picks the builds (only `vanacore` for now). The Ashita Party Finder isn't published from here.
+
+- A file taken out of an addon is deleted from players' installs at the launcher's next check. A whole folder taken out
+  of this repository stays in the build until it's removed from the Manager.
+- A new addon folder also goes in the launcher's `DEPLOY_IGNORE` (`.github/scripts/push_build.py`, and the Manager's
+  `deploy_ignore`), so a VanaCore release pushed with deletes leaves it alone.
+- The workflow needs the launcher repository's R2 secrets: `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and optionally `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN` for the cache
+  purge. The script is [`.github/scripts/publish_r2.py`](.github/scripts/publish_r2.py).
+
 ## Layout rules
 
 - **A folder's name is its addon's name.** Clients load `addons\<folder>\<folder>.lua`, and the name is also what
