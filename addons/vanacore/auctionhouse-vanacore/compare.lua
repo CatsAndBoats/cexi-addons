@@ -142,8 +142,14 @@ function C.stats(id)
                     local a, b, sign, num, pct = line:find('([%+%-])(%d+)(%%?)', pos)
                     if a == nil then break end
                     local name = trim((line:sub(pos, a - 1):gsub('"', ''):gsub('%s+', ' ')))
-                    if name == '' or name:find('%d') or name:find('^%l') or line:sub(b + 1, b + 1) == '~' then ok = false break end
-                    toks[#toks + 1] = { prefix .. name .. pct, (sign == '-' and -1 or 1) * tonumber(num) }
+                    if name == '' or name:find('%d') or name:find('^%l') then ok = false break end
+                    if line:sub(b + 1, b + 1) == '~' then
+                        -- a range ("HP+14~"): it varies, so it's a note; the stats after it still read
+                        out.notes[#out.notes + 1] = prefix .. name .. sign .. num .. pct .. '~'
+                        b = b + 1
+                    else
+                        toks[#toks + 1] = { prefix .. name .. pct, (sign == '-' and -1 or 1) * tonumber(num) }
+                    end
                     pos = b + 1
                 end
                 local tail = trim(line:sub(pos))
