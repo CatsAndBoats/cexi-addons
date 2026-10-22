@@ -717,7 +717,8 @@ local function load_settings()
     if ok and type(saved) == 'table' then
         for k, v in pairs(saved) do settings[k] = v end
     end
-    st.mini = settings.start_mini == true
+    -- the beacon or the window as it was left (kept in settings.mini), or the beacon when "Start as the beacon" says so
+    st.mini = settings.start_mini == true or settings.mini == true
     load_theme_files()
     apply_theme(settings.theme or 'aurora')
 end
@@ -3976,8 +3977,15 @@ local function tick()
         st.bound = false
         ensure_bind()
     end
+    -- the beacon or the window, kept with the settings, so a zone, a reload or the next session comes back the same
+    if st.mini ~= nil and st.mini ~= settings.mini and not st.duty_minimized then
+        settings.mini = st.mini
+        save_settings()
+    end
 
-    if in_event() then
+    -- in an event (a cutscene or an NPC's conversation), from its event packet to the server's release, or with the
+    -- player's status saying so: the finder and its beacon step aside and come back as they were
+    if st.event_on or in_event() then
         if not st.cs_hidden then
             st.cs_hidden, st.was_open = true, st.open
             st.open = false
@@ -4086,9 +4094,14 @@ vana.events.on('packet_in', function (e)
             if not hide and st.mode ~= nil then hide = (st.mode == 1) ~= (d:find('[CW]', 1, true) ~= nil) end
             if hide then e.blocked = true return true end
         end
+    elseif e.id == 0x032 or e.id == 0x033 or e.id == 0x034 then
+        st.event_on = true -- an event started (0x032/0x033/0x034); passed on to the game untouched
+    elseif e.id == 0x052 then
+        st.event_on = false -- the server released the player: the event is over
     elseif e.id == 0x00A then
         pcall(on_zone_in)
     elseif e.id == 0x00B then
+        st.event_on = false -- an event doesn't outlive the zone
         pcall(on_zone_out, e)
     end
 end)
@@ -4207,6 +4220,9 @@ vana.events.on('command', function (e)
     elseif what == 'debug' then
         say(string.format('in %d, out %d, listings %d, registered %s, pfp %s, mode %s, server v%s gen %s (end flags %s, removes %d), fonts %s, textures %s', st.counts.pin, st.counts.pout, #st.entries,
             tostring(st.registered), tostring(st.pfp), tostring(st.mode), tostring(st.server_version), tostring(st.gen), tostring(st.counts.last_flags), st.counts.removes or 0, tostring(F.text ~= F.icons), tostring(TEX.jobs ~= nil)))
+        say(string.format('open %s, mini %s (kept %s, start %s), event %s, hidden for it %s, duty phase %s (tucked %s), name %q, settings for %q',
+            tostring(st.open), tostring(st.mini), tostring(settings.mini), tostring(settings.start_mini), tostring(st.event_on), tostring(st.cs_hidden),
+            tostring(st.duty and st.duty.phase), tostring(st.duty_minimized), my_name(), tostring(st.settings_for)))
         say('last error: ' .. tostring(st.last_error))
     else
         say('/pf [mini|hide|show|reset|create|refresh|notify|settings [art]|handheld auto|on|off|tour|theme <name>|sounds <pack>|icon <name>|glyphs|export|import <look>|scale <percent>|background <name>|block <name>|unblock <name>|blocklist|debug]')

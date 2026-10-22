@@ -24,6 +24,9 @@ the same packets).
 
 Add that line to `Vanacore\scripts\boot.txt` to load it at every start. Ctrl+G opens it unless the key is
 already bound. Closing the window tucks it into a beacon at the edge of the screen; click that to bring it back.
+Whichever it is, the window or the beacon, is kept: zoning, a reload or the next login brings it back the same.
+During a cutscene or a conversation with an NPC the finder and its beacon step aside, and come back as they were
+when it ends.
 
 ## Themes and looks
 
@@ -59,7 +62,7 @@ on at 1280x800 or less; the setting under Window, or `/pf handheld on|off|auto`,
 |---|---|
 | `/pf` | The window, or tucked into the beacon; the X and Esc tuck it too |
 | `/pf hide` / `/pf show` | Hide both, or bring the window back |
-| `/pf mini` | Tuck the window into the beacon, or bring it back. Drag the beacon to move it; it stays on screen. "Start as the beacon" in settings makes that the state at login |
+| `/pf mini` | Tuck the window into the beacon, or bring it back. Drag the beacon to move it; it stays on screen. "Start as the beacon" in settings always starts there; otherwise it starts the way you left it |
 | `/pf reset` | The beacon back at the right edge, scale and opacity at their defaults |
 | `/pf create` | Open the new-listing sheet |
 | `/pf refresh` | Ask the server for the listings again |
