@@ -1726,13 +1726,25 @@ local function pop_theme()
     imgui.PopStyleColor(THEME_COUNT)
 end
 
--- the aurora behind the header: drifting colour, soft orbs, a faint grid
-local function aurora(dl, x, y, w, h, t)
+-- the aurora behind the header: drifting colour, soft orbs, a faint grid. `radius` is the corner rounding of the panel
+-- it sits on: ImGui's gradient fill (AddRectFilledMultiColor) has no rounding, in 1.81 or 1.92, so drawn whole it
+-- squares off the panel's top corners. The top `radius` rows go down as one-pixel strips, each inset to the arc.
+local function aurora(dl, x, y, w, h, t, radius)
     local a = 0.5 + 0.5 * math.sin(t * 0.6)
     local b = 0.5 + 0.5 * math.sin(t * 0.9 + 2)
     local c1, c2 = mix(P.accent, P.cyan, a), mix(P.accent2, P.accent, b)
     dl:PushClipRect({ x, y }, { x + w, y + h }, true)
-    dl:AddRectFilledMultiColor({ x, y }, { x + w, y + h }, u32(c1, 0.32), u32(c2, 0.18), u32(P.glass, 0), u32(P.glass, 0))
+    -- the colour f of the way down: c1 / c2 at the top fading to clear glass at the bottom, as the gradient would
+    local function lc(f) return u32(mix(c1, P.glass, f), 0.32 * (1 - f)) end
+    local function rc(f) return u32(mix(c2, P.glass, f), 0.18 * (1 - f)) end
+    local r = math.floor(math.min(radius or 0, h, w / 2))
+    for dy = 0, r - 1 do
+        local yc = r - dy - 0.5 -- the strip's middle, above the arc's centre
+        local ins = r - math.sqrt(r * r - yc * yc)
+        local f0, f1 = dy / h, (dy + 1) / h
+        dl:AddRectFilledMultiColor({ x + ins, y + dy }, { x + w - ins, y + dy + 1 }, lc(f0), rc(f0), rc(f1), lc(f1))
+    end
+    dl:AddRectFilledMultiColor({ x, y + r }, { x + w, y + h }, lc(r / h), rc(r / h), u32(P.glass, 0), u32(P.glass, 0))
     local gx = x + S(24)
     while gx < x + w do
         dl:AddLine({ gx, y }, { gx, y + h }, u32('#FFFFFF', 0.025), 1)
@@ -2051,7 +2063,7 @@ end
 
 local function draw_header(dl, x, y, w, t)
     local h = S(84)
-    aurora(dl, x, y, w, h + S(30), t)
+    aurora(dl, x, y, w, h + S(30), t, S(16))
     -- the beacon and the title
     imgui.SetCursorScreenPos({ x + S(18), y + S(16) })
     local _, _, logo_hv = hit('##logo', S(52), S(52))
@@ -2330,7 +2342,7 @@ end
 -- handheld: one row, the beacon and the title left, the buttons right
 local function draw_header_compact(dl, x, y, w, t)
     local h = S(52)
-    aurora(dl, x, y, w, h + S(20), t)
+    aurora(dl, x, y, w, h + S(20), t, S(12))
     imgui.SetCursorScreenPos({ x + S(10), y + S(10) })
     local _, _, logo_hv = hit('##logo', S(34), S(34))
     local base = LOGO_SPEED[settings.logo_motion or 'slow'] or 0.35
@@ -3567,7 +3579,7 @@ local function draw_ready_check(t)
         local color = r.source == 'mission' and CATEGORY[2].color or CATEGORY[3].color
         shadow(dl, x, y, w, h, S(18), 2)
         panel(dl, x, y, w, h, P.glass, 1, S(18), color, true)
-        aurora(dl, x, y, w, S(96), t)
+        aurora(dl, x, y, w, S(96), t, S(18))
         icon(dl, x + S(32), y + S(26), r.source == 'mission' and 'flag' or 'dice', color, T.h2)
         text(dl, x + S(48), y + S(14), r.label:upper() .. (r.leader and ('   ·   started by ' .. r.leader) or ''), P.dim, F.disp, T.small)
         text(dl, x + S(22), y + S(38), fit(r.name, F.dispb, T.title - 2, w - S(130)), P.text, F.dispb, T.title - 2)

@@ -532,12 +532,22 @@ local function pop_theme()
     imgui.PopStyleColor(THEME_COUNT)
 end
 
-local function aurora(dl, x, y, w, h, t)
+local function aurora(dl, x, y, w, h, t, radius)
     local a = 0.5 + 0.5 * math.sin(t * 0.6)
     local b = 0.5 + 0.5 * math.sin(t * 0.9 + 2)
     local c1, c2 = mix(P.accent, P.cyan, a), mix(P.accent2, P.accent, b)
     dl:PushClipRect({ x, y }, { x + w, y + h }, true)
-    dl:AddRectFilledMultiColor({ x, y }, { x + w, y + h }, u32(c1, 0.32), u32(c2, 0.18), u32(P.glass, 0), u32(P.glass, 0))
+    -- the colour f of the way down: c1 / c2 at the top fading to clear glass at the bottom, as the gradient would
+    local function lc(f) return u32(mix(c1, P.glass, f), 0.32 * (1 - f)) end
+    local function rc(f) return u32(mix(c2, P.glass, f), 0.18 * (1 - f)) end
+    local r = math.floor(math.min(radius or 0, h, w / 2))
+    for dy = 0, r - 1 do
+        local yc = r - dy - 0.5 -- the strip's middle, above the arc's centre
+        local ins = r - math.sqrt(r * r - yc * yc)
+        local f0, f1 = dy / h, (dy + 1) / h
+        dl:AddRectFilledMultiColor({ x + ins, y + dy }, { x + w - ins, y + dy + 1 }, lc(f0), rc(f0), rc(f1), lc(f1))
+    end
+    dl:AddRectFilledMultiColor({ x, y + r }, { x + w, y + h }, lc(r / h), rc(r / h), u32(P.glass, 0), u32(P.glass, 0))
     local gx = x + S(24)
     while gx < x + w do
         dl:AddLine({ gx, y }, { gx, y + h }, u32('#FFFFFF', 0.025), 1)

@@ -938,7 +938,7 @@ end
 -- the header: the mark, the title, where you are, your gil, the buttons
 local function draw_header(dl, x, y, w, t)
     local h = S(88)
-    U.aurora(dl, x, y, w, h + S(24), t)
+    U.aurora(dl, x, y, w, h + S(24), t, S(16))
     glass_gil(dl, x + S(44), y + S(42), S(46), t, 1)
     U.gradient_text(dl, x + S(82), y + S(16), 'AUCTION HOUSE', GOLD, P.accent2, F.dispb, T.title)
     local where
