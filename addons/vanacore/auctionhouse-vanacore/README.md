@@ -41,6 +41,13 @@ graph grows past the ten rows the search server hands out: the line is the price
 median of the latest ten, the marks at the left the gil scale, and hovering a point shows the sale. The graph icon
 beside **Recent sales** hides or shows it (also in Settings).
 
+**Compare.** With the **Compare** chip on, hovering a piece of gear in the list sets it against what you wear in
+that slot (for earrings and rings, the one of the pair it would do most for, an empty one first): a card beside the
+mouse with the verdict (upgrade, downgrade, trade-off, can't wear), how many stats get better or worse, and each stat
+from what you have to what it gives, with the change. Weapons add damage a second from DMG and Delay. What isn't a
+plain number (latent effects, set bonuses, added effects, Dynamis-only stats) is listed in words under **It also
+has** and **You'd lose**, never counted. The stats are read from the game's own description of each item.
+
 **Watch.** The star on an item's card follows it (singles or stacks, whichever is picked); `/ah watch <name>` does
 too. The Watch tab is the one place to see them all: stock, the last price with how it moved over a week (or
 lately, when the record is shorter), the median, a sparkline of the last thirty sales, and a **Tell me under** price.
@@ -117,6 +124,7 @@ with no sale in 120 days dropped.
 - `search.lua`, `bf_tables.lua` — the search-server client and LandSandBoat's Blowfish boxes
 - `items.lua` — the game's item data through the resource manager, icon textures, the catalogue and name search
 - `prices.lua` — the price record (every sale seen, per server) and the graphs drawn from it
+- `compare.lua` — gear stats read from the game's item descriptions, what you wear, and the Compare card
 - `catalogue.lua` — every item the house lists (`item_basic.aH > 0`), with its category, stack size, level, jobs
   and slot. Regenerate from the server database when items change:
   `SELECT b.itemid, b.aH, b.stackSize, b.flags, COALESCE(e.level,0), COALESCE(e.jobs,0), COALESCE(e.slot,0) FROM item_basic b LEFT JOIN item_equipment e ON e.itemId = b.itemid WHERE b.aH > 0 ORDER BY b.itemid`

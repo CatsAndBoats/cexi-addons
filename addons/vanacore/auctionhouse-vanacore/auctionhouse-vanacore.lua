@@ -27,6 +27,7 @@ local U = require('ui')
 local I = require('items')
 local SEARCH = require('search')
 local PRICES = require('prices')
+local COMPARE = require('compare')
 local P = U.P
 local S = U.S
 local T = U.sizes()
@@ -65,7 +66,7 @@ local st = {
 local settings = {
     scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, take_over = true, spots = {}, search_host = '', search_port = 54002,
     sort = 'name', in_stock = false, remember = {},
-    chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false,
+    chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false, compare = false,
 }
 
 local function copy(v)
@@ -1057,6 +1058,12 @@ local function draw_tabs(dl, x, y, w)
             settings.in_stock = not settings.in_stock
             save_settings()
         end
+        cx = cx - S(8) - chip_width('COMPARE')
+        tip = settings.compare and 'Hovering gear sets it against what you wear' or 'Hover gear to set it against what you wear in that slot'
+        if filter_chip(dl, '##compare', cx, fy, 'COMPARE', settings.compare, P.cyan, tip, 'scale-balanced', 'scale-balanced') then
+            settings.compare = not settings.compare
+            save_settings()
+        end
         imgui.SetCursorScreenPos({ sx, y + S(4) })
         local changed = field('##ahsearch', 'Search every item by name', st.query, sw, T.small, false)
         if changed then
@@ -1136,6 +1143,7 @@ local function draw_item_row(dl, id, x, y, w, alpha)
     if cat and st.lists[cat] == nil then fetch_list(cat) end
     imgui.SetCursorScreenPos({ x, y })
     local pressed, hovered, hv = hit(key, w, h)
+    if hovered then st.hover_id = id end
     local selected = st.selected == id
     local r = I.get(id)
     panel(dl, x, y, w, h, selected and P.card_hi or P.card, (selected and 1 or 0.9 + 0.1 * hv) * alpha, S(10), selected and GOLD or (hv > 0.01 and mix(P.line, P.accent, hv) or nil), selected)
@@ -1325,9 +1333,10 @@ local function draw_detail(dl, x, y, w, h, t)
     text(dl, cx + S(68), cy + S(28), fit(line ~= '' and line or (I.CATEGORY_NAME[I.category_of(id) or 0] or ''), F.text, T.small, w - S(100)), P.dim, F.text, T.small)
     cy = cy + S(66)
     -- the description, wrapped
-    if r.desc ~= '' then
+    local desc = COMPARE.readable(r.desc)
+    if desc ~= '' then
         local lines = {}
-        for raw in (r.desc .. '\n'):gmatch('([^\n]*)\n') do
+        for raw in (desc .. '\n'):gmatch('([^\n]*)\n') do
             for _, l in ipairs(wrap(raw, F.text, T.small, w - S(32))) do lines[#lines + 1] = l end
         end
         for i = 1, math.min(#lines, 5) do
@@ -1839,6 +1848,7 @@ local function draw_main(t)
         local fade = math.min(1, (t - st.opened_at) * 4)
         shadow(dl, x, y, w, h, S(16), fade)
         panel(dl, x, y, w, h, P.bg, fade, S(16), P.line)
+        st.hover_id = nil
         local hy = draw_header(dl, x, y, w, t)
         local ty = y + hy + S(10)
         draw_tabs(dl, x, ty, w)
@@ -1860,6 +1870,13 @@ local function draw_main(t)
             draw_watch(dl, x + S(16), by, w - S(32), bh, t)
         else
             draw_sales(dl, x + S(16), by, w - S(32), bh, t)
+        end
+        -- Compare: the gear under the mouse against what you wear, over everything
+        if settings.compare and st.tab == 'buy' and st.hover_id and not st.confirm and not st.settings_open then
+            local mx, my = imgui.GetMousePos()
+            COMPARE.card(st.hover_id, mx, my, { t = t, wearer = wearer() })
+        else
+            COMPARE.idle()
         end
         -- RootAndChildWindows (3): the lists, the bag and the sidebar are child windows, and a click there focuses them
         if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and imgui.GetFrameCount() - FIELD.active_frame > 1 then
