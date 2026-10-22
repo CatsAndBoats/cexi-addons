@@ -65,6 +65,20 @@ with the gil waiting in your delivery box, and keeps the sale on the item's reco
 number so typing replaces it. Enter in the asking price asks the fee, Enter in the bid box opens the bid's
 confirmation (never a bid straight away), and Esc leaves the box, then a second Esc closes the window.
 
+**A controller (experimental, off by default).** Turn on **Game pad support** in the settings: one switch for every
+addon, kept in `vanacore.ini` as `[addons] gamepad=1` (Party Finder's settings show the same one). With two windows
+open, the one with the focus answers the pad. Tested with XInput
+pads in mind; a DirectInput pad (a PlayStation controller without a wrapper) is read through the game's own button
+map and may not line up. With it on, the window takes the pad while it's open, so your character stays put and the game's menus stay closed: the D-pad moves a ring between
+things, Confirm presses, Cancel backs out (the confirmation, the settings, then the window), the bumpers turn the
+tabs, the triggers walk the categories, a stick scrolls the list, X and Y are the In stock and Usable chips, View the
+Compare chip, Menu the settings. On a price box, up and down step the price (a tenth of its size, 10 gil at least),
+and the confirmation's Bid is where the focus lands, so Confirm twice bids. A legend of the buttons runs along the
+bottom while the pad is in use; the mouse takes over the moment it moves. The game's Confirm and Cancel bindings are
+honoured when VanaCore passes them (`[ffxi] gamepad.buttons`); otherwise A and B. `/ah pad` shows the controller's
+state, `/ah pad off` turns it off (a setting), and `/ah pad <button>` presses a button as a controller would, for
+trying it without one.
+
 **Settings** (the gear): the theme, bid and sell only at an auction clerk, talking to a clerk opens this window, confirm before
 bidding, the price graph, background checks of watched items, opacity, scale, and the search server in use.
 
@@ -89,6 +103,7 @@ well, accent, accent2, cyan } }`).
 | `/ah opacity <percent>` | Window opacity, 40 to 100 |
 | `/ah refresh` | Forget fetched lists and histories |
 | `/ah debug` | Counters, the search server, whether you're at a clerk, the last error |
+| `/ah pad [on\|off\|<button>]` | The controller: its state, the setting, or a press of `a`, `b`, `x`, `y`, `up`, `down`, `left`, `right`, `l1`, `r1`, `l2`, `r2`, `start`, `back`; `/ah pad stick <x> <y> [frames]` a stick |
 
 Settings and the watch list are kept per character in `Vanacore\config\addons\auctionhouse-vanacore\<name>.lua`; the
 price record is `prices-<search host>.lua` beside it, one per server, up to 160 sales per item and kind, series
@@ -125,6 +140,8 @@ with no sale in 120 days dropped.
 - `items.lua` — the game's item data through the resource manager, icon textures, the catalogue and name search
 - `prices.lua` — the price record (every sale seen, per server) and the graphs drawn from it
 - `compare.lua` — gear stats read from the game's item descriptions, what you wear, and the Compare card
+- `pad.lua` — the controller: VanaCore's XInput and DirectInput reads as ImGui's gamepad keys, the game kept from them
+  while the window has the pad, the legend; shared source in `tools/pad.lua`, copied here by `tools/make_ui.py`
 - `catalogue.lua` — every item the house lists (`item_basic.aH > 0`), with its category, stack size, level, jobs
   and slot. Regenerate from the server database when items change:
   `SELECT b.itemid, b.aH, b.stackSize, b.flags, COALESCE(e.level,0), COALESCE(e.jobs,0), COALESCE(e.slot,0) FROM item_basic b LEFT JOIN item_equipment e ON e.itemId = b.itemid WHERE b.aH > 0 ORDER BY b.itemid`

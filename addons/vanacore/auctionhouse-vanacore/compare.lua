@@ -567,7 +567,13 @@ function C.card(id, mx, my, ctx)
     local off = S(24)
     local both = w * 2 + gap
     y1 = math.max(S(8), math.min(my - S(28), vh - h1 - S(8)))
-    if #side == 0 then
+    if ctx.stack and #side > 0 then
+        -- a controller: the cards stand beside the row, one under the other, where the mouse would have hovered
+        x1 = math.max(S(8), math.min(mx + off, vw - w - S(8)))
+        x2 = x1
+        y1 = math.max(S(8), math.min(my - S(28), vh - h1 - gap - h2 - S(8)))
+        y2 = y1 + h1 + gap
+    elseif #side == 0 then
         x1 = mx + off
         if x1 + w > vw - S(8) then x1 = mx - off - w end
     elseif mx + off + both <= vw - S(8) then

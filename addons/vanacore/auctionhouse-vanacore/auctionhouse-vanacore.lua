@@ -28,6 +28,7 @@ local I = require('items')
 local SEARCH = require('search')
 local PRICES = require('prices')
 local COMPARE = require('compare')
+local PAD = require('pad')
 local P = U.P
 local S = U.S
 local T = U.sizes()
@@ -745,6 +746,7 @@ end
 
 open_window = function ()
     st.open = true
+    st.pad_first = 3 -- the controller's focus starts on the list's first row
     st.opened_at = now_t -- ImGui's clock, the one the fade is measured against
     scan_counter()
     refresh_inventory()
@@ -792,6 +794,16 @@ local GOLD, PALE = '#FFD166', '#FFF3C4'
 -- that selects all, or after typing. Once the caret could have moved elsewhere (arrows, Home/End, a click inside the
 -- box), ours steps aside and ImGui's, now gold, carries on.
 -- ImGui 1.92's numbers (its input flags were renumbered in 1.91: AutoSelectAll is 1 << 12 now)
+-- inside a list's child window: a stick scrolls it (ImGui's own stick scrolling is of the window with the focus, the
+-- root, which doesn't scroll)
+local function pad_scroll()
+    if not PAD.capturing() then return end
+    local lx, ly, rx, ry = PAD.stick()
+    local sy = ly ~= 0 and ly or ry
+    if sy == 0 then return end
+    imgui.SetScrollY(math.max(0, math.min(imgui.GetScrollMaxY(), imgui.GetScrollY() - sy * S(1100) * dt)))
+end
+
 local FIELD = { CharsDecimal = 1, AutoSelectAll = 4096, InputTextCursor = 33, TextDisabled = 1, TextSelectedBg = 53, active_frame = -10 }
 local field_state = {}
 local function field(id, hint, buf, width, size, numeric, overlap)
@@ -816,6 +828,21 @@ local function field(id, hint, buf, width, size, numeric, overlap)
     local dl = im.GetWindowDrawList()
     local active, hovered = im.IsItemActive(), im.IsItemHovered()
     local now = clock()
+    -- a controller, with the box focused but not being typed in: up and down step the price (a tenth of its size,
+    -- at least 10 gil); an empty box starts from the hint's last sale
+    if numeric and im.IsItemFocused() and not active then
+        st.pad_hold = true -- whoever is using it: up and down are the box's, not ImGui's
+        local v = tonumber(buf[1]) or tonumber((hint or ''):match('%d+')) or 0
+        local step = math.max(10, 10 ^ math.max(1, math.floor(math.log10(math.max(v, 1)))) / 10)
+        local nv = v
+        if PAD.repeating('up') then nv = v + step end
+        if PAD.repeating('down') then nv = math.max(0, v - step) end
+        if nv ~= v then
+            nv = math.floor(nv / step + 0.5) * step
+            buf[1] = nv > 0 and tostring(math.floor(nv)) or ''
+            changed = true
+        end
+    end
     local text_now = buf[1] or ''
     if im.IsItemActivated() then
         -- a price is selected whole by the click, so the caret is at its end; an empty box has it there too
@@ -1096,7 +1123,7 @@ end
 local function draw_sidebar(dl, x, y, w, h)
     panel(dl, x, y, w, h, P.glass, 0.92, S(12))
     imgui.SetCursorScreenPos({ x, y })
-    imgui.BeginChild('##cats', { w, h }, false, 0)
+    imgui.BeginChild('##cats', { w, h }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
     local cdl = imgui.GetWindowDrawList()
     local cy = y + S(8) - imgui.GetScrollY() -- drawn where the scroll puts it
     for _, g in ipairs(I.GROUPS) do
@@ -1154,7 +1181,9 @@ local function draw_item_row(dl, id, x, y, w, alpha)
     if cat and st.lists[cat] == nil then fetch_list(cat) end
     imgui.SetCursorScreenPos({ x, y })
     local pressed, hovered, hv = hit(key, w, h)
-    if hovered then st.hover_id = id end
+    -- (the controller first: ImGui counts the focused row as hovered while its cursor shows)
+    if PAD.shown() and imgui.IsItemFocused() then st.hover_id = id st.hover_rect = { x = x, y = y, w = w, h = h }
+    elseif hovered then st.hover_id = id st.hover_rect = nil end
     local selected = st.selected == id
     local r = I.get(id)
     panel(dl, x, y, w, h, selected and P.card_hi or P.card, (selected and 1 or 0.9 + 0.1 * hv) * alpha, S(10), selected and GOLD or (hv > 0.01 and mix(P.line, P.accent, hv) or nil), selected)
@@ -1291,12 +1320,16 @@ local function draw_list(dl, x, y, w, h, t)
     local ly = y + S(28)
     local lh = h - S(28)
     imgui.SetCursorScreenPos({ x, ly })
-    imgui.BeginChild('##items', { w, lh }, false, 0)
+    imgui.BeginChild('##items', { w, lh }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
     local cdl = imgui.GetWindowDrawList()
+    pad_scroll()
+    -- a list the controller's focus (re)starts in shows its top
+    if st.pad_first and PAD.capturing() then imgui.SetScrollY(0) end
     local scroll_y = imgui.GetScrollY()
     local cy = ly - scroll_y
     local since = clock() - st.list_at
     local shown = 0
+    local first_drawn = nil
     if #ids == 0 then
         local why = hidden == 0 and (st.results and 'Nothing by that name' or 'Nothing here')
             or (settings.in_stock and settings.usable and 'Nothing up that you can wear')
@@ -1310,7 +1343,14 @@ local function draw_list(dl, x, y, w, h, t)
         local rh = S(56)
         if cy + rh >= vis_top and cy <= vis_bot then
             local alpha = math.min(1, (since * 6 - i * 0.05) + 0.3)
+            -- the controller's focus (re)starts on the first row shown: as the window appears (SetItemDefaultFocus
+            -- works then), and two frames after a tab or category change, once ImGui has restored the window's old
+            -- focus (SetKeyboardFocusHere, before the row)
+            if first_drawn == nil then first_drawn = i end
+            local seat = st.pad_first and i == first_drawn and PAD.capturing()
+            if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
             draw_item_row(cdl, id, x + S(4), cy, w - S(12), math.max(0.05, math.min(1, alpha)))
+            if seat then imgui.SetItemDefaultFocus() end
         end
         cy = cy + rh + S(6)
         shown = shown + 1
@@ -1485,8 +1525,10 @@ local function draw_sell(dl, x, y, w, h, t)
     local gy = y + S(28)
     local gh = h - S(28)
     imgui.SetCursorScreenPos({ x, gy })
-    imgui.BeginChild('##bag', { bagw, gh }, false, 0)
+    imgui.BeginChild('##bag', { bagw, gh }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
     local cdl = imgui.GetWindowDrawList()
+    pad_scroll()
+    if st.pad_first and PAD.capturing() then imgui.SetScrollY(0) end
     local cell = S(52)
     local per = math.max(1, math.floor((bagw - S(16)) / (cell + S(6))))
     local cx, cy = x + S(4), gy - imgui.GetScrollY()
@@ -1496,7 +1538,10 @@ local function draw_sell(dl, x, y, w, h, t)
         local sellable = I.rows[it.id] ~= nil and bit.band(r.flags, 0x40) == 0 -- the house lists it, and it isn't NOAUCTION-flagged by the DAT
         local key = '##bag' .. it.slot
         imgui.SetCursorScreenPos({ cx, cy })
+        local seat = st.pad_first and n == 0 and PAD.capturing()
+        if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
         local pressed, hovered, hv = hit(key, cell, cell)
+        if seat then imgui.SetItemDefaultFocus() end
         local on = st.sell.slot == it.slot
         cdl:AddRectFilled({ cx, cy }, { cx + cell, cy + cell }, u32(on and GOLD or P.card, on and 0.22 or (0.6 + 0.3 * hv)), S(8))
         item_icon(cdl, it.id, cx + S(6), cy + S(6), cell - S(12), sellable and 1 or 0.35)
@@ -1659,7 +1704,7 @@ local function draw_watch(dl, x, y, w, h, t)
     -- their histories stay fresh while this is open
     for _, e in ipairs(list) do fetch_history(e.id, e.stack) end
     imgui.SetCursorScreenPos({ x, ly })
-    imgui.BeginChild('##watch', { w, lh }, false, 0)
+    imgui.BeginChild('##watch', { w, lh }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
     local cdl = imgui.GetWindowDrawList()
     local cy = ly - imgui.GetScrollY()
     local remove = nil
@@ -1767,6 +1812,9 @@ local function draw_settings(dl, x, y, w, h)
     cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_confirm', cx, cy + S(10), 'Confirm before bidding', settings.confirm_buy) settings.confirm_buy = v changed = changed or ch
     cy = cy + S(34)
+    -- one switch for every addon, kept in vanacore.ini ([addons] gamepad); Party Finder's settings show the same one
+    v, ch = U.toggle(dl, '##t_pad', cx, cy + S(10), 'Game pad support (XInput, experimental; one switch for every addon)', PAD.enabled()) if ch then PAD.set_enabled(v) end
+    cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_chart', cx, cy + S(10), "Price graph on an item's card", settings.chart) settings.chart = v changed = changed or ch
     cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_watch', cx, cy + S(10), 'Check watched items every ' .. math.floor((settings.watch_every or 300) / 60) .. ' min, even with this closed', settings.watch_poll) settings.watch_poll = v changed = changed or ch
@@ -1829,7 +1877,9 @@ local function draw_confirm()
                 ly = ly + S(18)
             end
         end
-        if button(dl, '##cyes', x + w - S(22) - S(136), y + h - S(50), S(136), S(34), yes, col, 'solid', ic) then
+        local yes_pressed = button(dl, '##cyes', x + w - S(22) - S(136), y + h - S(50), S(136), S(34), yes, col, 'solid', ic)
+        imgui.SetItemDefaultFocus() -- a controller: Confirm again goes through
+        if yes_pressed then
             if c.kind == 'buy' then do_buy(c.item, c.price, c.stack)
             elseif c.kind == 'sell' then do_list()
             else do_cancel(c.slot) end
@@ -1839,9 +1889,65 @@ local function draw_confirm()
     end)
 end
 
+-- The controller's buttons with a meaning of their own (the D-pad, the sticks and Confirm are ImGui's): Cancel backs
+-- out as Esc does, the bumpers turn the tabs, the triggers walk the categories, X and Y are the In stock and Usable
+-- chips, Menu is the settings, View the Compare chip.
+local TAB_ORDER = { 'buy', 'sell', 'sales', 'watch' }
+local CAT_ORDER = {}
+for _, g in ipairs(I.GROUPS) do for _, c in ipairs(g.cats) do CAT_ORDER[#CAT_ORDER + 1] = { cat = c, group = g.id } end end
+
+local function pad_buttons()
+    if PAD.pressed('cancel') and not imgui.IsAnyItemActive() then
+        if st.confirm then st.confirm = nil elseif st.settings_open then st.settings_open = false else st.open = false end
+        return
+    end
+    if st.confirm then return end
+    local turn = (PAD.pressed('r1') and 1 or 0) - (PAD.pressed('l1') and 1 or 0)
+    if turn ~= 0 then
+        local i = 1
+        for k, tab in ipairs(TAB_ORDER) do if tab == st.tab then i = k end end
+        st.tab = TAB_ORDER[(i - 1 + turn) % #TAB_ORDER + 1]
+        st.settings_open = false
+        st.pad_first = 3
+    end
+    if st.tab == 'buy' and not st.settings_open then
+        local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
+        if step ~= 0 then
+            local i = 1
+            for k, e in ipairs(CAT_ORDER) do if e.cat == st.category then i = k end end
+            local e = CAT_ORDER[(i - 1 + step) % #CAT_ORDER + 1]
+            st.category, st.group = e.cat, e.group
+            st.group_open[e.group] = true
+            st.query[1], st.results = '', nil
+            st.list_at = clock()
+            st.pad_first = 3
+            fetch_list(e.cat)
+        end
+        if PAD.pressed('options') then settings.in_stock = not settings.in_stock save_settings() end
+        if PAD.pressed('menu') then settings.usable = not settings.usable save_settings() end
+        if PAD.pressed('back') then settings.compare = not settings.compare save_settings() end
+    end
+    if PAD.pressed('start') then st.settings_open = not st.settings_open end
+end
+
+local LEGEND = {
+    buy = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Category' }, { 'updown', 'Price' },
+        { 'options', 'In stock' }, { 'menu', 'Usable' }, { 'back', 'Compare' }, { 'start', 'Settings' } },
+    sell = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'updown', 'Price' }, { 'start', 'Settings' } },
+    other = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'start', 'Settings' } },
+}
+local function draw_legend(dl, x, y, w)
+    dl:AddLine({ x + S(16), y }, { x + w - S(16), y }, u32(P.line, 0.8), 1)
+    local items = LEGEND[st.tab] or LEGEND.other
+    -- measured by drawing off screen once, then centred
+    local lw = PAD.legend(dl, -10000, -10000, items, 0)
+    PAD.legend(dl, x + (w - lw) / 2, y + S(14), items, 1)
+end
+
 local function draw_main(t)
     local sw, sh = vana.ui.screen()
-    local w, h = S(W.w), S(W.h)
+    local legend_h = (PAD.shown() and st.pad_focused) and S(28) or 0 -- the window the controller is in shows the legend
+    local w, h = S(W.w), S(W.h) + legend_h
     imgui.SetNextWindowSize({ w, h }, U.ALWAYS)
     imgui.SetNextWindowPos({ (sw - w) / 2, (sh - h) / 2 }, U.FIRST_USE_EVER)
     local alpha = settings.opacity or 1.0
@@ -1860,11 +1966,15 @@ local function draw_main(t)
         shadow(dl, x, y, w, h, S(16), fade)
         panel(dl, x, y, w, h, P.bg, fade, S(16), P.line)
         st.hover_id = nil
+        -- the controller's buttons are the focused window's (RootAndChildWindows): two open windows never both answer
+        st.pad_focused = imgui.IsWindowFocused(3)
+        if PAD.capturing() and st.pad_focused then pad_buttons() end
         local hy = draw_header(dl, x, y, w, t)
         local ty = y + hy + S(10)
         draw_tabs(dl, x, ty, w)
         local by = ty + S(50)
-        local bh = y + h - by - S(16)
+        local bh = y + h - by - S(16) - legend_h
+        if legend_h > 0 then draw_legend(dl, x, y + h - legend_h, w) end
         if st.settings_open then
             draw_settings(dl, x + S(16), by, w - S(32), bh)
         elseif st.tab == 'buy' then
@@ -1885,7 +1995,9 @@ local function draw_main(t)
         -- Compare: the gear under the mouse against what you wear, over everything
         if settings.compare and st.tab == 'buy' and st.hover_id and not st.confirm and not st.settings_open then
             local mx, my = imgui.GetMousePos()
-            COMPARE.card(st.hover_id, mx, my, { t = t, wearer = wearer() })
+            local hr = st.hover_rect
+            if hr then mx, my = hr.x + hr.w - S(16), hr.y - S(8) end -- the focused row, not the mouse
+            COMPARE.card(st.hover_id, mx, my, { t = t, wearer = wearer(), stack = hr ~= nil })
         else
             COMPARE.idle()
         end
@@ -1914,6 +2026,13 @@ local function tick()
     local t = imgui.GetTime()
     now_t = t
     if not U.frame(dt, scale, t) then return end
+    -- the controller: its reads since the last frame become ImGui's keys, while the window has it
+    PAD.frame(t, { id = 'auctionhouse', capture = function () return st.open end, hold_vertical = st.pad_hold == true })
+    st.pad_hold = false
+    U.anim.pad_shown = PAD.shown()
+    local fo = U.anim.focus
+    st.pad_dbg = string.format('text box active %s, focus on %s (%.1fs ago)', tostring(imgui.IsAnyItemActive()), tostring(fo and fo.key), fo and (t - fo.at) or -1)
+    if st.pad_first and st.open then st.pad_first = st.pad_first - 1 if st.pad_first <= 0 then st.pad_first = nil end end
     SEARCH.poll()
     PRICES.save()
     -- the watch list, checked in the background
@@ -1968,10 +2087,12 @@ vana.events.on('load', function ()
     U.apply_theme(settings.theme or 'aurora')
     configure_search()
     ensure_bind()
+    PAD.setup('auctionhouse')
     vana.log('auctionhouse-vanacore ' .. addon.version .. ' loaded; search server ' .. tostring(st.search_where))
 end)
 
 vana.events.on('unload', function ()
+    PAD.teardown('auctionhouse')
     save_settings()
     PRICES.save(true)
     SEARCH.cancel_all()
@@ -2119,6 +2240,14 @@ vana.events.on('command', function (e)
     elseif what == 'refresh' then
         st.lists, st.hist = {}, {}
         if st.open then fetch_list(st.category) if st.selected then select_item(st.selected) end end
+    elseif what == 'pad' then
+        -- /ah pad: the controller's state; /ah pad on|off; /ah pad <button> [frames] and /ah pad stick <lx> <ly> [frames]
+        -- press it as a controller would (for testing without one)
+        local arg = words[3] and words[3]:lower() or nil
+        if arg == nil then say(PAD.describe()) say(tostring(st.pad_dbg))
+        elseif arg == 'on' or arg == 'off' then PAD.set_enabled(arg == 'on') say('Game pad support ' .. arg .. ' (for every addon: vanacore.ini [addons] gamepad)')
+        elseif arg == 'stick' then PAD.inject({ lx = tonumber(words[4]) or 0, ly = tonumber(words[5]) or 0 }, tonumber(words[6]) or 3)
+        else PAD.inject({ [arg] = true }, tonumber(words[4]) or 3) end
     elseif what == 'debug' then
         scan_counter() -- measured now, not when the window last looked
         say(string.format('in %d, out %d, search %s pending %d, counter %s (%s), zone ok %s, lists %d, gil %s',

@@ -428,11 +428,18 @@ local function job_badge(dl, cx, cy, r, job, glow, alpha)
 end
 
 local function hit(key, w, h)
-    local pressed = imgui.InvisibleButton(key, { math.max(1, w), math.max(1, h) })
+    -- 8: ImGuiButtonFlags_EnableNav, so a controller's focus can land on it (ImGui 1.90+ keeps invisible buttons out
+    -- of navigation unless told otherwise)
+    local pressed = imgui.InvisibleButton(key, { math.max(1, w), math.max(1, h) }, 8)
     local hovered = imgui.IsItemHovered()
     local v = A.hover[key] or 0
     v = lerp(v, hovered and 1 or 0, math.min(1, dt * 14))
     A.hover[key] = v
+    -- the controller's focus (ImGui's navigation), drawn as a ring by draw_toasts while the controller is in use
+    if A.pad_shown and imgui.IsItemFocused() then
+        local fx, fy = imgui.GetItemRectMin()
+        A.focus = { x = fx, y = fy, w = math.max(1, w), h = math.max(1, h), at = now_t, key = key }
+    end
     return pressed, hovered, v
 end
 
@@ -717,6 +724,18 @@ local function toast(kind, title, body, seconds, icon)
 end
 
 local function draw_toasts(t)
+    -- the controller's focus: a ring round the focused thing, with a soft glow and a slow pulse
+    local fo = A.focus
+    if fo and A.pad_shown and fo.at == now_t then
+        local fdl = imgui.GetForegroundDrawList()
+        local r = math.min(S(10), fo.h / 2)
+        local pulse = 0.75 + 0.25 * math.sin(t * 4)
+        for i = 3, 1, -1 do
+            fdl:AddRect({ fo.x - S(i) - 1, fo.y - S(i) - 1 }, { fo.x + fo.w + S(i) + 1, fo.y + fo.h + S(i) + 1 }, u32(P.accent, 0.07 * pulse * (4 - i)), r + S(i), 15, S(2))
+        end
+        fdl:AddRect({ fo.x - 1, fo.y - 1 }, { fo.x + fo.w + 1, fo.y + fo.h + 1 }, u32(P.accent, 0.95), r, 15, math.max(1.5, S(1.5)))
+        fdl:AddRect({ fo.x, fo.y }, { fo.x + fo.w, fo.y + fo.h }, u32('#FFFFFF', 0.25 * pulse), r, 15, 1)
+    end
     local sw = vana.ui.screen()
     local y = S(96)
     for i = #A.toasts, 1, -1 do
@@ -769,5 +788,6 @@ U.pill, U.shadow, U.panel, U.ring, U.job_badge = pill, shadow, panel, ring, job_
 U.hit, U.ripple_at, U.draw_ripples, U.button, U.icon_button, U.pop_scale = hit, ripple_at, draw_ripples, button, icon_button, pop_scale
 U.push_theme, U.pop_theme, U.aurora = push_theme, pop_theme, aurora
 U.dropdown, U.section, U.slider, U.segments, U.toggle, U.dialog, U.toast, U.draw_toasts = dropdown, section, slider, segments, toggle, dialog, toast, draw_toasts
+U.anim = A -- the host sets A.pad_shown (the controller is in use); hit() keeps A.focus for the ring
 return U
 

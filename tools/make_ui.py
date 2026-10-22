@@ -192,7 +192,15 @@ U.pill, U.shadow, U.panel, U.ring, U.job_badge = pill, shadow, panel, ring, job_
 U.hit, U.ripple_at, U.draw_ripples, U.button, U.icon_button, U.pop_scale = hit, ripple_at, draw_ripples, button, icon_button, pop_scale
 U.push_theme, U.pop_theme, U.aurora = push_theme, pop_theme, aurora
 U.dropdown, U.section, U.slider, U.segments, U.toggle, U.dialog, U.toast, U.draw_toasts = dropdown, section, slider, segments, toggle, dialog, toast, draw_toasts
+U.anim = A -- the host sets A.pad_shown (the controller is in use); hit() keeps A.focus for the ring
 return U
 ''')
 open(OUT, 'w').write('\n'.join(parts) + '\n')
 print('ui.lua written:', sum(1 for _ in open(OUT)), 'lines')
+
+# the controller module, one copy per addon (each addon folder stands alone)
+import shutil
+for folder in ('auctionhouse-vanacore', 'partyfinder-vanacore'):
+    dst = os.path.join(ROOT, 'addons', 'vanacore', folder, 'pad.lua')
+    shutil.copyfile(os.path.join(ROOT, 'tools', 'pad.lua'), dst)
+    print('pad.lua copied to', folder)

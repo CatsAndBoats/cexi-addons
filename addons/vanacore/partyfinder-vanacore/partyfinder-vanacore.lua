@@ -33,6 +33,7 @@ addon.version = '2.2'
 addon.desc    = "CatsEyeXI's Party Finder: listings, join requests, Duty Roulette and Mission Help."
 
 local imgui = vana.imgui
+local PAD = require('pad') -- a controller (pad.lua, shared with the auction house)
 if imgui == nil then
     print('partyfinder-vanacore needs a newer VanaCore.Core.dll (vana.imgui)')
     return
@@ -366,7 +367,7 @@ local WINDOW_FLAGS = 1 + 2 + 8 + 16 + 32 + 128
 local NO_SAVE, NO_FOCUS = 256, 4096
 local FIRST_USE_EVER = 4
 local ALWAYS = 1
-local KEY_ESCAPE = 526
+-- (ImGui's Escape is PAD.KEY.escape: this file is at LuaJIT's limit of 200 locals in a chunk)
 
 local scale = 1
 local function S(n) return n * scale end
@@ -1566,11 +1567,18 @@ end
 
 -- an invisible button with a hover value that eases in and out
 local function hit(key, w, h)
-    local pressed = imgui.InvisibleButton(key, { math.max(1, w), math.max(1, h) })
+    -- 8: ImGuiButtonFlags_EnableNav, so a controller's focus can land on it (ImGui 1.90+ keeps invisible buttons out
+    -- of navigation unless told otherwise)
+    local pressed = imgui.InvisibleButton(key, { math.max(1, w), math.max(1, h) }, 8)
     local hovered = imgui.IsItemHovered()
     local v = st.hover[key] or 0
     v = lerp(v, hovered and 1 or 0, math.min(1, dt * 14))
     st.hover[key] = v
+    -- the controller's focus (ImGui's navigation), drawn as a ring by draw_toasts while the controller is in use
+    if st.pad_shown and imgui.IsItemFocused() then
+        local fx, fy = imgui.GetItemRectMin()
+        st.focus = { x = fx, y = fy, w = math.max(1, w), h = math.max(1, h), at = now_t, key = key }
+    end
     return pressed, hovered, v
 end
 
@@ -2884,7 +2892,7 @@ local function draw_list(dl, x, y, w, h, t)
     st.card_alpha = art and 0.9 or 1
     imgui.SetCursorScreenPos({ x, y })
     imgui.PushStyleVar(VAR.ItemSpacing, { 0, 0 })
-    if imgui.BeginChild('##list', { w, h }, false, 0) then
+    if imgui.BeginChild('##list', { w, h }, 256, 0) then -- NavFlattened: a controller's focus walks in from outside
         local cdl = imgui.GetWindowDrawList()
         if #rows == 0 then
             draw_empty(cdl, x, y, w, h, t)
@@ -2908,6 +2916,8 @@ local function draw_list(dl, x, y, w, h, t)
                 local alpha = ease(life)
                 local slide = (1 - alpha) * S(26)
                 if alpha > 0.01 then
+                    -- the controller's focus (re)starts on the first card, two frames after the tab turns
+                    if st.pad_first == 1 and i == 1 and PAD.capturing() then imgui.SetKeyboardFocusHere() end
                     draw_card(cdl, e, x + S(4) + slide, a.y, w - S(st.compact and 10 or 18), t, alpha)
                 end
             end
@@ -3207,7 +3217,7 @@ end
 
 local function draw_settings(dl, x, y, w, t)
     if not st.settings_open then return 0 end
-    local h = S(508)
+    local h = S(542)
     if st.settings_page == 'art' then
         st.backgrounds = st.backgrounds or background_options()
         local tw = (w - S(48) - S(12) * 3) / 4
@@ -3259,6 +3269,8 @@ local function draw_settings(dl, x, y, w, t)
     v, ch = toggle(dl, '##t_joinable', c1, cy, 'Only listings I can join', settings.joinable_only) settings.joinable_only = v changed = changed or ch
     cy = cy + S(34)
     v, ch = toggle(dl, '##t_startmini', c1, cy, 'Start as the beacon', settings.start_mini) settings.start_mini = v changed = changed or ch
+    cy = cy + S(34)
+    v, ch = toggle(dl, '##t_pad', c1, cy, 'Game pad support (XInput, experimental)', PAD.enabled()) if ch then PAD.set_enabled(v) end -- one switch for every addon (vanacore.ini)
     cy = cy + S(30)
     cy = section(dl, c1, cy, c1w, 'KEYS', 'gamepad')
     cy = cy + S(12)
@@ -3713,6 +3725,18 @@ local function draw_tour(t)
 end
 
 local function draw_toasts(t)
+    -- the controller's focus: a ring round the focused thing, with a soft glow and a slow pulse
+    local fo = st.focus
+    if fo and st.pad_shown and fo.at == now_t then
+        local fdl = imgui.GetForegroundDrawList()
+        local r = math.min(S(10), fo.h / 2)
+        local pulse = 0.75 + 0.25 * math.sin(t * 4)
+        for i = 3, 1, -1 do
+            fdl:AddRect({ fo.x - S(i) - 1, fo.y - S(i) - 1 }, { fo.x + fo.w + S(i) + 1, fo.y + fo.h + S(i) + 1 }, u32(P.accent, 0.07 * pulse * (4 - i)), r + S(i), 15, S(2))
+        end
+        fdl:AddRect({ fo.x - 1, fo.y - 1 }, { fo.x + fo.w + 1, fo.y + fo.h + 1 }, u32(P.accent, 0.95), r, 15, math.max(1.5, S(1.5)))
+        fdl:AddRect({ fo.x, fo.y }, { fo.x + fo.w, fo.y + fo.h }, u32('#FFFFFF', 0.25 * pulse), r, 15, 1)
+    end
     if st.glyph_preview then -- /pf glyphs: the role glyphs drawn large, to look at them
         local sw, sh = vana.ui.screen()
         local fdl = imgui.GetForegroundDrawList()
@@ -3868,6 +3892,21 @@ local function draw_orb(t)
 end
 
 -- handheld: a narrow panel docked at the right edge; the sheets open as dialogs instead
+-- The controller's buttons with a meaning of their own (the D-pad and Confirm are ImGui's): Cancel tucks the window
+-- into the beacon as Esc does, the bumpers turn the tabs, Menu is the settings. (On PAD, not a local: this file is
+-- at LuaJIT's limit of 200 locals in a chunk.)
+PAD.pf_buttons = function ()
+    if PAD.pressed('cancel') and not imgui.IsAnyItemActive() then
+        if st.create and st.create.open then st.create.open = false
+        elseif st.settings_open then st.settings_open = false
+        else st.mini = true end
+        return
+    end
+    if PAD.pressed('l1') or PAD.pressed('r1') then st.tab = st.tab == 2 and 1 or 2 st.pad_first = 3 end
+    if PAD.pressed('start') then st.settings_open = not st.settings_open end
+end
+PAD.pf_legend = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'start', 'Settings' } }
+
 local function draw_main_compact(t)
     local sw, sh = vana.ui.screen()
     local w, h = math.min(S(W.hh_w), sw - 20), sh - S(24)
@@ -3876,6 +3915,8 @@ local function draw_main_compact(t)
     if imgui.Begin('##pf_main_hh', nil, WINDOW_FLAGS) then
         local dl = imgui.GetWindowDrawList()
         local x, y = imgui.GetWindowPos()
+        st.pad_focused = imgui.IsWindowFocused(3)
+        if PAD.capturing() and st.pad_focused then PAD.pf_buttons() end
         local appear = ease(math.min(1, (now_t - st.opened_at) / 0.35))
         WINDOW_ALPHA = math.max(0.3, math.min(1, settings.opacity or 0.96)) * appear
         shadow(dl, x, y, w, h, S(12), 1.5)
@@ -3891,7 +3932,7 @@ local function draw_main_compact(t)
         draw_list(dl, inner_x, list_y, inner_w, list_h, t)
         draw_action_bar(dl, inner_x, y + h - S(8) - bar_h, inner_w, t)
         st.main = { x = x, y = y, w = w, h = h }
-        if imgui.IsWindowFocused() and imgui.IsKeyPressed(KEY_ESCAPE) then
+        if imgui.IsWindowFocused() and imgui.IsKeyPressed(PAD.KEY.escape) then
             if st.create and st.create.open then st.create.open = false
             elseif st.settings_open then st.settings_open = false
             else st.mini = true end
@@ -3906,7 +3947,7 @@ local function draw_main_compact(t)
     end
     if st.settings_open then
         local cw = math.min(S(800), sw - S(40))
-        local ch = math.min((st.settings_h or S(474)), sh - S(40))
+        local ch = math.min((st.settings_h or S(508)), sh - S(40))
         dialog('##pf_settings_dlg', cw, ch, 0, function (ddl, dx, dy) draw_settings(ddl, dx, dy, cw, t) end)
     end
 end
@@ -3915,7 +3956,8 @@ local function draw_main(t)
     st.compact = handheld_active()
     if st.compact then return draw_main_compact(t) end
     local sw, sh = vana.ui.screen()
-    local extra = ((st.create and st.create.open) and S(168) or 0) + (st.settings_open and ((st.settings_h or S(446)) + S(8)) or 0)
+    local legend_h = (PAD.shown() and st.pad_focused) and S(28) or 0 -- the window the controller is in shows the legend
+    local extra = ((st.create and st.create.open) and S(168) or 0) + (st.settings_open and ((st.settings_h or S(542)) + S(8)) or 0) + legend_h
     local w, h = math.min(S(W.w), sw - 40), math.min(S(W.h) + extra, sh - 40)
     imgui.SetNextWindowPos({ sw / 2, sh / 2 }, FIRST_USE_EVER, { 0.5, 0.5 })
     imgui.SetNextWindowSize({ w, h }, ALWAYS)
@@ -3925,6 +3967,9 @@ local function draw_main(t)
         local drew, err = pcall(function ()
         local dl = imgui.GetWindowDrawList()
         local x, y = imgui.GetWindowPos()
+        -- the controller's buttons are the focused window's: two open windows never both answer a press
+        st.pad_focused = imgui.IsWindowFocused(3)
+        if PAD.capturing() and st.pad_focused then PAD.pf_buttons() end
         -- kept on the screen (a larger scale grows the window past its edge)
         local cx, cy0 = math.max(0, math.min(x, sw - w)), math.max(0, math.min(y, sh - h))
         if cx ~= x or cy0 ~= y then imgui.SetWindowPos({ cx, cy0 }) x, y = cx, cy0 end
@@ -3952,12 +3997,17 @@ local function draw_main(t)
         icon(dl, inner_x + S(340) - S(16), cy + S(16), 'magnifying-glass', P.faint, T.small)
         local bar_h = S(58)
         local list_y = cy + S(40)
-        local list_h = y + h - S(16) - bar_h - S(10) - list_y
+        local list_h = y + h - S(16) - bar_h - S(10) - list_y - legend_h
         draw_list(dl, inner_x, list_y, inner_w, list_h, t)
-        draw_action_bar(dl, inner_x, y + h - S(16) - bar_h, inner_w, t)
+        draw_action_bar(dl, inner_x, y + h - S(16) - bar_h - legend_h, inner_w, t)
+        if legend_h > 0 then
+            dl:AddLine({ x + S(16), y + h - legend_h }, { x + w - S(16), y + h - legend_h }, u32(P.line, 0.8), 1)
+            local lw = PAD.legend(dl, -10000, -10000, PAD.pf_legend, 0)
+            PAD.legend(dl, x + (w - lw) / 2, y + h - legend_h + S(14), PAD.pf_legend, 1)
+        end
         st.main = { x = x, y = y, w = w, h = h }
         -- RootAndChildWindows (3): the list is a child window, and a click there focuses it
-        if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(KEY_ESCAPE) then
+        if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(PAD.KEY.escape) then
             if st.create and st.create.open then st.create.open = false
             elseif st.settings_open then st.settings_open = false
             else st.mini = true end
@@ -3980,6 +4030,10 @@ local function tick()
     scale = math.max(0.5, math.min(3, (settings.scale or 100) / 100))
     local t = imgui.GetTime()
     now_t = t
+    -- the controller: its reads since the last frame become ImGui's keys while the window has it
+    PAD.frame(t, { id = 'partyfinder', capture = function () return st.open and not st.mini end })
+    st.pad_shown = PAD.shown()
+    if st.pad_first and st.open then st.pad_first = st.pad_first - 1 if st.pad_first <= 0 then st.pad_first = nil end end
 
     if not F.loaded then
         load_fonts()
@@ -4071,6 +4125,8 @@ end
 
 vana.events.on('load', function ()
     load_settings()
+    PAD.setup('partyfinder', { P = P, S = S, fonts = function () return F end, sizes = function () return T end, u32 = u32,
+        text_center = text_center, text_mid = text_mid, measure = measure, clock = clock })
     unload_old_finder()
     st.open = true
     ensure_bind()
@@ -4231,6 +4287,13 @@ vana.events.on('command', function (e)
         say(#names > 0 and ('Blocked: ' .. table.concat(names, ', ')) or 'Nobody is blocked.')
     elseif what == 'glyphs' then
         st.glyph_preview = not st.glyph_preview
+    elseif what == 'pad' then
+        -- /pf pad: the controller's state; /pf pad on|off; /pf pad <button> [frames] presses it as a controller would
+        local arg = words[3] and words[3]:lower() or nil
+        if arg == nil then say(PAD.describe())
+        elseif arg == 'on' or arg == 'off' then PAD.set_enabled(arg == 'on') say('Game pad support ' .. arg .. ' (for every addon: vanacore.ini [addons] gamepad)')
+        elseif arg == 'stick' then PAD.inject({ lx = tonumber(words[4]) or 0, ly = tonumber(words[5]) or 0 }, tonumber(words[6]) or 3)
+        else PAD.inject({ [arg] = true }, tonumber(words[4]) or 3) end
     elseif what == 'debug' then
         say(string.format('in %d, out %d, listings %d, registered %s, pfp %s, mode %s, server v%s gen %s (end flags %s, removes %d), fonts %s, textures %s', st.counts.pin, st.counts.pout, #st.entries,
             tostring(st.registered), tostring(st.pfp), tostring(st.mode), tostring(st.server_version), tostring(st.gen), tostring(st.counts.last_flags), st.counts.removes or 0, tostring(F.text ~= F.icons), tostring(TEX.jobs ~= nil)))
@@ -4245,6 +4308,7 @@ vana.events.on('command', function (e)
 end)
 
 vana.events.on('unload', function ()
+    PAD.teardown('partyfinder')
     if st.bound then vana.chat.run('/unbind ' .. settings.keybind, 1) end
     release_textures()
 end)

@@ -56,6 +56,19 @@ For the Steam Deck and other small screens: a narrow panel docked at the screen'
 category dropdown instead of the chips, and the listing sheet and settings as dialogs. Auto (the default) turns it
 on at 1280x800 or less; the setting under Window, or `/pf handheld on|off|auto`, forces it.
 
+## A controller (experimental, off by default)
+
+Turn on **Game pad support** in the settings: one switch for every addon, kept in `vanacore.ini` as `[addons]
+gamepad=1` (the Auction House's settings show the same one); with two windows open, the one with the focus answers
+the pad. Tested with XInput pads in mind; a DirectInput pad (a PlayStation
+controller without a wrapper) is read through the game's own button map and may not line up. With it on, the window
+takes the pad while it's open and not tucked into the beacon, so your character stays put: the D-pad moves a ring between things, Confirm
+presses, Cancel backs out (the listing sheet, the settings, then into the beacon, as Esc does), the bumpers turn the
+tabs, Menu is the settings. A legend of the buttons runs along the bottom while the pad is in use; the mouse takes
+over the moment it moves. `/pf pad` shows the controller's state, `/pf pad off` turns it off, and `/pf pad <button>`
+presses a button as a controller would, for trying it without one. (`pad.lua`, shared with the Auction House: its
+source is `tools/pad.lua`.)
+
 ## Commands
 
 | Command | Action |
