@@ -216,6 +216,10 @@ function PAD.on_xinput(e)
     local ok, p = pcall(ffi.cast, 'pad_XINPUT_STATE*', e.state)
     if not ok or p == nil then return end
     local g = p.Gamepad
+    -- every read says the pad is there, changed or not: its packet number only moves when its state does, so an idle
+    -- pad (or a D-pad held down) read as gone after 2 s, and each stick twitch brought it back, the window's capture
+    -- flapping with it (a text box lost its focus every few seconds, the legend came and went)
+    st.read_at = clock()
     local packet = tostring(e.state) .. '/' .. tostring(p.dwPacketNumber)
     if packet == st.seen_packet then return end
     st.seen_packet = packet
