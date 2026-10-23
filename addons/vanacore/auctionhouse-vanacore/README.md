@@ -62,8 +62,9 @@ say **List it** to.
 **Listings.** Everything you have up, in one scrolling list, with the price and a **Take down** for each. The list
 fills by itself when the tab opens, after you list or take something down, and on **Refresh**. The game's own window
 shows seven listings; CatsEyeXI's server (its `ah_pagination` module) keeps more, six to a page, showing the next page
-each time the list is asked for and answering once every 1.5 s, so a long list takes a few seconds to read
-("reading your listings…" while it does). The pages stay the server's business: the one thing you may notice is that
+each time the list is asked for and answering once every 1.5 s, so a long list takes a few seconds to read; the rows
+sit under a "Reading your listings" veil while it does, and nothing on them can be clicked until it lifts, so a
+take-down never lands on a page the house has just turned. The pages stay the server's business: the one thing you may notice is that
 taking down a listing the house isn't currently showing takes a moment (the confirmation says so) while the window
 brings the house round to it. **History**
 on a row asks the search server for that item's recent sales (only when you ask: nothing is fetched for rows nobody

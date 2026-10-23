@@ -1744,10 +1744,6 @@ local function draw_sales(dl, x, y, w, h, t)
     table.sort(rows, function (a, b) return a.key < b.key end)
     local head = 'UP FOR SALE  ·  ' .. #rows .. (#rows == 1 and ' item' or ' items')
     text(dl, x + S(6), y, head, P.dim, F.disp, T.small)
-    if st.sweep then
-        -- the pages are the server's business (see start_sweep); the player just sees the list fill
-        text(dl, x + S(6) + measure(head, F.disp, T.small) + S(12), y + S(1), 'reading your listings…', P.cyan, F.text, T.tiny)
-    end
     local cooling = clock() - st.sales_at < LIMITS.sales or st.sweep ~= nil
     local label = (st.sweep or st.sales_wait) and 'Reading…' or 'Refresh'
     if button(dl, '##sales_refresh', x + w - S(130), y - S(6), S(124), S(26), label, cooling and P.faint or P.accent, 'ghost', 'rotate-right', F.semi, T.tiny) and not cooling and may_trade() then
@@ -1756,8 +1752,13 @@ local function draw_sales(dl, x, y, w, h, t)
     local cy = y + S(32)
     if #rows == 0 then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
-        text_center(dl, x, y + h / 2 + S(30), w, st.sales_open and 'Nothing up for sale' or 'Ask the house', P.text, F.disp, T.h1)
-        text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and 'Sell something from your bag' or (may_trade() and 'Refresh lists what you have up' or 'Talk to an auction clerk'), P.dim, F.text, T.small)
+        if st.sweep then
+            text_center(dl, x, y + h / 2 + S(30), w, 'Reading your listings', P.text, F.disp, T.h1)
+            text_center(dl, x, y + h / 2 + S(54), w, 'The house hands them out a page at a time; a few seconds', P.dim, F.text, T.small)
+        else
+            text_center(dl, x, y + h / 2 + S(30), w, st.sales_open and 'Nothing up for sale' or 'Ask the house', P.text, F.disp, T.h1)
+            text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and 'Sell something from your bag' or (may_trade() and 'Refresh lists what you have up' or 'Talk to an auction clerk'), P.dim, F.text, T.small)
+        end
         return
     end
     -- the rows, in an area of their own that scrolls (seven up, one with its history open, don't fit)
@@ -1765,8 +1766,12 @@ local function draw_sales(dl, x, y, w, h, t)
     imgui.SetCursorScreenPos({ x, cy })
     imgui.BeginChild('##sales_rows', { w, bottom - cy }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
     local cdl = imgui.GetWindowDrawList()
+    local child_top = cy
     cy = cy - imgui.GetScrollY()
     local top = cy
+    -- while the pages are being read the rows are under a veil and their buttons do nothing: a take-down sent while
+    -- the house is turning its pages could land on the wrong one
+    local busy = st.sweep ~= nil
     for _, row in ipairs(rows) do
         local rh = S(60)
         local key = row.id .. '/' .. (row.stack and 1 or 0)
@@ -1789,7 +1794,7 @@ local function draw_sales(dl, x, y, w, h, t)
         if row.at and row.at > 0 then sub = sub .. (sub ~= '' and '  ·  ' or '') .. 'listed ' .. ago(row.at) end
         text(cdl, x + S(68), cy + S(34), sub, P.dim, F.text, T.tiny)
         -- its recent sales, asked for only when wanted (the search server isn't asked for what nobody looks at)
-        if button(cdl, '##hist' .. row.key, x + w - S(130) - S(8) - S(104), cy + S(14), S(104), S(32), open and 'Hide' or 'History', open and P.cyan or P.accent, 'ghost', 'clock-rotate-left', F.semi, T.small) then
+        if button(cdl, '##hist' .. row.key, x + w - S(130) - S(8) - S(104), cy + S(14), S(104), S(32), open and 'Hide' or 'History', busy and P.faint or (open and P.cyan or P.accent), 'ghost', 'clock-rotate-left', F.semi, T.small) and not busy then
             if open then
                 st.sales_hist = nil -- (not `open and nil or key`: that is always key)
             else
@@ -1797,7 +1802,7 @@ local function draw_sales(dl, x, y, w, h, t)
                 fetch_history(row.id, row.stack)
             end
         end
-        local can = may_trade() and st.cancel_pending == nil
+        local can = may_trade() and st.cancel_pending == nil and not busy
         if button(cdl, '##cancel' .. row.key, x + w - S(130), cy + S(14), S(116), S(32), 'Take down', can and P.danger or P.faint, 'ghost', 'xmark', F.semi, T.small) and can then
             st.confirm = { kind = 'cancel', slot = row.slot, item = row.id, page = row.page, key = row.key, price = row.price }
         end
@@ -1845,6 +1850,15 @@ local function draw_sales(dl, x, y, w, h, t)
     end
     imgui.SetCursorScreenPos({ x, cy + S(2) })
     imgui.Dummy({ 1, 1 })
+    if busy then
+        -- the veil, in the child's own list so it lies over the rows
+        cdl:AddRectFilled({ x, child_top }, { x + w, bottom }, u32(P.ink, 0.62), S(10))
+        local pulse = 0.7 + 0.3 * math.sin(t * 3)
+        local my = child_top + math.min(S(120), (bottom - child_top) / 2)
+        icon(cdl, x + w / 2 - measure('Reading your listings', F.disp, T.h1) / 2 - S(18), my, 'rotate-right', P.cyan, T.h2, pulse)
+        text_center(cdl, x + S(18), my, w, 'Reading your listings', P.text, F.disp, T.h1)
+        text_center(cdl, x, my + S(26), w, 'The house hands them out a page at a time; a few seconds', P.dim, F.text, T.small)
+    end
     imgui.EndChild()
     cy = bottom
     text(dl, x + S(6), cy + S(4), 'Sold items pay out to your delivery box; the house holds unsold ones until you take them down. Sales are on the Activity tab.', P.faint, F.text, T.tiny)
