@@ -55,14 +55,14 @@ Watched items are checked every five minutes while you play, house open or not, 
 stock coming back shows as a notice. Clicking a row opens its card.
 
 **Sell.** Your bag, with the items the house doesn't take greyed. Pick one, choose single or full stack, set a
-price (recent sales are shown), and **Ask the fee**: the house quotes its listing fee, then **Put it up for sale**
+price (recent sales are shown), and **Checkout**: the house quotes its listing fee, then **Put it up for sale**
 commits. **My sales** lists what you have up, with the price and when, and takes a listing down. When one of them
 sells while you're on, CatsEyeXI's server says so (its `ah_announcement` module, a system line naming the item,
 the buyer and the price): the window shows it as a notice, lists it under **Sold while you were on** on that tab
 with the gil waiting in your delivery box, and keeps the sale on the item's record. The chat line stays too.
 
 **Typing a price.** The box you're typing in glows gold with a blinking caret; clicking a price box selects the
-number so typing replaces it. Enter in the asking price asks the fee, Enter in the bid box opens the bid's
+number so typing replaces it. Enter in the asking price is Checkout, Enter in the bid box opens the bid's
 confirmation (never a bid straight away), and Esc leaves the box, then a second Esc closes the window.
 
 **A controller (experimental, off by default).** Turn on **Game pad support** in the settings: one switch for every

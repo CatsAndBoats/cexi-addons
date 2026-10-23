@@ -789,7 +789,7 @@ local GOLD, PALE = '#FFD166', '#FFF3C4'
 -- its idle one. This adds a gold ring with a soft glow while typing, a lighter edge on hover, a caret of a few pixels
 -- that blinks (and holds still while you type), a dimmer placeholder so a hint never looks like a value, and, for
 -- prices, the whole number selected on click so typing replaces it. Enter in a price box does what its button does
--- (asks the fee; a bid goes to its confirmation, never straight through).
+-- (Checkout, the fee; a bid goes to its confirmation, never straight through).
 -- ImGui keeps the real caret position to itself; ours sits at the end of the text, which is where it is after a click
 -- that selects all, or after typing. Once the caret could have moved elsewhere (arrows, Home/End, a click inside the
 -- box), ours steps aside and ImGui's, now gold, carries on.
@@ -1622,9 +1622,9 @@ local function draw_sell(dl, x, y, w, h, t)
             st.confirm = { kind = 'sell' }
         end
     else
-        text(dl, sx, sy, 'The house quotes its fee before you commit', P.faint, F.text, T.tiny)
+        text(dl, sx, sy, 'Checkout shows the listing fee before anything is listed', P.faint, F.text, T.tiny)
         sy = sy + S(26)
-        if (button(dl, '##ask_btn', sx, sy, pw - S(32), S(36), st.sell.pending and 'Asking…' or 'Ask the fee', can and P.accent or P.faint, can and 'solid' or 'ghost', 'receipt') or entered) and can then
+        if (button(dl, '##ask_btn', sx, sy, pw - S(32), S(36), st.sell.pending and 'Checking out…' or 'Checkout', can and P.accent or P.faint, can and 'solid' or 'ghost', 'receipt') or entered) and can then
             do_ask(st.sell.slot, id, price, st.sell.stack)
         end
     end
