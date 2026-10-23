@@ -27,6 +27,7 @@ local U = require('ui')
 local I = require('items')
 local SEARCH = require('search')
 local PRICES = require('prices')
+local LEDGER = require('ledger')
 local COMPARE = require('compare')
 local PAD = require('pad')
 local P = U.P
@@ -61,7 +62,8 @@ local st = {
     inventory = {}, inv_at = 0, gil = 0,
     main = nil, settings_open = false, confirm = nil, last_error = nil, counts = { pin = 0, pout = 0 },
     anim = {}, list_at = 0, opened_at = 0, group_open = {}, hover = {},
-    watch_at = 0, watch_state = {}, watch_buf = {}, sold = {}, hist_fail = {},
+    watch_at = 0, watch_state = {}, watch_buf = {}, hist_fail = {},
+    act_filter = 'all', act_page = 1,
 }
 
 local settings = {
@@ -134,6 +136,7 @@ end
 
 local function settings_dir() return vana.paths.install .. '\\config\\addons\\auctionhouse-vanacore' end
 local function settings_file() return settings_dir() .. '\\' .. (my_name() ~= '' and my_name() or 'default') .. '.lua' end
+local function ledger_file() return settings_dir() .. '\\' .. (my_name() ~= '' and my_name() or 'default') .. '-activity.lua' end
 
 local function serialize(v, indent)
     indent = indent or ''
@@ -166,6 +169,8 @@ local function load_settings()
     for k in pairs(settings) do settings[k] = nil end
     for k, v in pairs(DEFAULTS) do settings[k] = copy(v) end
     st.settings_for = my_name()
+    LEDGER.load(ledger_file()) -- the character's activity, beside its settings
+    st.act_page = 1
     local path = settings_file()
     if not vana.fs.exists(path) then
         -- a first run: sized for the screen, since 100% is tiny on a 4K or Retina one
@@ -366,6 +371,7 @@ local function on_packet(e)
             st.sales[st.cancel_pending + 1] = nil
             st.cancel_pending = nil
             U.toast('ok', 'Taken down', row and (I.name(row.id) .. ' is back in your bag') or 'Returned to your bag', 4, 'box-open')
+            if row then LEDGER.add({ kind = 'taken', id = row.id, stack = row.stack, price = row.price }) end
             refresh_inventory()
         elseif st.cancel_pending ~= nil then
             st.cancel_pending = nil
@@ -392,7 +398,10 @@ local function on_packet(e)
         if result == RESULT.Ok then
             local a = st.sell.asked
             U.toast('ok', 'Up for sale', a and (I.name(a.item) .. (a.stack and ' (stack)' or '') .. '  ·  ' .. gil(a.price) .. ' gil') or 'Listed', 5, 'tag')
-            if a then forget_history(a.item) end
+            if a then
+                forget_history(a.item)
+                LEDGER.add({ kind = 'listed', id = a.item, stack = a.stack, price = a.price, fee = st.sell.fee })
+            end
             st.sell.asked, st.sell.fee, st.sell.slot = nil, nil, nil
             refresh_inventory()
             st.sales_dirty = true
@@ -406,6 +415,7 @@ local function on_packet(e)
         if result == RESULT.Ok then
             -- (the game says it in chat too: "You buy the ... for ... gil")
             U.toast('ok', 'Bought ' .. I.name(item), (qty > 1 and (qty .. ' for ') or '') .. gil(price) .. ' gil', 5, 'cart-shopping')
+            LEDGER.add({ kind = 'bought', id = item, stack = qty > 1, price = price })
             forget_history(item)
             st.inv_at = 0 -- the gil changes a moment after this reply: read the bag again on the next frame or two
             local cat = I.category_of(item)
@@ -705,7 +715,8 @@ local function toggle_watch(id, stack)
 end
 
 -- one of your listings sold (the server's AH announcement module says so, by the item's server name, the buyer and the
--- price): a notice, the sale marked on the My Sales tab, and the price kept on the item's record
+-- price): a notice, the listing gone from the Listings tab, the sale on the Activity tab, and the price kept on the
+-- item's record
 local function on_sold(name, buyer, price)
     -- which listing: one of yours. The server names the item by its internal name (underscores as spaces), which can
     -- differ from the name the game shows, so your listings are matched by price first, then by name
@@ -726,9 +737,8 @@ local function on_sold(name, buyer, price)
         end
     end
     local stack = row and row.stack or false
-    -- the sales list is only ever what's still up: the sold one leaves it on the next refresh, so it's remembered here
-    table.insert(st.sold, 1, { id = id, name = name, stack = stack, price = price, buyer = buyer, at = os.time() })
-    while #st.sold > 10 do table.remove(st.sold) end
+    -- the listings are only ever what's still up: the sold one leaves them, and the sale goes on the record
+    LEDGER.add({ kind = 'sold', id = id, name = id == nil and name or nil, stack = stack, price = price, who = buyer })
     if row then st.sales[row.slot + 1] = nil end
     st.sales_dirty = true
     -- the price record gets the sale from the house's own history, with its time (recording it here too would count it
@@ -1011,7 +1021,7 @@ local function draw_header(dl, x, y, w, t)
     bx = bx - size - S(4)
     local n_sales = 0
     for _ in pairs(st.sales) do n_sales = n_sales + 1 end
-    if icon_button(dl, '##mysales', bx, by, size, 'receipt', st.tab == 'sales' and GOLD or P.dim, 'My sales') then st.tab = 'sales' end
+    if icon_button(dl, '##mysales', bx, by, size, 'receipt', st.tab == 'sales' and GOLD or P.dim, 'Listings') then st.tab = 'sales' end
     if n_sales > 0 then
         dl:AddCircleFilled({ bx + size - S(5), by + S(5) }, S(6), u32(GOLD), 16)
         text_center(dl, bx + size - S(11), by + S(5), S(12), tostring(n_sales), P.ink, F.bold, T.tiny - 2)
@@ -1051,7 +1061,7 @@ end
 
 local function draw_tabs(dl, x, y, w)
     local h = S(40)
-    local tabs = { { 'buy', 'BUY', 'cart-shopping' }, { 'sell', 'SELL', 'tag' }, { 'sales', 'MY SALES', 'receipt' }, { 'watch', 'WATCH', 'star' } }
+    local tabs = { { 'buy', 'BUY', 'cart-shopping' }, { 'sell', 'SELL', 'tag' }, { 'sales', 'LISTINGS', 'receipt' }, { 'activity', 'ACTIVITY', 'clock-rotate-left' }, { 'watch', 'WATCH', 'star' } }
     local tx = x + S(24)
     for _, tab in ipairs(tabs) do
         local on = st.tab == tab[1]
@@ -1639,7 +1649,7 @@ local function draw_sell(dl, x, y, w, h, t)
     if not may_trade() then text(dl, sx, sy + S(44), 'Talk to an auction clerk to sell', P.warn, F.text, T.tiny) end
 end
 
--- MY SALES
+-- LISTINGS
 local function draw_sales(dl, x, y, w, h, t)
     local rows = {}
     for _, row in pairs(st.sales) do rows[#rows + 1] = row end
@@ -1650,13 +1660,13 @@ local function draw_sales(dl, x, y, w, h, t)
         send_sales()
     end
     local cy = y + S(32)
-    if #rows == 0 and #st.sold == 0 then
+    if #rows == 0 then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
         text_center(dl, x, y + h / 2 + S(30), w, st.sales_open and 'Nothing up for sale' or 'Ask the house', P.text, F.disp, T.h1)
         text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and 'Sell something from your bag' or (may_trade() and 'Refresh lists what you have up' or 'Talk to an auction clerk'), P.dim, F.text, T.small)
         return
     end
-    -- the rows and what sold, in an area of their own that scrolls (seven up, one with its history open, don't fit)
+    -- the rows, in an area of their own that scrolls (seven up, one with its history open, don't fit)
     local bottom = y + h - S(22)
     imgui.SetCursorScreenPos({ x, cy })
     imgui.BeginChild('##sales_rows', { w, bottom - cy }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
@@ -1736,28 +1746,107 @@ local function draw_sales(dl, x, y, w, h, t)
         end
         cy = cy + S(8)
     end
-    -- what sold while you were on (the server's announcement), newest first
-    if #st.sold > 0 then
-        cy = cy + S(8)
-        text(cdl, x + S(6), cy, 'SOLD WHILE YOU WERE ON  ·  the gil is in your delivery box', P.ok, F.disp, T.small)
-        cy = cy + S(24)
-        for i, s in ipairs(st.sold) do
-            local rh = S(48)
-            panel(cdl, x + S(4), cy, w - S(8), rh, P.card, 0.8, S(10))
-            if s.id then item_icon(cdl, s.id, x + S(14), cy + S(6), S(36), 1) end
-            local what = s.id and I.name(s.id) or s.name
-            text(cdl, x + S(60), cy + S(6), what .. (s.stack and ('  ·  stack') or ''), P.text, F.disp, T.body)
-            text(cdl, x + S(60), cy + S(28), 'to ' .. s.buyer .. '  ·  ' .. ago(s.at), P.dim, F.text, T.tiny)
-            local pl = gil(s.price) .. ' gil'
-            text(cdl, x + w - S(20) - measure(pl, F.disp, T.h2), cy + S(12), pl, P.ok, F.disp, T.h2)
-            cy = cy + rh + S(6)
-        end
-    end
     imgui.SetCursorScreenPos({ x, cy + S(2) })
     imgui.Dummy({ 1, 1 })
     imgui.EndChild()
     cy = bottom
-    text(dl, x + S(6), cy + S(4), 'Sold items pay out to your delivery box; the house holds unsold ones until you take them down.', P.faint, F.text, T.tiny)
+    text(dl, x + S(6), cy + S(4), 'Sold items pay out to your delivery box; the house holds unsold ones until you take them down. Sales are on the Activity tab.', P.faint, F.text, T.tiny)
+end
+
+-- ACTIVITY: the character's record of the house, bought, listed, taken down and sold, newest first, a page at a time,
+-- with the gil in and out over the whole of it
+local ACT_KIND = {
+    bought = { label = 'BOUGHT', color = P.cyan, icon = 'cart-shopping', sign = -1 },
+    sold = { label = 'SOLD', color = P.ok, icon = 'sack-dollar', sign = 1 },
+    listed = { label = 'LISTED', color = P.accent, icon = 'tag', sign = 0 },
+    taken = { label = 'TAKEN DOWN', color = P.dim, icon = 'xmark', sign = 0 },
+}
+local ACT_PER = 20
+local function draw_activity(dl, x, y, w, h, t)
+    local rows, page, pages, total = LEDGER.page(st.act_filter, st.act_page, ACT_PER)
+    st.act_page = page
+    text(dl, x + S(6), y, 'ACTIVITY  ·  ' .. total .. (total == 1 and ' entry' or ' entries'), P.dim, F.disp, T.small)
+    -- the filters
+    local fy = y - S(4)
+    local fx = x + w - S(6)
+    for _, f in ipairs({ { 'sold', 'SOLD', P.ok, 'sack-dollar' }, { 'bought', 'BOUGHT', P.cyan, 'cart-shopping' }, { 'all', 'ALL', GOLD, 'clock-rotate-left' } }) do
+        fx = fx - chip_width(f[2])
+        if filter_chip(dl, '##act_' .. f[1], fx, fy, f[2], st.act_filter == f[1], f[3], nil, f[4], f[4]) then
+            st.act_filter, st.act_page, st.act_top = f[1], 1, true
+        end
+        fx = fx - S(8)
+    end
+    -- the gil, over everything the filter keeps
+    local tot = LEDGER.totals(st.act_filter)
+    local ty = y + S(30)
+    panel(dl, x + S(4), ty, w - S(8), S(50), P.well, 0.45, S(10))
+    local cols = {}
+    if st.act_filter ~= 'sold' then cols[#cols + 1] = { 'SPENT', gil(tot.spent), P.cyan, tot.bought .. (tot.bought == 1 and ' purchase' or ' purchases') } end
+    if st.act_filter ~= 'bought' then cols[#cols + 1] = { 'EARNED', gil(tot.earned), P.ok, tot.sold .. (tot.sold == 1 and ' sale' or ' sales') } end
+    if st.act_filter == 'all' then
+        cols[#cols + 1] = { 'FEES', gil(tot.fees), P.dim, tot.listed .. (tot.listed == 1 and ' listing' or ' listings') }
+        cols[#cols + 1] = { 'NET', (tot.net < 0 and '−' or '') .. gil(math.abs(tot.net)), tot.net < 0 and P.danger or (tot.net > 0 and GOLD or P.text), 'sales less purchases and fees' }
+    end
+    local cw = (w - S(8)) / #cols
+    for i, c in ipairs(cols) do
+        local cx = x + S(4) + (i - 1) * cw
+        text(dl, cx + S(16), ty + S(7), c[1], P.dim, F.disp, T.tiny)
+        text(dl, cx + S(16), ty + S(21), c[2] .. ' gil', c[3], F.disp, T.h2)
+        local sub = c[4]
+        text(dl, cx + cw - S(16) - measure(sub, F.text, T.tiny), ty + S(26), sub, P.faint, F.text, T.tiny)
+        if i > 1 then dl:AddLine({ cx, ty + S(10) }, { cx, ty + S(40) }, u32(P.line, 0.6), 1) end
+    end
+    local cy = ty + S(60)
+    local bottom = y + h - S(30)
+    if total == 0 then
+        glass_gil(dl, x + w / 2, y + h / 2 - S(10), S(72), t, 0.9)
+        text_center(dl, x, y + h / 2 + S(50), w, st.act_filter == 'all' and 'Nothing yet' or ('Nothing ' .. st.act_filter .. ' yet'), P.text, F.disp, T.h1)
+        text_center(dl, x, y + h / 2 + S(74), w, 'What you buy, list, take down and sell here is kept, per character, across restarts', P.dim, F.text, T.small)
+        return
+    end
+    imgui.SetCursorScreenPos({ x, cy })
+    imgui.BeginChild('##act_rows', { w, bottom - cy }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
+    local cdl = imgui.GetWindowDrawList()
+    if st.act_top then imgui.SetScrollY(0) st.act_top = nil end -- a new page or filter starts at its top
+    cy = cy - imgui.GetScrollY()
+    for _, r in ipairs(rows) do
+        local k = ACT_KIND[r.kind] or ACT_KIND.listed
+        local rh = S(48)
+        panel(cdl, x + S(4), cy, w - S(8), rh, P.card, 0.85, S(10))
+        if r.id then item_icon(cdl, r.id, x + S(14), cy + S(6), S(36), 1) end
+        local what = r.id and I.name(r.id) or (r.name or 'Unknown item')
+        if r.stack then
+            local n = r.id and I.get(r.id).stack or 0
+            what = what .. (n > 1 and ('  ·  stack of ' .. n) or '  ·  stack')
+        end
+        local pw = pill(cdl, x + S(60), cy + S(7), k.label, mix(k.color, P.ink, 0.72), k.color, F.disp, T.tiny - 1, S(7), k.icon)
+        text(cdl, x + S(60) + pw + S(8), cy + S(6), fit(what, F.disp, T.body, w - S(300) - pw), P.text, F.disp, T.body)
+        local when = ago(r.at)
+        local line
+        if r.kind == 'sold' then line = 'to ' .. (r.who or 'someone') .. '  ·  the gil went to your delivery box'
+        elseif r.kind == 'bought' then line = 'from the house'
+        elseif r.kind == 'listed' then line = 'fee ' .. gil(r.fee or 0) .. ' gil, paid then'
+        else line = 'back to your bag' end
+        text(cdl, x + S(60), cy + S(28), line .. '  ·  ' .. when, P.dim, F.text, T.tiny)
+        local pl = (k.sign < 0 and '−' or (k.sign > 0 and '+' or '')) .. gil(r.price) .. ' gil'
+        local pc = k.sign < 0 and P.cyan or (k.sign > 0 and P.ok or P.dim)
+        text_mid(cdl, x + w - S(20) - measure(pl, F.disp, T.h2), cy + rh / 2, pl, pc, F.disp, T.h2)
+        cy = cy + rh + S(6)
+    end
+    imgui.SetCursorScreenPos({ x, cy + S(2) })
+    imgui.Dummy({ 1, 1 })
+    imgui.EndChild()
+    -- the pages
+    cy = bottom
+    local can_prev, can_next = page > 1, page < pages
+    if button(dl, '##act_prev', x + S(4), cy + S(2), S(92), S(26), 'Newer', can_prev and P.accent or P.faint, 'ghost', 'chevron-left', F.semi, T.tiny) and can_prev then
+        st.act_page, st.act_top = page - 1, true
+    end
+    if button(dl, '##act_next', x + w - S(4) - S(92), cy + S(2), S(92), S(26), 'Older', can_next and P.accent or P.faint, 'ghost', 'chevron-right', F.semi, T.tiny) and can_next then
+        st.act_page, st.act_top = page + 1, true
+    end
+    local lo, hi = (page - 1) * ACT_PER + 1, math.min(total, page * ACT_PER)
+    text_center(dl, x, cy + S(7), w, 'Page ' .. page .. ' of ' .. pages .. '  ·  ' .. lo .. '–' .. hi .. ' of ' .. total, P.dim, F.text, T.tiny)
 end
 
 -- WATCH: the items you follow, each with its stock, last price, how it moved, a sparkline, and a price to be told at
@@ -1968,7 +2057,7 @@ end
 -- The controller's buttons with a meaning of their own (the D-pad, the sticks and Confirm are ImGui's): Cancel backs
 -- out as Esc does, the bumpers turn the tabs, the triggers walk the categories, X and Y are the In stock and Usable
 -- chips, Menu is the settings, View the Compare chip.
-local TAB_ORDER = { 'buy', 'sell', 'sales', 'watch' }
+local TAB_ORDER = { 'buy', 'sell', 'sales', 'activity', 'watch' }
 local CAT_ORDER = {}
 for _, g in ipairs(I.GROUPS) do for _, c in ipairs(g.cats) do CAT_ORDER[#CAT_ORDER + 1] = { cat = c, group = g.id } end end
 
@@ -2003,6 +2092,14 @@ local function pad_buttons()
         if PAD.pressed('menu') then settings.usable = not settings.usable save_settings() end
         if PAD.pressed('back') then settings.compare = not settings.compare save_settings() end
     end
+    if st.tab == 'activity' and not st.settings_open then
+        local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
+        if step ~= 0 then st.act_page, st.act_top, st.pad_first = st.act_page + step, true, 3 end -- (clamped where it's drawn)
+        if PAD.pressed('options') then
+            local f = { all = 'bought', bought = 'sold', sold = 'all' }
+            st.act_filter, st.act_page, st.act_top = f[st.act_filter] or 'all', 1, true
+        end
+    end
     if PAD.pressed('start') then st.settings_open = not st.settings_open end
 end
 
@@ -2010,6 +2107,7 @@ local LEGEND = {
     buy = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Category' }, { 'updown', 'Price' },
         { 'options', 'In stock' }, { 'menu', 'Usable' }, { 'back', 'Compare' }, { 'start', 'Settings' } },
     sell = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'updown', 'Price' }, { 'start', 'Settings' } },
+    activity = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Page' }, { 'options', 'Filter' }, { 'start', 'Settings' } },
     other = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'start', 'Settings' } },
 }
 local function draw_legend(dl, x, y, w)
@@ -2067,6 +2165,8 @@ local function draw_main(t)
             draw_sell(dl, x + S(16), by, w - S(32), bh, t)
         elseif st.tab == 'watch' then
             draw_watch(dl, x + S(16), by, w - S(32), bh, t)
+        elseif st.tab == 'activity' then
+            draw_activity(dl, x + S(16), by, w - S(32), bh, t)
         else
             draw_sales(dl, x + S(16), by, w - S(32), bh, t)
         end
@@ -2113,6 +2213,7 @@ local function tick()
     if st.pad_first and st.open then st.pad_first = st.pad_first - 1 if st.pad_first <= 0 then st.pad_first = nil end end
     SEARCH.poll()
     PRICES.save()
+    LEDGER.save()
     -- the watch list, checked in the background
     -- a character logged in (or switched to) since the settings were read: its own settings, search host and key
     local name = my_name()
@@ -2173,6 +2274,7 @@ vana.events.on('unload', function ()
     PAD.teardown('auctionhouse')
     save_settings()
     PRICES.save(true)
+    LEDGER.save(true)
     SEARCH.cancel_all()
     I.release_icons()
     U.release_textures()
@@ -2228,7 +2330,8 @@ vana.events.on('command', function (e)
     elseif what == 'hide' then st.open = false
     elseif what == 'buy' then open_window() st.tab = 'buy'
     elseif what == 'sell' then open_window() st.tab = 'sell'
-    elseif what == 'sales' then open_window() st.tab = 'sales'
+    elseif what == 'sales' or what == 'listings' then open_window() st.tab = 'sales'
+    elseif what == 'activity' then open_window() st.tab = 'activity'
     elseif what == 'settings' then open_window() st.settings_open = true
     elseif what == 'search' and words[3] then
         open_window()
@@ -2288,7 +2391,8 @@ vana.events.on('command', function (e)
     elseif what == 'tab' and words[3] then
         open_window()
         local tab = words[3]:lower()
-        if tab == 'buy' or tab == 'sell' or tab == 'sales' or tab == 'watch' then st.tab = tab end
+        if tab == 'listings' then tab = 'sales' end
+        if tab == 'buy' or tab == 'sell' or tab == 'sales' or tab == 'activity' or tab == 'watch' then st.tab = tab end
     elseif what == 'watch' then
         if words[3] == nil then
             open_window()
@@ -2346,7 +2450,7 @@ vana.events.on('command', function (e)
         if st.lists[st.category] then for _ in pairs(st.lists[st.category].items) do listed = listed + 1 end end
         say(string.format('category %d: %d items, %d up, %d known zero, %d unknown, %d rows in the list reply, in_stock %s', st.category, #ids, up, zero, unknown, listed, tostring(settings.in_stock)))
     else
-        say('/ah [show|hide|buy|sell|sales|watch [<id or name>]|search <name>|pick <id or name>|settings|theme <name>|server <host[:port]|auto>|scale <percent>|opacity <percent>|refresh|debug]')
+        say('/ah [show|hide|buy|sell|listings|activity|watch [<id or name>]|search <name>|pick <id or name>|settings|theme <name>|server <host[:port]|auto>|scale <percent>|opacity <percent>|refresh|debug]')
     end
     return true
 end)

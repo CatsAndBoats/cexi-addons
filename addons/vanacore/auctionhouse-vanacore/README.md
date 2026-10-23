@@ -57,10 +57,20 @@ stock coming back shows as a notice. Clicking a row opens its card.
 **Sell.** Your bag, with the items the house doesn't take greyed. Pick one, choose single or full stack, set a
 price (recent sales are shown), and **List for N gil**: the house quotes its listing fee, and a card spells out the
 whole transaction (the item, the price, the fee paid now, the payout to your delivery box when it sells) for you to
-say **List it** to. **My sales** lists what you have up, with the price and when, and takes a listing down. When one of them
-sells while you're on, CatsEyeXI's server says so (its `ah_announcement` module, a system line naming the item,
-the buyer and the price): the window shows it as a notice, lists it under **Sold while you were on** on that tab
-with the gil waiting in your delivery box, and keeps the sale on the item's record. The chat line stays too.
+say **List it** to.
+
+**Listings.** What you have up, with the price, the slot and when it went up, and a **Take down** for each. **History**
+on a row asks the search server for that item's recent sales (only when you ask: nothing is fetched for rows nobody
+looks at) and shows last, median, range and trend under the row, with where your price stands against the median.
+When one of your listings sells while you're on, CatsEyeXI's server says so (its `ah_announcement` module, a system
+line naming the item, the buyer and the price): the window shows it as a notice, drops the listing, puts the sale on
+the Activity tab, and keeps the price on the item's record. The chat line stays too.
+
+**Activity.** A running record of what this character did at the house, kept across restarts: every purchase,
+listing (with its fee), take-down and sale, newest first, twenty to a page (**Newer** / **Older**), with **All**,
+**Bought** and **Sold** filters. The strip above it totals the gil over the whole record: spent on purchases, earned
+from sales, paid in listing fees, and the net of the three. A sale is known only when the server announces it to you,
+so one that happens while you're logged out shows in your delivery box, not here.
 
 **Typing a price.** The box you're typing in glows gold with a blinking caret; clicking a price box selects the
 number so typing replaces it. Enter in the asking price is the List button, Enter in the bid box opens the bid's
@@ -94,7 +104,7 @@ well, accent, accent2, cyan } }`).
 | Command | Action |
 |---|---|
 | `/ah` | Open or close the window (Esc closes it too) |
-| `/ah buy` / `sell` / `sales` / `watch` | Open on that tab |
+| `/ah buy` / `sell` / `listings` / `activity` / `watch` | Open on that tab |
 | `/ah watch <id or name>` | Follow an item on the Watch tab, or stop |
 | `/ah search <name>` | Open with a name search |
 | `/ah pick <id or name>` | Open on an item's card |
@@ -107,8 +117,9 @@ well, accent, accent2, cyan } }`).
 | `/ah pad [on\|off\|<button>]` | The controller: its state, the setting, or a press of `a`, `b`, `x`, `y`, `up`, `down`, `left`, `right`, `l1`, `r1`, `l2`, `r2`, `start`, `back`; `/ah pad stick <x> <y> [frames]` a stick |
 
 Settings and the watch list are kept per character in `Vanacore\config\addons\auctionhouse-vanacore\<name>.lua`; the
-price record is `prices-<search host>.lua` beside it, one per server, up to 160 sales per item and kind, series
-with no sale in 120 days dropped.
+activity record is `<name>-activity.lua` beside it (up to 2,000 entries); the price record is
+`prices-<search host>.lua`, one per server, up to 160 sales per item and kind, series with no sale in 120 days
+dropped.
 
 ## How it talks to the server
 
@@ -140,6 +151,7 @@ with no sale in 120 days dropped.
 - `search.lua`, `bf_tables.lua` — the search-server client and LandSandBoat's Blowfish boxes
 - `items.lua` — the game's item data through the resource manager, icon textures, the catalogue and name search
 - `prices.lua` — the price record (every sale seen, per server) and the graphs drawn from it
+- `ledger.lua` — the activity record (bought, listed, taken down, sold; per character), its pages and totals
 - `compare.lua` — gear stats read from the game's item descriptions, what you wear, and the Compare card
 - `pad.lua` — the controller: VanaCore's XInput and DirectInput reads as ImGui's gamepad keys, the game kept from them
   while the window has the pad, the legend; shared source in `tools/pad.lua`, copied here by `tools/make_ui.py`
