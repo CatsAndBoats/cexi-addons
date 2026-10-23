@@ -89,12 +89,15 @@ gamepad support in VanaCore addons**, one for every addon (`vanacore.ini`'s `[ad
 it too). With two windows open, the one with the focus answers the pad. Tested with XInput
 pads in mind; a DirectInput pad (a PlayStation controller without a wrapper) is read through the game's own button
 map and may not line up. With it on, the window takes the pad while it's open, so your character stays put and the game's menus stay closed: the D-pad moves a ring between
-things, Confirm presses, Cancel backs out (the confirmation, the settings, then the window), the bumpers turn the
-tabs, the triggers walk the categories, a stick scrolls the list, X and Y are the In stock and Usable chips, View the
-Compare chip, Menu the settings. **To buy:** Confirm on an item opens its card; Confirm again on the same item moves
-the ring to the card's **Bid** button, Confirm there opens the confirmation, where Bid is already under the ring, so
-Confirm once more bids. Cancel from the card goes back to the item in the list. **A price:** Left from Bid (or Up
-from List, on the Sell tab) is the price box, and Confirm there takes it over as a digit editor, since a pad can't
+things, Confirm presses, Cancel backs out, the bumpers turn the tabs, the triggers walk the categories, a stick
+scrolls the list, X and Y are the In stock and Usable chips, View the Compare chip, Menu the settings. **To buy**, the
+Buy tab goes left to right, one pane at a time: the ring starts on the category in use in the sidebar; Confirm on a
+category moves it to that list's first item; Confirm on an item opens its card with the ring on the price box;
+Confirm there edits the price (below), Confirm again keeps it and moves to **Bid**, Confirm on Bid opens the
+confirmation, where Bid is already under the ring, so Confirm once more bids. Cancel walks back the same way (the
+confirmation, the card to its item, the list to its category, then the window), and the legend says what Confirm and
+Cancel do in the pane you're in. A Confirm only ever does one thing: the press that keeps a price doesn't also press
+Bid. **A price:** the price box (Left from Bid, or Up from List on the Sell tab, gets back to it) takes Confirm as a digit editor, since a pad can't
 type, worked as the game's own bid box is: the number starts at 0, right-aligned, with the ones digit lit; Left
 moves the light up the columns (past the top digit it adds a zero in front, up to nine digits), Right brings it back
 down and, at the ones, clears the number; Up and Down change the lit digit (carrying over, never below 0); Confirm
@@ -107,7 +110,9 @@ state, `/ah pad off` turns it off (a setting), and `/ah pad <button>` presses a 
 trying it without one.
 
 **Settings** (the gear): the theme, bid and sell only at an auction clerk, talking to a clerk opens this window, confirm before
-bidding, the price graph, background checks of watched items, opacity and scale. The search server isn't shown
+bidding, the price graph, background checks of watched items, opacity and scale, and the sound as it opens: a small
+bell by default, or Counter bell, Door chime, Chapel bell, Crystal chime, Tiny bell, or Off (picking one plays it, and
+the speaker beside it plays it again; `/ah sound <name>` and `/ah sound off` do the same). The search server isn't shown
 there (it's your login server's address); `/ah debug` says which one is in use and `/ah server` changes it.
 
 **Themes.** The same twelve themes as Party Finder, by the same names (Aurora, Gems, Banner, Ember, Ranger, Inferno,
@@ -127,6 +132,7 @@ well, accent, accent2, cyan } }`).
 | `/ah pick <id or name>` | Open on an item's card |
 | `/ah server <host[:port]>` | Which search server to ask; `/ah server auto` finds it from your login again |
 | `/ah theme <name>` | Switch theme; `/ah theme` lists them |
+| `/ah sound <name>` / `off` / `on` | The sound as the window opens; `/ah sound` lists them |
 | `/ah scale <percent>` | Window size, 50 to 300 |
 | `/ah opacity <percent>` | Window opacity, 40 to 100 |
 | `/ah refresh` | Forget fetched lists and histories |
@@ -179,3 +185,5 @@ dropped.
 - `ui.lua` — the drawing kit and the themes, generated from the Party Finder addon's helpers by this repo's `tools/make_ui.py`
   so the two look the same; edit there, not here
 - `fonts/` — Inter and Rajdhani (SIL Open Font License, licenses included); `images/jobs.png` — the job sprites
+- `sounds/` — the bells the window opens with: `small_bell.wav` is BigSoundBank's "Small Bell #1" (CC0), the rest are
+  synthesized for this addon; `sounds/README.txt` has the sources

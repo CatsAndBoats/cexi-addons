@@ -72,6 +72,14 @@ local settings = {
     sort = 'name', in_stock = false, remember = {},
     chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false, compare = false,
     sellable_only = false, -- the Sell tab hides what the house won't take
+    open_sound = true, open_sound_id = 'small_bell', -- a bell as the window opens (sounds\<id>.wav)
+}
+
+-- the bells the window can open with, in sounds\: the first is the default
+local OPEN_SOUNDS = {
+    { id = 'small_bell', name = 'Small bell' }, { id = 'counter_bell', name = 'Counter bell' },
+    { id = 'door_chime', name = 'Door chime' }, { id = 'chapel_bell', name = 'Chapel bell' },
+    { id = 'crystal_chime', name = 'Crystal chime' }, { id = 'tiny_bell', name = 'Tiny bell' },
 }
 
 local function copy(v)
@@ -841,9 +849,20 @@ local function poll_watch()
     for _, e in ipairs(settings.watch) do fetch_history(e.id, e.stack, true) end
 end
 
+-- the bell the window opens with (force: a preview, played with the sound switched off too)
+local function play_open_sound(force)
+    if not settings.open_sound and not force then return end
+    local id = settings.open_sound_id or OPEN_SOUNDS[1].id
+    local path = vana.paths.addon .. '\\sounds\\' .. id .. '.wav'
+    if not vana.fs.exists(path) then path = vana.paths.addon .. '\\sounds\\' .. OPEN_SOUNDS[1].id .. '.wav' end
+    if vana.fs.exists(path) then pcall(vana.system.play_sound, path) end
+end
+
 open_window = function ()
+    if not st.open then play_open_sound() end -- (not again for /ah buy and the like on a window already open)
     st.open = true
-    st.pad_first, st.pad_first_id = 3, nil -- the controller's focus starts on the list's first row
+    -- the controller's focus starts on the category in the sidebar (on a search's first result when one is up)
+    st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, st.results == nil
     st.opened_at = now_t -- ImGui's clock, the one the fade is measured against
     scan_counter()
     refresh_inventory()
@@ -926,16 +945,21 @@ local function pad_price_box(id, hint, buf, width, size, fs)
     fs.focused = focused or st.pad_seat == 'price'
     local changed = false
     local v = tonumber(buf[1]) or 0
-    if pressed then
-        if fs.pad_on then
-            fs.pad_on = false
-            st.pad_seat = id == '##bid' and 'bid' or 'list' -- on to the button
-        elseif focused then
-            -- from 0, the ones lit, as the game's box starts (Cancel brings back what was there)
-            fs.pad_on, fs.orig, fs.col = true, buf[1] or '', 0
-            v, buf[1] = 0, ''
-            changed = buf[1] ~= fs.orig
-        end
+    -- while editing, Confirm is read from the pad itself: the focus taken back each frame is a navigation request,
+    -- and ImGui drops any activation while one is under way, so the box's own press never came and Confirm did nothing
+    -- (only once the Confirm that opened the editor has been let go: the pad's press and ImGui's can land a frame apart)
+    if fs.pad_on and not PAD.down('confirm') then fs.armed = true end
+    local keep = fs.pad_on and fs.armed and PAD.pressed('confirm')
+    if fs.pad_on and (pressed or keep) then
+        fs.pad_on = false
+        st.pad_seat = id == '##bid' and 'bid' or 'list' -- on to the button
+        -- the same press, still held, must not also press the button the focus moves to (or open the box again)
+        st.pad_mute = 'held'
+    elseif pressed and focused and not st.pad_mute then
+        -- from 0, the ones lit, as the game's box starts (Cancel brings back what was there)
+        fs.pad_on, fs.orig, fs.col, fs.armed = true, buf[1] or '', 0, false
+        v, buf[1] = 0, ''
+        changed = buf[1] ~= fs.orig
     end
     if fs.pad_on then
         st.pad_editing, st.pad_hold = true, 'all'
@@ -1325,12 +1349,20 @@ local function draw_sidebar(dl, x, y, w, h)
     imgui.SetCursorScreenPos({ x, y })
     imgui.BeginChild('##cats', { w, h }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
     local cdl = imgui.GetWindowDrawList()
+    -- the controller's focus (re)starts here on the category in use (pad_cats): its group opened, the child made the
+    -- focused window, then the row seated in it the frame after, as the list does
+    local seating = st.pad_first and st.pad_cats and PAD.capturing()
+    if seating then
+        st.group_open[I.group_of(st.category).id] = true
+        if st.pad_first == 2 then imgui.SetWindowFocus() end
+    end
     local cy = y + S(8) - imgui.GetScrollY() -- drawn where the scroll puts it
     for _, g in ipairs(I.GROUPS) do
         local open = st.group_open[g.id]
         if open == nil then open = (g.id == st.group) st.group_open[g.id] = open end
         imgui.SetCursorScreenPos({ x, cy })
         local pressed, _, hv = hit('##grp' .. g.id, w, S(30))
+        if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
         if pressed then st.group_open[g.id] = not open end
         local active = I.group_of(st.category).id == g.id
         cdl:AddRectFilled({ x + S(6), cy + S(2) }, { x + w - S(6), cy + S(28) }, u32(P.card_hi, (active and 0.5 or 0.15) + 0.3 * hv), S(8))
@@ -1343,13 +1375,19 @@ local function draw_sidebar(dl, x, y, w, h)
                 local n = #I.category(cat)
                 if n > 0 then
                     imgui.SetCursorScreenPos({ x, cy })
+                    local seat = seating and cat == st.category
+                    if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
                     local cp, _, chv = hit('##cat' .. cat, w, S(24))
+                    if seat then imgui.SetItemDefaultFocus() end
+                    if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
                     local on = st.category == cat and st.results == nil
                     if cp then
                         st.category, st.group = cat, g.id
                         st.query[1], st.results = '', nil
                         st.list_at = clock()
                         fetch_list(cat)
+                        -- a controller: Confirm on a category goes on to its list's first row
+                        if PAD.shown() then st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, false end
                     end
                     if on then cdl:AddRectFilled({ x + S(12), cy + S(1) }, { x + w - S(6), cy + S(23) }, u32(GOLD, 0.14), S(7)) end
                     text_mid(cdl, x + S(26), cy + S(12), I.CATEGORY_NAME[cat] or ('Category ' .. cat), on and GOLD or mix(P.dim, P.text, 0.5 + 0.5 * chv), F.text, T.small)
@@ -1384,6 +1422,7 @@ local function draw_item_row(dl, id, x, y, w, alpha)
     -- (the controller first: ImGui counts the focused row as hovered while its cursor shows)
     if PAD.shown() and imgui.IsItemFocused() then st.hover_id = id st.hover_rect = { x = x, y = y, w = w, h = h }
     elseif hovered then st.hover_id = id st.hover_rect = nil end
+    if imgui.IsItemFocused() then st.pad_where_now = 'items' end
     local selected = st.selected == id
     local r = I.get(id)
     panel(dl, x, y, w, h, selected and P.card_hi or P.card, (selected and 1 or 0.9 + 0.1 * hv) * alpha, S(10), selected and GOLD or (hv > 0.01 and mix(P.line, P.accent, hv) or nil), selected)
@@ -1406,8 +1445,11 @@ local function draw_item_row(dl, id, x, y, w, alpha)
     end
     if pressed then
         U.ripple_at(key)
-        if not selected then select_item(id)
-        elseif PAD.shown() then st.pad_seat = 'bid' -- a controller: Confirm on the picked item goes to its Bid button
+        -- a controller: Confirm picks the item and goes on to its card's price box, ready for a bid
+        if PAD.shown() then
+            if not selected then select_item(id) end
+            st.pad_seat = 'price'
+        elseif not selected then select_item(id)
         else select_item(nil) end
     end
     if hovered and imgui.IsMouseDoubleClicked(0) and not selected then select_item(id) end
@@ -1525,11 +1567,12 @@ local function draw_list(dl, x, y, w, h, t)
     imgui.BeginChild('##items', { w, lh }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
     local cdl = imgui.GetWindowDrawList()
     pad_scroll()
+    local seating = st.pad_first and not st.pad_cats and PAD.capturing()
     -- a list the controller's focus (re)starts in shows its top
-    if st.pad_first and st.pad_first_id == nil and PAD.capturing() then imgui.SetScrollY(0) end
-    -- back from the card: ImGui won't tab the focus from a root item into this (flattened) child, so the child is
-    -- made the focused window first, and the row seated in it the frame after
-    if st.pad_first == 2 and st.pad_first_id and PAD.capturing() then imgui.SetWindowFocus() end
+    if seating and st.pad_first_id == nil then imgui.SetScrollY(0) end
+    -- from the card or the sidebar: ImGui won't tab the focus from another window into this (flattened) child, so
+    -- the child is made the focused window first, and the row seated in it the frame after
+    if seating and st.pad_first == 2 then imgui.SetWindowFocus() end
     local scroll_y = imgui.GetScrollY()
     local cy = ly - scroll_y
     local since = clock() - st.list_at
@@ -1553,7 +1596,7 @@ local function draw_list(dl, x, y, w, h, t)
             -- focus (SetKeyboardFocusHere, before the row)
             if first_drawn == nil then first_drawn = i end
             -- (or, back from the card, on the picked row: pad_first_id)
-            local seat = st.pad_first and PAD.capturing() and (st.pad_first_id and id == st.pad_first_id or (st.pad_first_id == nil and i == first_drawn))
+            local seat = seating and (st.pad_first_id and id == st.pad_first_id or (st.pad_first_id == nil and i == first_drawn))
             if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() st.pad_seats = (st.pad_seats or 0) + 1 end
             draw_item_row(cdl, id, x + S(4), cy, w - S(12), math.max(0.05, math.min(1, alpha)))
             if seat then imgui.SetItemDefaultFocus() end
@@ -1712,6 +1755,8 @@ local function draw_detail(dl, x, y, w, h, t)
     -- a controller: Confirm on the picked row, or a closed confirmation, lands the focus here
     if st.pad_seat == 'bid' then imgui.SetKeyboardFocusHere() st.pad_seat = nil end
     local bid_pressed = button(dl, '##bid_btn', x + w - S(16) - S(104), by, S(104), S(34), label, can and GOLD or P.faint, can and 'solid' or 'ghost', 'gavel')
+    if st.pad_mute then bid_pressed = false end -- the Confirm that kept the price, not a press of Bid
+    if bid_pressed and PAD.shown() then st.pad_mute = 'held' end -- nor of the confirmation's Bid, which takes the focus
     if imgui.IsItemFocused() then
         st.card_focus = true
         st.pad_hold = 'all' -- the D-pad is the window's here: Left is the price box (ImGui's own Left wandered off to the sidebar)
@@ -1859,6 +1904,7 @@ local function draw_sell(dl, x, y, w, h, t)
     local ok = can and (not known or (st.sell.fee or 0) <= st.gil)
     if st.pad_seat == 'list' then imgui.SetKeyboardFocusHere() st.pad_seat = nil end -- a controller, from the price box
     local list_pressed = button(dl, '##list_btn', sx, sy, pw - S(32), S(36), label, ok and GOLD or P.faint, ok and 'solid' or 'ghost', 'tag')
+    if st.pad_mute then list_pressed = false end -- the Confirm that kept the price, not a press of List
     if imgui.IsItemFocused() then
         st.pad_hold = true -- Up from List is the price box, the window's to do
         if PAD.pressed('up') then st.pad_seat = 'price' end
@@ -2214,6 +2260,22 @@ local function draw_settings(dl, x, y, w, h)
             dl:AddCircleFilled({ rx + S(170) + S(20) + (i - 1) * S(16), ry + S(40) }, S(6), u32(th.palette[k] or P[k]), 16)
         end
         text(dl, rx, ry + S(64), "The same themes as Party Finder  ·  /ah theme <name>", P.faint, F.text, T.tiny)
+        -- the bell the window opens with: Off, or one of the bells (picking one plays it; the speaker plays it again)
+        local sy = ry + S(104)
+        text(dl, rx, sy, 'SOUND AS IT OPENS', P.dim, F.disp, T.small)
+        local sopts = { { id = 'off', name = 'Off' } }
+        for _, o in ipairs(OPEN_SOUNDS) do sopts[#sopts + 1] = o end
+        local scur = settings.open_sound and (settings.open_sound_id or OPEN_SOUNDS[1].id) or 'off'
+        local spicked = U.dropdown(dl, '##ah_sound', rx, sy + S(40), S(170), sopts, scur)
+        if spicked ~= scur then
+            if spicked == 'off' then settings.open_sound = false
+            else settings.open_sound, settings.open_sound_id = true, spicked play_open_sound() end
+            save_settings()
+        end
+        if settings.open_sound and icon_button(dl, '##ah_sound_play', rx + S(170) + S(10), sy + S(40) - S(14), S(28), 'volume-high', P.dim, 'Play it') then
+            play_open_sound(true)
+        end
+        text(dl, rx, sy + S(64), '/ah sound <name>  ·  /ah sound off', P.faint, F.text, T.tiny)
     end
     if icon_button(dl, '##settings_close', x + w - S(44), y + S(10), S(28), 'xmark', P.dim, 'Close') then st.settings_open = false end
     cy = cy + S(36)
@@ -2292,6 +2354,7 @@ local function draw_confirm()
         end
         local yes_pressed = button(dl, '##cyes', x + w - S(22) - S(136), y + h - S(50), S(136), S(34), yes, col, 'solid', ic)
         imgui.SetItemDefaultFocus() -- a controller: Confirm again goes through
+        if st.pad_mute then yes_pressed = false end -- (a fresh Confirm: not the one that opened this)
         if yes_pressed then
             if c.kind == 'buy' then do_buy(c.item, c.price, c.stack)
             elseif c.kind == 'sell' then do_list()
@@ -2321,7 +2384,8 @@ local function pad_buttons()
             st.confirm = nil
             if st.confirm_kind_buy then st.pad_seat = 'bid' end
         elseif st.settings_open then st.settings_open = false
-        elseif st.tab == 'buy' and st.card_focus then st.pad_first, st.pad_first_id = 3, st.selected -- from the card back to its row
+        elseif st.tab == 'buy' and st.card_focus then st.pad_first, st.pad_first_id, st.pad_cats = 3, st.selected, false -- from the card back to its row
+        elseif st.tab == 'buy' and st.pad_where == 'items' then st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, true -- from the list back to its category
         else st.open = false end
         return
     end
@@ -2333,7 +2397,7 @@ local function pad_buttons()
         for k, tab in ipairs(TAB_ORDER) do if tab == st.tab then i = k end end
         st.tab = TAB_ORDER[(i - 1 + turn) % #TAB_ORDER + 1]
         st.settings_open = false
-        st.pad_first, st.pad_first_id = 3, nil
+        st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, st.tab == 'buy' and st.results == nil -- Buy starts in the sidebar
     end
     if st.tab == 'buy' and not st.settings_open then
         local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
@@ -2345,7 +2409,8 @@ local function pad_buttons()
             st.group_open[e.group] = true
             st.query[1], st.results = '', nil
             st.list_at = clock()
-            st.pad_first, st.pad_first_id = 3, nil
+            -- the focus follows: in the sidebar it moves to the new category, anywhere else to the list's first row
+            st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, st.pad_where == 'cats'
             fetch_list(e.cat)
         end
         if PAD.pressed('options') then settings.in_stock = not settings.in_stock save_settings() end
@@ -2374,6 +2439,13 @@ local LEGEND = {
 local function draw_legend(dl, x, y, w)
     dl:AddLine({ x + S(16), y }, { x + w - S(16), y }, u32(P.line, 0.8), 1)
     local items = st.pad_editing and LEGEND.edit or LEGEND[st.tab] or LEGEND.other
+    -- on Buy, Confirm and Cancel say what they do in the pane the focus is in
+    if items == LEGEND.buy then
+        local where = st.card_focus and 'card' or st.pad_where
+        items = { { 'confirm', where == 'cats' and 'Open category' or where == 'card' and 'Price, then Bid' or 'Pick item' },
+            { 'cancel', where == 'cats' and 'Close' or 'Back' } }
+        for i = 3, #LEGEND.buy do items[#items + 1] = LEGEND.buy[i] end
+    end
     -- measured by drawing off screen once, then centred
     local lw = PAD.legend(dl, -10000, -10000, items, 0)
     PAD.legend(dl, x + (w - lw) / 2, y + S(14), items, 1)
@@ -2405,8 +2477,14 @@ local function draw_main(t)
         st.hover_id = nil
         -- the controller's buttons are the focused window's (RootAndChildWindows): two open windows never both answer
         st.pad_focused = imgui.IsWindowFocused(3)
-        if PAD.capturing() and st.pad_focused then pad_buttons() end
+        -- (or a confirmation's, a window of its own that takes the focus: Cancel there closes it)
+        if PAD.capturing() and (st.pad_focused or st.confirm) then pad_buttons() end
+        -- ImGui keeps its navigation cursor hidden after a focus it didn't move there itself (the window opening, a
+        -- row or box seated by the window), and a hidden cursor takes no Confirm until a D-pad press shows it: kept
+        -- shown while the pad is in use, Confirm works wherever the focus was put
+        if PAD.shown() and st.pad_focused and imgui.SetNavCursorVisible then imgui.SetNavCursorVisible(true) end
         st.pad_editing = false -- set again by a price box being edited, drawn below
+        st.pad_where_now = nil -- which Buy pane has the focus ('cats', 'items'), found as it's drawn below
         local hy = draw_header(dl, x, y, w, t)
         local ty = y + hy + S(10)
         draw_tabs(dl, x, ty, w)
@@ -2441,6 +2519,7 @@ local function draw_main(t)
         else
             COMPARE.idle()
         end
+        st.pad_where = st.pad_where_now
         -- RootAndChildWindows (3): the lists, the bag and the sidebar are child windows, and a click there focuses them
         if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and imgui.GetFrameCount() - FIELD.active_frame > 1 then
             if st.confirm then st.confirm = nil elseif st.settings_open then st.settings_open = false else st.open = false end
@@ -2469,12 +2548,18 @@ local function tick()
     -- the controller: its reads since the last frame become ImGui's keys, while the window has it
     PAD.frame(t, { id = 'auctionhouse', capture = function () return st.open end, hold = st.pad_hold or false })
     st.pad_hold = false
+    -- a Confirm that already did its work stays muted until it's let go, and a couple of frames past that
+    if st.pad_mute == 'held' then
+        if not PAD.down('confirm') then st.pad_mute = 2 end
+    elseif st.pad_mute then
+        st.pad_mute = st.pad_mute > 1 and st.pad_mute - 1 or nil
+    end
     U.anim.pad_shown = PAD.shown()
     local fo = U.anim.focus
     st.pad_dbg = string.format('text box active %s, focus on %s (%.1fs ago), card focus %s, seat %s, window focused %s, cancels %d',
         tostring(imgui.IsAnyItemActive()), tostring(fo and fo.key), fo and (t - fo.at) or -1, tostring(st.card_focus), tostring(st.pad_seat),
-        tostring(st.pad_focused), st.pad_cancels or 0) .. string.format(', seats %d, first %s/%s', st.pad_seats or 0, tostring(st.pad_first), tostring(st.pad_first_id))
-    if st.pad_first and st.open then st.pad_first = st.pad_first - 1 if st.pad_first <= 0 then st.pad_first, st.pad_first_id = nil, nil end end
+        tostring(st.pad_focused), st.pad_cancels or 0) .. string.format(', seats %d, first %s/%s%s, pane %s', st.pad_seats or 0, tostring(st.pad_first), tostring(st.pad_first_id), st.pad_cats and ' (cats)' or '', tostring(st.pad_where))
+    if st.pad_first and st.open then st.pad_first = st.pad_first - 1 if st.pad_first <= 0 then st.pad_first, st.pad_first_id, st.pad_cats = nil, nil, nil end end
     SEARCH.poll()
     PRICES.save()
     LEDGER.save()
@@ -2699,6 +2784,30 @@ vana.events.on('command', function (e)
             local names = {}
             for _, th in ipairs(U.THEMES) do names[#names + 1] = th.id end
             say('Themes: ' .. table.concat(names, ', '))
+        end
+    elseif what == 'sound' then
+        -- /ah sound: which bell; /ah sound off|on; /ah sound <name> picks one ('small bell', small_bell or small) and plays it
+        local arg = table.concat(words, ' ', 3):lower():gsub('[%s_]+', ' '):gsub('^ ', ''):gsub(' $', '')
+        local found
+        for _, o in ipairs(OPEN_SOUNDS) do
+            local n = o.name:lower()
+            if arg ~= '' and (n == arg or n:sub(1, #arg) == arg) then found = o break end
+        end
+        if arg == 'off' or arg == 'on' then
+            settings.open_sound = arg == 'on' save_settings()
+            say('Sound as it opens: ' .. arg)
+        elseif found then
+            settings.open_sound, settings.open_sound_id = true, found.id save_settings()
+            play_open_sound()
+            say('Sound as it opens: ' .. found.name)
+        else
+            local names = {}
+            for _, o in ipairs(OPEN_SOUNDS) do names[#names + 1] = o.name end
+            local cur = 'off'
+            if settings.open_sound then
+                for _, o in ipairs(OPEN_SOUNDS) do if o.id == settings.open_sound_id then cur = o.name end end
+            end
+            say('Sound as it opens: ' .. cur .. '. The bells: ' .. table.concat(names, ', ') .. ', or off')
         end
     elseif what == 'opacity' and tonumber(words[3]) then
         settings.opacity = math.max(40, math.min(100, tonumber(words[3]))) / 100 save_settings()

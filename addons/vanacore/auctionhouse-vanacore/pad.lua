@@ -46,7 +46,10 @@ local XDEAD = { [16] = 30, [17] = 30, [18] = 7849, [19] = 7849, [20] = 8689, [21
 -- 14 Start, 15 Back; otherwise a DirectInput button's number.
 local XNUM = { [0] = 'b', 'x', 'y', 'a', 'right', 'left', 'up', 'down', 'l1', 'l2', 'l3', 'r1', 'r2', 'r3', 'start', 'back' }
 local SLOT = { confirm = 7, cancel = 5, menu = 6, options = 8 }
-local ABIT = { [0] = 'up', 'down', 'left', 'right', 'start', 'back', 'l3', 'r3', 'l1', 'r1', [12] = 'a', 'b', 'x', 'y', 'l2', 'r2' } -- Ashita's numbers
+-- Ashita's numbers, every one keyed: a positional entry after [12] would count on from 10 and overwrite it (12 read as
+-- Y, 13 as LT, so B never backed out)
+local ABIT = { [0] = 'up', [1] = 'down', [2] = 'left', [3] = 'right', [4] = 'start', [5] = 'back', [6] = 'l3', [7] = 'r3',
+    [8] = 'l1', [9] = 'r1', [12] = 'a', [13] = 'b', [14] = 'x', [15] = 'y', [16] = 'l2', [17] = 'r2' }
 -- a DirectInput controller's buttons, as most come (an Xbox-style pad): 0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB, 6 Back, 7 Start,
 -- 8 LS, 9 RS; its triggers are an axis (Z) on those
 local DNUM = { [0] = 'a', 'b', 'x', 'y', 'l1', 'r1', 'back', 'start', 'l3', 'r3' }

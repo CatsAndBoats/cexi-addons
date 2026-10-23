@@ -3475,7 +3475,12 @@ local function dialog(name, w, h, dy, fn)
     imgui.SetNextWindowSize({ w, h }, ALWAYS)
     if imgui.Begin(name, nil, WINDOW_FLAGS + NO_SAVE) then
         local dl = imgui.GetWindowDrawList()
+        -- the window is the card's own size, and ImGui clips to it: the outline on its edge lost its bottom and the
+        -- shadow was cut off, so the drawing gets the room round it (clicks still go by the window)
+        local m = S(40)
+        dl:PushClipRect({ x - m, y - m }, { x + w + m, y + h + m }, false)
         local ok, err = pcall(fn, dl, x, y)
+        dl:PopClipRect()
         if not ok then fail(name, err) end
     end
     imgui.End()
