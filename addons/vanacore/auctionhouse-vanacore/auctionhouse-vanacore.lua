@@ -1700,7 +1700,7 @@ local function draw_sell(dl, x, y, w, h, t)
     text(dl, sx, sy, 'RECENTLY SOLD FOR', P.accent, F.disp, T.small)
     sy = sy + S(20)
     if hs and hs.stats then
-        text(dl, sx, sy, gil(hs.stats.last) .. ' last  ·  ' .. gil(hs.stats.median) .. ' median  ·  ' .. gil(hs.stats.low) .. ' – ' .. gil(hs.stats.high) .. ' range', P.text, F.text, T.small)
+        text(dl, sx, sy, 'last ' .. gil(hs.stats.last) .. '  ·  median ' .. gil(hs.stats.median) .. '  ·  range ' .. gil(hs.stats.low) .. ' – ' .. gil(hs.stats.high), P.text, F.text, T.small)
     elseif hs then
         text(dl, sx, sy, 'No ' .. (st.sell.stack and 'stacks' or 'singles') .. ' sold lately', P.dim, F.text, T.small)
     else
