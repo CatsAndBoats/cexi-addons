@@ -5,7 +5,10 @@
 -- don't open under ours. The window draws the focus (the ring in draw_toasts), handles the buttons it gives meanings
 -- to (PAD.pressed) and shows a legend (PAD.legend).
 --
--- Should VanaCore feed ImGui itself one day (vana.gamepad.nav, proposed), this steps aside.
+-- With a VanaCore that feeds ImGui itself (0.8.39+: vana.gamepad.nav, bindings, state), the feeding and the blocking
+-- are VanaCore's: this says each frame that the window has the pad (vana.gamepad.nav), reads the buttons for their
+-- meanings, and keeps the ring, the legend and the seating. A synthetic press (/ah pad) is still fed here, as VanaCore
+-- never sees one.
 -- Each addon runs in a Lua state of its own, so each carries its own copy of this, and each copy sees every read.
 -- The game is kept from the controller by blocking its changes (VanaCore's 'xinput_button' / 'dinput_button':
 -- presses and moves while a window has it, releases through), not by clearing the read, so every copy reads the real
@@ -43,6 +46,7 @@ local XDEAD = { [16] = 30, [17] = 30, [18] = 7849, [19] = 7849, [20] = 8689, [21
 -- 14 Start, 15 Back; otherwise a DirectInput button's number.
 local XNUM = { [0] = 'b', 'x', 'y', 'a', 'right', 'left', 'up', 'down', 'l1', 'l2', 'l3', 'r1', 'r2', 'r3', 'start', 'back' }
 local SLOT = { confirm = 7, cancel = 5, menu = 6, options = 8 }
+local ABIT = { [0] = 'up', 'down', 'left', 'right', 'start', 'back', 'l3', 'r3', 'l1', 'r1', [12] = 'a', 'b', 'x', 'y', 'l2', 'r2' } -- Ashita's numbers
 -- a DirectInput controller's buttons, as most come (an Xbox-style pad): 0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB, 6 Back, 7 Start,
 -- 8 LS, 9 RS; its triggers are an axis (Z) on those
 local DNUM = { [0] = 'a', 'b', 'x', 'y', 'l1', 'r1', 'back', 'start', 'l3', 'r3' }
@@ -60,7 +64,7 @@ local function clock() return U.clock() end
 local st = {
     hosts = {},              -- id -> { capture = function, enabled = bool, hold_vertical = bool }
     frame_no = -1,           -- ImGui's frame the work was last done in
-    native = false,          -- VanaCore feeds ImGui itself: nothing to do here
+    native = false,          -- VanaCore feeds ImGui itself and keeps the game from the pad: only the reading is done here
     enabled = true,          -- the host's setting
     now = { }, was = { },    -- button name -> down, this read and the frame before
     edge = { },              -- pressed this frame
@@ -144,6 +148,26 @@ local function read_bindings()
             end
         end
     end
+    -- VanaCore's own reading of the same map, by Ashita's control numbers (12 A, 13 B, 14 X, 15 Y, 0-3 the D-pad,
+    -- 4 Start, 5 Back, 6 and 7 the sticks, 8 LB, 9 RB, 16 LT, 17 RT), when it has one
+    if st.native then
+        local ok3, b = pcall(vana.gamepad.bindings)
+        if ok3 and type(b) == 'table' then
+            if b.xinput ~= nil then st.xinput_mode = b.xinput == true end
+            for what in pairs(SLOT) do
+                local v = tonumber(b[what]) or -1
+                if v >= 0 then
+                    if st.xinput_mode then
+                        if ABIT[v] then st.map[what] = ABIT[v] end
+                    else
+                        local name = DNUM[v] or ('b' .. v)
+                        st.map[what] = name
+                        st.dmap[v] = name
+                    end
+                end
+            end
+        end
+    end
 end
 
 -------------------------------------------------------------------------------
@@ -179,7 +203,7 @@ end
 
 -- VanaCore's 'xinput_state': e.user, e.state (XINPUT_STATE*, the game's)
 function PAD.on_xinput(e)
-    if st.native or not ffi_ok or e.state == nil then return end
+    if not ffi_ok or e.state == nil then return end -- (native too: the read is the window's to know; VanaCore rests it after)
     local ok, p = pcall(ffi.cast, 'pad_XINPUT_STATE*', e.state)
     if not ok or p == nil then return end
     local g = p.Gamepad
@@ -205,7 +229,6 @@ end
 -- always goes through, so the game never thinks a button is held.
 local dstate = { buttons = 0, lx = 0, ly = 0, rx = 0, ry = 0, lt = 0, rt = 0 }
 function PAD.on_dinput(e)
-    if st.native then return false end
     local off, v = tonumber(e.button) or -1, tonumber(e.state) or 0
     st.dinput_at = clock()
     if off >= 48 then
@@ -240,7 +263,7 @@ function PAD.on_dinput(e)
         elseif off == 16 then dstate.ry = -f end
     end
     take(dstate)
-    return capturing_now() and v ~= 0 and v ~= -1 and v ~= 0xFFFFFFFF
+    return not st.native and capturing_now() and v ~= 0 and v ~= -1 and v ~= 0xFFFFFFFF
 end
 
 -- a synthetic read, for testing with no controller plugged in: names = { a = true, down = true, ly = -1 ... }
@@ -280,10 +303,10 @@ end
 
 -- whether it was used more lately than the mouse: the focus ring and the legend show
 function PAD.shown()
-    return any_enabled() and not st.native and PAD.present() and st.seen_at > st.mouse_at
+    return any_enabled() and PAD.present() and st.seen_at > st.mouse_at
 end
 
-function PAD.capturing() return not st.native and PAD.present() and capturing_now() end
+function PAD.capturing() return PAD.present() and capturing_now() end
 
 -- host: { id = 'auctionhouse', capture = function () -> bool, hold_vertical = bool }; each window's,
 -- every frame. The shared work runs once a frame, for whichever window calls first.
@@ -316,9 +339,27 @@ function PAD.frame(t, host)
         if down and not was then st.held_since[n] = now st.repeated_at[n] = now end
         st.was[n] = down
     end
-    if st.native then return end
-    local io = imgui.GetIO()
     local capturing = PAD.capturing()
+    if st.native then
+        -- VanaCore feeds ImGui and rests the game's reads while a window has the pad: told so each frame
+        if capturing then pcall(vana.gamepad.nav, true) end
+        st.nav_on = capturing
+        -- a synthetic read (/ah pad) never reaches VanaCore: fed here, the way the bridge does below
+        if capturing and st.fake then
+            feed(KEY.a, st.now[st.map.confirm] == true)
+            feed(KEY.b, st.now[st.map.cancel] == true and imgui.IsAnyItemActive())
+            feed(KEY.left, st.now.left == true)
+            feed(KEY.right, st.now.right == true)
+            local hold = hold_vertical()
+            feed(KEY.up, st.now.up == true and not hold)
+            feed(KEY.down, st.now.down == true and not hold)
+        elseif next(st.fed) then
+            release_all()
+            st.fed = {}
+        end
+        return
+    end
+    local io = imgui.GetIO()
     if capturing then
         -- every frame: another addon's copy may have given them back on its unload
         if bit.band(io.ConfigFlags, NAV_ENABLE_GAMEPAD) == 0 then io.ConfigFlags = bit.bor(io.ConfigFlags, NAV_ENABLE_GAMEPAD) end
@@ -430,11 +471,11 @@ function PAD.setup(id, kit)
         st.bound = true
     end
     st.hosts[id or 'host'] = st.hosts[id or 'host'] or {}
-    if not st.native then
-        pcall(vana.events.on, 'xinput_state', PAD.on_xinput)
-        pcall(vana.events.on, 'xinput_button', PAD.on_xinput_button)
-        pcall(vana.events.on, 'dinput_button', PAD.on_dinput)
-    end
+    -- the reads, native or not: the buttons' meanings, the ring and the legend come from them (the blocking is only
+    -- the bridge's: the handlers return false when VanaCore rests the game's reads itself)
+    pcall(vana.events.on, 'xinput_state', PAD.on_xinput)
+    pcall(vana.events.on, 'xinput_button', PAD.on_xinput_button)
+    pcall(vana.events.on, 'dinput_button', PAD.on_dinput)
 end
 
 function PAD.teardown(id)
@@ -445,7 +486,7 @@ function PAD.teardown(id)
     if next(st.hosts) ~= nil then return end
     -- the last one out: the keys let go, the flags given back
     if next(st.fed) then pcall(release_all) end
-    if st.nav_on then
+    if st.nav_on and not st.native then
         local io = imgui.GetIO()
         io.ConfigFlags = bit.band(io.ConfigFlags, bit.bnot(NAV_ENABLE_GAMEPAD))
         io.BackendFlags = bit.band(io.BackendFlags, bit.bnot(HAS_GAMEPAD))

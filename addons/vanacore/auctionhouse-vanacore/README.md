@@ -90,10 +90,14 @@ pads in mind; a DirectInput pad (a PlayStation controller without a wrapper) is 
 map and may not line up. With it on, the window takes the pad while it's open, so your character stays put and the game's menus stay closed: the D-pad moves a ring between
 things, Confirm presses, Cancel backs out (the confirmation, the settings, then the window), the bumpers turn the
 tabs, the triggers walk the categories, a stick scrolls the list, X and Y are the In stock and Usable chips, View the
-Compare chip, Menu the settings. On a price box, up and down step the price (a tenth of its size, 10 gil at least),
-and the confirmation's Bid is where the focus lands, so Confirm twice bids. A legend of the buttons runs along the
+Compare chip, Menu the settings. **To buy:** Confirm on an item opens its card; Confirm again on the same item moves
+the ring to the card's **Bid** button, Confirm there opens the confirmation, where Bid is already under the ring, so
+Confirm once more bids. Cancel from the card goes back to the item in the list. On a price box, up and down step the
+price (a tenth of its size, 10 gil at least). A legend of the buttons runs along the
 bottom while the pad is in use; the mouse takes over the moment it moves. The game's Confirm and Cancel bindings are
-honoured when VanaCore passes them (`[ffxi] gamepad.buttons`); otherwise A and B. `/ah pad` shows the controller's
+honoured when VanaCore passes them (`[ffxi] gamepad.buttons`); otherwise A and B. With VanaCore 0.8.39 or later,
+VanaCore itself feeds the pad to the window and keeps it from the game (`vana.gamepad.nav`); on an older VanaCore the
+addon's own bridge (`pad.lua`) does the same from the game's controller reads. `/ah pad` shows the controller's
 state, `/ah pad off` turns it off (a setting), and `/ah pad <button>` presses a button as a controller would, for
 trying it without one.
 

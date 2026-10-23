@@ -842,7 +842,7 @@ end
 
 open_window = function ()
     st.open = true
-    st.pad_first = 3 -- the controller's focus starts on the list's first row
+    st.pad_first, st.pad_first_id = 3, nil -- the controller's focus starts on the list's first row
     st.opened_at = now_t -- ImGui's clock, the one the fade is measured against
     scan_counter()
     refresh_inventory()
@@ -1307,7 +1307,9 @@ local function draw_item_row(dl, id, x, y, w, alpha)
     end
     if pressed then
         U.ripple_at(key)
-        if selected then select_item(nil) else select_item(id) end
+        if not selected then select_item(id)
+        elseif PAD.shown() then st.pad_seat = 'bid' -- a controller: Confirm on the picked item goes to its Bid button
+        else select_item(nil) end
     end
     if hovered and imgui.IsMouseDoubleClicked(0) and not selected then select_item(id) end
     return h
@@ -1425,7 +1427,10 @@ local function draw_list(dl, x, y, w, h, t)
     local cdl = imgui.GetWindowDrawList()
     pad_scroll()
     -- a list the controller's focus (re)starts in shows its top
-    if st.pad_first and PAD.capturing() then imgui.SetScrollY(0) end
+    if st.pad_first and st.pad_first_id == nil and PAD.capturing() then imgui.SetScrollY(0) end
+    -- back from the card: ImGui won't tab the focus from a root item into this (flattened) child, so the child is
+    -- made the focused window first, and the row seated in it the frame after
+    if st.pad_first == 2 and st.pad_first_id and PAD.capturing() then imgui.SetWindowFocus() end
     local scroll_y = imgui.GetScrollY()
     local cy = ly - scroll_y
     local since = clock() - st.list_at
@@ -1448,8 +1453,9 @@ local function draw_list(dl, x, y, w, h, t)
             -- works then), and two frames after a tab or category change, once ImGui has restored the window's old
             -- focus (SetKeyboardFocusHere, before the row)
             if first_drawn == nil then first_drawn = i end
-            local seat = st.pad_first and i == first_drawn and PAD.capturing()
-            if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
+            -- (or, back from the card, on the picked row: pad_first_id)
+            local seat = st.pad_first and PAD.capturing() and (st.pad_first_id and id == st.pad_first_id or (st.pad_first_id == nil and i == first_drawn))
+            if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() st.pad_seats = (st.pad_seats or 0) + 1 end
             draw_item_row(cdl, id, x + S(4), cy, w - S(12), math.max(0.05, math.min(1, alpha)))
             if seat then imgui.SetItemDefaultFocus() end
         end
@@ -1465,6 +1471,7 @@ end
 local function draw_detail(dl, x, y, w, h, t)
     local id = st.selected
     panel(dl, x, y, w, h, P.glass, 0.97, S(14), P.line)
+    st.card_focus = false
     if id == nil then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
         text_center(dl, x, y + h / 2 + S(30), w, 'Pick an item', P.text, F.disp, T.h1)
@@ -1598,11 +1605,16 @@ local function draw_detail(dl, x, y, w, h, t)
     by = by + S(22)
     imgui.SetCursorScreenPos({ cx, by })
     local _, _, entered = field('##bid', hs and hs.stats and ('last sold ' .. tostring(hs.stats.last)) or 'gil', st.buy.price, w - S(32) - S(110), T.body, true)
+    st.card_focus = imgui.IsItemFocused() -- a controller's focus is on the card: Cancel goes back to the list
     local price = tonumber(st.buy.price[1]) or (hs and hs.stats and hs.stats.last) or 0
     local can = may_trade() and price > 0 and logged_in() and st.buy.pending == nil
     local label = st.buy.pending and 'Bidding…' or 'Bid'
     if entered and can and settings.confirm_buy then st.confirm = { kind = 'buy', item = id, price = price, stack = st.stack } end
-    if button(dl, '##bid_btn', x + w - S(16) - S(104), by, S(104), S(34), label, can and GOLD or P.faint, can and 'solid' or 'ghost', 'gavel') and can then
+    -- a controller: Confirm on the picked row, or a closed confirmation, lands the focus here
+    if st.pad_seat == 'bid' then imgui.SetKeyboardFocusHere() st.pad_seat = nil end
+    local bid_pressed = button(dl, '##bid_btn', x + w - S(16) - S(104), by, S(104), S(34), label, can and GOLD or P.faint, can and 'solid' or 'ghost', 'gavel')
+    if imgui.IsItemFocused() then st.card_focus = true end
+    if bid_pressed and can then
         if settings.confirm_buy then
             st.confirm = { kind = 'buy', item = id, price = price, stack = st.stack }
         else
@@ -2160,8 +2172,12 @@ local function draw_confirm()
             elseif c.kind == 'sell' then do_list()
             else do_cancel(c) end
             st.confirm = nil
+            if c.kind == 'buy' and PAD.shown() then st.pad_seat = 'bid' end -- the controller's focus comes back to the card
         end
-        if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), 'Cancel', P.dim, 'ghost') then st.confirm = nil end
+        if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), 'Cancel', P.dim, 'ghost') then
+            st.confirm = nil
+            if c.kind == 'buy' and PAD.shown() then st.pad_seat = 'bid' end
+        end
     end)
 end
 
@@ -2174,9 +2190,16 @@ for _, g in ipairs(I.GROUPS) do for _, c in ipairs(g.cats) do CAT_ORDER[#CAT_ORD
 
 local function pad_buttons()
     if PAD.pressed('cancel') and not imgui.IsAnyItemActive() then
-        if st.confirm then st.confirm = nil elseif st.settings_open then st.settings_open = false else st.open = false end
+        st.pad_cancels = (st.pad_cancels or 0) + 1
+        if st.confirm then
+            st.confirm = nil
+            if st.confirm_kind_buy then st.pad_seat = 'bid' end
+        elseif st.settings_open then st.settings_open = false
+        elseif st.tab == 'buy' and st.card_focus then st.pad_first, st.pad_first_id = 3, st.selected -- from the card back to its row
+        else st.open = false end
         return
     end
+    st.confirm_kind_buy = st.confirm ~= nil and st.confirm.kind == 'buy'
     if st.confirm then return end
     local turn = (PAD.pressed('r1') and 1 or 0) - (PAD.pressed('l1') and 1 or 0)
     if turn ~= 0 then
@@ -2184,7 +2207,7 @@ local function pad_buttons()
         for k, tab in ipairs(TAB_ORDER) do if tab == st.tab then i = k end end
         st.tab = TAB_ORDER[(i - 1 + turn) % #TAB_ORDER + 1]
         st.settings_open = false
-        st.pad_first = 3
+        st.pad_first, st.pad_first_id = 3, nil
     end
     if st.tab == 'buy' and not st.settings_open then
         local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
@@ -2196,7 +2219,7 @@ local function pad_buttons()
             st.group_open[e.group] = true
             st.query[1], st.results = '', nil
             st.list_at = clock()
-            st.pad_first = 3
+            st.pad_first, st.pad_first_id = 3, nil
             fetch_list(e.cat)
         end
         if PAD.pressed('options') then settings.in_stock = not settings.in_stock save_settings() end
@@ -2205,7 +2228,7 @@ local function pad_buttons()
     end
     if st.tab == 'activity' and not st.settings_open then
         local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
-        if step ~= 0 then st.act_page, st.act_top, st.pad_first = st.act_page + step, true, 3 end -- (clamped where it's drawn)
+        if step ~= 0 then st.act_page, st.act_top, st.pad_first, st.pad_first_id = st.act_page + step, true, 3, nil end -- (clamped where it's drawn)
         if PAD.pressed('options') then
             local f = { all = 'bought', bought = 'sold', sold = 'all' }
             st.act_filter, st.act_page, st.act_top = f[st.act_filter] or 'all', 1, true
@@ -2215,7 +2238,7 @@ local function pad_buttons()
 end
 
 local LEGEND = {
-    buy = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Category' }, { 'updown', 'Price' },
+    buy = { { 'confirm', 'Select, then Bid' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Category' }, { 'updown', 'Price' },
         { 'options', 'In stock' }, { 'menu', 'Usable' }, { 'back', 'Compare' }, { 'start', 'Settings' } },
     sell = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'updown', 'Price' }, { 'start', 'Settings' } },
     activity = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Page' }, { 'options', 'Filter' }, { 'start', 'Settings' } },
@@ -2320,8 +2343,10 @@ local function tick()
     st.pad_hold = false
     U.anim.pad_shown = PAD.shown()
     local fo = U.anim.focus
-    st.pad_dbg = string.format('text box active %s, focus on %s (%.1fs ago)', tostring(imgui.IsAnyItemActive()), tostring(fo and fo.key), fo and (t - fo.at) or -1)
-    if st.pad_first and st.open then st.pad_first = st.pad_first - 1 if st.pad_first <= 0 then st.pad_first = nil end end
+    st.pad_dbg = string.format('text box active %s, focus on %s (%.1fs ago), card focus %s, seat %s, window focused %s, cancels %d',
+        tostring(imgui.IsAnyItemActive()), tostring(fo and fo.key), fo and (t - fo.at) or -1, tostring(st.card_focus), tostring(st.pad_seat),
+        tostring(st.pad_focused), st.pad_cancels or 0) .. string.format(', seats %d, first %s/%s', st.pad_seats or 0, tostring(st.pad_first), tostring(st.pad_first_id))
+    if st.pad_first and st.open then st.pad_first = st.pad_first - 1 if st.pad_first <= 0 then st.pad_first, st.pad_first_id = nil, nil end end
     SEARCH.poll()
     PRICES.save()
     LEDGER.save()
