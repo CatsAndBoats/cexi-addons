@@ -29,8 +29,8 @@ how many singles and stacks are up, and the last sale once it's known; sort it b
 to turn it round, and its arrow shows which way it runs), and the
 **In stock** chip hides everything with nothing up, and the **Usable** chip hides gear your current main job,
 at its level, and your race can't wear; anything that isn't gear (food, medicines, materials) stays listed (both
-chips beside the search box, both remembered). Gear you can wear has a yellow
-name in the list and gear you can't is dimmed. The search box finds any listed item by
+chips at the right of the tab row, both remembered). Gear you can wear has a yellow
+name in the list and gear you can't is dimmed. The search box in the header finds any listed item by
 name, across every category. Click an item for its card: description, the jobs that can use it, stock, the last
 ten sales for singles or stacks with **last · median · range** and the trend, a price graph, and the bid box. The
 house fills the cheapest listing at or under your bid and you pay what you bid, as always; the box starts at the
@@ -91,7 +91,8 @@ state, `/ah pad off` turns it off (a setting), and `/ah pad <button>` presses a 
 trying it without one.
 
 **Settings** (the gear): the theme, bid and sell only at an auction clerk, talking to a clerk opens this window, confirm before
-bidding, the price graph, background checks of watched items, opacity, scale, and the search server in use.
+bidding, the price graph, background checks of watched items, opacity and scale. The search server isn't shown
+there (it's your login server's address); `/ah debug` says which one is in use and `/ah server` changes it.
 
 **Themes.** The same twelve themes as Party Finder, by the same names (Aurora, Gems, Banner, Ember, Ranger, Inferno,
 Ninja, Harvest, Gunslinger, Rose, Bard, Jade): their colours only, the art stays with Party Finder. Pick one in

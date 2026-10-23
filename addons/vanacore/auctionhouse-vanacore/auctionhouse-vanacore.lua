@@ -927,8 +927,9 @@ local function glass_gil(dl, cx, cy, size, t, alpha)
     dl:AddCircleFilled({ cx, cy + ri * 0.04 }, cr, u32(mix(GOLD, '#B87A1C', 0.35), alpha), 40)
     dl:AddCircleFilled({ cx - cr * 0.18, cy + ri * 0.04 - cr * 0.22 }, cr * 0.72, u32(mix(GOLD, PALE, 0.35), 0.55 * alpha), 32)
     dl:AddCircle({ cx, cy + ri * 0.04 }, cr * 0.86, u32('#8A5A12', 0.8 * alpha), 40, math.max(1, cr * 0.07))
-    text_center(dl, cx - cr, cy + ri * 0.04 - cr * 0.62, cr * 2, 'G', '#7A4C0C', F.dispb, cr * 1.15, alpha)
-    text_center(dl, cx - cr, cy + ri * 0.04 - cr * 0.66, cr * 2, 'G', PALE, F.dispb, cr * 1.15, 0.9 * alpha)
+    -- (text_center takes the middle, not the top: the G sits on the coin's centre, its shadow a touch below)
+    text_center(dl, cx - cr, cy + ri * 0.04 + cr * 0.06, cr * 2, 'G', '#7A4C0C', F.dispb, cr * 1.15, alpha)
+    text_center(dl, cx - cr, cy + ri * 0.04 + cr * 0.02, cr * 2, 'G', PALE, F.dispb, cr * 1.15, 0.9 * alpha)
     -- the glass over it
     for i = 1, 5 do
         local k = i / 5
@@ -1031,7 +1032,34 @@ local function draw_header(dl, x, y, w, t)
     if math.abs(st.gil_shown - st.gil) < 0.5 then st.gil_shown = st.gil end
     local label = gil(st.gil_shown) .. ' gil'
     local pw = pill(dl, 0, -1000, label, P.card, GOLD, F.disp, T.small, S(9), 'coins')
-    pill(dl, bx - S(16) - pw, by + S(5), label, mix(GOLD, P.ink, 0.78), GOLD, F.disp, T.small, S(9), 'coins')
+    local px = bx - S(16) - pw
+    pill(dl, px, by + S(5), label, mix(GOLD, P.ink, 0.78), GOLD, F.disp, T.small, S(9), 'coins')
+    -- the search box, on the buy tab: up here, where there's room (the tab row holds the tabs and the list's filters)
+    if st.tab == 'buy' then
+        local sw = S(300)
+        local sx = px - S(20) - sw
+        imgui.SetCursorScreenPos({ sx, by })
+        local changed = field('##ahsearch', 'Search every item by name', st.query, sw, T.small, false, true)
+        if changed then
+            local q = st.query[1] or ''
+            if #q >= 2 then st.results, st.result_total = I.search(q, 80) fetch_result_lists() else st.results = nil end
+            st.list_at = clock()
+        end
+        if (st.query[1] or '') ~= '' then
+            imgui.SetCursorScreenPos({ sx + sw - S(30), by + S(1) })
+            local cleared, _, chv = hit('##clearq', S(26), S(26))
+            if chv > 0.01 then dl:AddCircleFilled({ sx + sw - S(16), by + size / 2 }, S(11), u32(P.text, 0.10 * chv), 20) end
+            icon(dl, sx + sw - S(16), by + size / 2, 'xmark', mix(P.dim, P.text, chv), T.small)
+            if imgui.IsItemHovered() then imgui.SetMouseCursor(7) with_font(F.text, T.small, imgui.SetTooltip, 'Clear the search') end
+            if cleared then
+                st.query[1] = ''
+                st.results, st.result_total = nil, 0
+                st.list_at = clock()
+            end
+        else
+            icon(dl, sx + sw - S(16), by + size / 2, 'magnifying-glass', P.dim, T.small)
+        end
+    end
     return h
 end
 
@@ -1081,12 +1109,10 @@ local function draw_tabs(dl, x, y, w)
         end
         tx = tx + tw + S(6)
     end
-    -- the search box, on the buy tab, and the list's filters beside it (they filter search results too)
+    -- the list's filters, on the buy tab (they filter search results too; the search box is in the header)
     if st.tab == 'buy' then
-        local sw = S(300)
-        local sx = x + w - S(24) - sw
         local fy = y + (h - S(24)) / 2
-        local cx = sx - S(12) - chip_width('USABLE')
+        local cx = x + w - S(24) - chip_width('USABLE')
         local wr = wearer()
         local who = wr.job > 0 and ((U.JOBS[wr.job] or '?') .. wr.level) or 'you'
         local tip = settings.usable and ('Hiding gear your ' .. who .. " can't wear") or ('Hide gear your ' .. who .. " can't wear (job, level and race); everything else stays")
@@ -1105,27 +1131,6 @@ local function draw_tabs(dl, x, y, w)
         if filter_chip(dl, '##compare', cx, fy, 'COMPARE', settings.compare, P.cyan, tip, 'scale-balanced', 'scale-balanced') then
             settings.compare = not settings.compare
             save_settings()
-        end
-        imgui.SetCursorScreenPos({ sx, y + S(4) })
-        local changed = field('##ahsearch', 'Search every item by name', st.query, sw, T.small, false, true)
-        if changed then
-            local q = st.query[1] or ''
-            if #q >= 2 then st.results, st.result_total = I.search(q, 80) fetch_result_lists() else st.results = nil end
-            st.list_at = clock()
-        end
-        if (st.query[1] or '') ~= '' then
-            imgui.SetCursorScreenPos({ sx + sw - S(30), y + S(5) })
-            local cleared, _, chv = hit('##clearq', S(26), S(26))
-            if chv > 0.01 then dl:AddCircleFilled({ sx + sw - S(16), y + h / 2 }, S(11), u32(P.text, 0.10 * chv), 20) end
-            icon(dl, sx + sw - S(16), y + h / 2, 'xmark', mix(P.dim, P.text, chv), T.small)
-            if imgui.IsItemHovered() then imgui.SetMouseCursor(7) with_font(F.text, T.small, imgui.SetTooltip, 'Clear the search') end
-            if cleared then
-                st.query[1] = ''
-                st.results, st.result_total = nil, 0
-                st.list_at = clock()
-            end
-        else
-            icon(dl, sx + sw - S(16), y + h / 2, 'magnifying-glass', P.dim, T.small)
         end
     end
     dl:AddLine({ x + S(16), y + h }, { x + w - S(16), y + h }, u32(P.line), 1)
@@ -1992,12 +1997,8 @@ local function draw_settings(dl, x, y, w, h)
     st.scale_edit = sc
     if released then settings.scale = math.floor(sc) st.scale_edit = nil changed = true end
     cy = cy + S(40)
-    text(dl, cx, cy, 'SEARCH SERVER', P.dim, F.disp, T.small)
-    cy = cy + S(20)
-    text(dl, cx, cy, 'Talking to ' .. tostring(st.search_where) .. (settings.search_host ~= '' and '' or '  (from your login)'), P.text, F.text, T.small)
-    cy = cy + S(20)
-    text(dl, cx, cy, '/ah server <host[:port]> to point it elsewhere, /ah server auto to let it find out', P.faint, F.text, T.tiny)
-    cy = cy + S(30)
+    -- (the search server isn't shown: it's the login server's address, found from the login; /ah debug and /ah server
+    -- are there for anyone who needs to see or change it)
     text(dl, cx, cy, 'KEYS', P.dim, F.disp, T.small)
     cy = cy + S(20)
     local bind = (settings.keybind or ''):gsub('^%^', 'Ctrl+'):gsub('^!', 'Alt+'):gsub('^%+', 'Shift+')
