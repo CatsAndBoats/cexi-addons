@@ -1022,7 +1022,7 @@ local function draw_header(dl, x, y, w, t)
     bx = bx - size - S(4)
     local n_sales = 0
     for _ in pairs(st.sales) do n_sales = n_sales + 1 end
-    if icon_button(dl, '##mysales', bx, by, size, 'receipt', st.tab == 'sales' and GOLD or P.dim, 'Listings') then st.tab = 'sales' end
+    if icon_button(dl, '##mysales', bx, by, size, 'receipt', st.tab == 'sales' and GOLD or P.dim, 'Listings') then st.tab, st.settings_open = 'sales', false end
     if n_sales > 0 then
         dl:AddCircleFilled({ bx + size - S(5), by + S(5) }, S(6), u32(GOLD), 16)
         text_center(dl, bx + size - S(11), by + S(5), S(12), tostring(n_sales), P.ink, F.bold, T.tiny - 2)
@@ -1099,7 +1099,7 @@ local function draw_tabs(dl, x, y, w)
         local tw = lw + S(44) + cw
         imgui.SetCursorScreenPos({ tx, y })
         local pressed, _, hv = hit('##tab' .. tab[1], tw, h)
-        if pressed then st.tab = tab[1] end
+        if pressed then st.tab, st.settings_open = tab[1], false end -- (a tab shows its page: settings close)
         local col = on and GOLD or mix(P.dim, P.text, hv)
         icon(dl, tx + S(14), y + h / 2, tab[3], col, T.small)
         text_mid(dl, tx + S(30), y + h / 2, tab[2], col, F.disp, T.body)
@@ -2329,10 +2329,10 @@ vana.events.on('command', function (e)
         if st.open then st.open = false else open_window() end
     elseif what == 'show' then open_window()
     elseif what == 'hide' then st.open = false
-    elseif what == 'buy' then open_window() st.tab = 'buy'
-    elseif what == 'sell' then open_window() st.tab = 'sell'
-    elseif what == 'sales' or what == 'listings' then open_window() st.tab = 'sales'
-    elseif what == 'activity' then open_window() st.tab = 'activity'
+    elseif what == 'buy' then open_window() st.tab, st.settings_open = 'buy', false
+    elseif what == 'sell' then open_window() st.tab, st.settings_open = 'sell', false
+    elseif what == 'sales' or what == 'listings' then open_window() st.tab, st.settings_open = 'sales', false
+    elseif what == 'activity' then open_window() st.tab, st.settings_open = 'activity', false
     elseif what == 'settings' then open_window() st.settings_open = true
     elseif what == 'search' and words[3] then
         open_window()
