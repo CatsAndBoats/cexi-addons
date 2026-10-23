@@ -2441,7 +2441,7 @@ local function draw_legend(dl, x, y, w)
     local items = st.pad_editing and LEGEND.edit or LEGEND[st.tab] or LEGEND.other
     -- on Buy, Confirm and Cancel say what they do in the pane the focus is in
     if items == LEGEND.buy then
-        local where = st.card_focus and 'card' or st.pad_where
+        local where = st.pad_where -- (held over a move: 'cats', 'items' or 'card')
         items = { { 'confirm', where == 'cats' and 'Open category' or where == 'card' and 'Price, then Bid' or 'Pick item' },
             { 'cancel', where == 'cats' and 'Close' or 'Back' } }
         for i = 3, #LEGEND.buy do items[#items + 1] = LEGEND.buy[i] end
@@ -2519,7 +2519,11 @@ local function draw_main(t)
         else
             COMPARE.idle()
         end
-        st.pad_where = st.pad_where_now
+        -- a move between rows leaves nothing focused for a frame, and the legend's words (and width) followed it, so
+        -- the row jittered on every press: the pane holds until nothing has had the focus for a moment
+        local where = st.card_focus and 'card' or st.pad_where_now
+        if where then st.pad_where, st.pad_where_at = where, now_t
+        elseif now_t - (st.pad_where_at or -1) > 0.25 then st.pad_where = nil end
         -- RootAndChildWindows (3): the lists, the bag and the sidebar are child windows, and a click there focuses them
         if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and imgui.GetFrameCount() - FIELD.active_frame > 1 then
             if st.confirm then st.confirm = nil elseif st.settings_open then st.settings_open = false else st.open = false end
