@@ -58,9 +58,9 @@ on at 1280x800 or less; the setting under Window, or `/pf handheld on|off|auto`,
 
 ## A controller (experimental, off by default)
 
-Turn on **Game pad support** in the settings: one switch for every addon, kept in `vanacore.ini` as `[addons]
-gamepad=1` (the Auction House's settings show the same one); with two windows open, the one with the focus answers
-the pad. Tested with XInput pads in mind; a DirectInput pad (a PlayStation
+The switch is VanaCore's: `/vana`, Client, Gamepads, **XInput gamepad support in VanaCore addons**, one for every
+addon (`vanacore.ini`'s `[addons] gamepad=1`; `/pf pad on` sets it too); with two windows open, the one with the
+focus answers the pad. Tested with XInput pads in mind; a DirectInput pad (a PlayStation
 controller without a wrapper) is read through the game's own button map and may not line up. With it on, the window
 takes the pad while it's open and not tucked into the beacon, so your character stays put: the D-pad moves a ring between things, Confirm
 presses, Cancel backs out (the listing sheet, the settings, then into the beacon, as Esc does), the bumpers turn the

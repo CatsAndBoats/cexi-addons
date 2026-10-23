@@ -1812,9 +1812,6 @@ local function draw_settings(dl, x, y, w, h)
     cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_confirm', cx, cy + S(10), 'Confirm before bidding', settings.confirm_buy) settings.confirm_buy = v changed = changed or ch
     cy = cy + S(34)
-    -- one switch for every addon, kept in vanacore.ini ([addons] gamepad); Party Finder's settings show the same one
-    v, ch = U.toggle(dl, '##t_pad', cx, cy + S(10), 'Game pad support (XInput, experimental; one switch for every addon)', PAD.enabled()) if ch then PAD.set_enabled(v) end
-    cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_chart', cx, cy + S(10), "Price graph on an item's card", settings.chart) settings.chart = v changed = changed or ch
     cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_watch', cx, cy + S(10), 'Check watched items every ' .. math.floor((settings.watch_every or 300) / 60) .. ' min, even with this closed', settings.watch_poll) settings.watch_poll = v changed = changed or ch

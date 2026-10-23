@@ -3217,7 +3217,7 @@ end
 
 local function draw_settings(dl, x, y, w, t)
     if not st.settings_open then return 0 end
-    local h = S(542)
+    local h = S(508)
     if st.settings_page == 'art' then
         st.backgrounds = st.backgrounds or background_options()
         local tw = (w - S(48) - S(12) * 3) / 4
@@ -3269,8 +3269,6 @@ local function draw_settings(dl, x, y, w, t)
     v, ch = toggle(dl, '##t_joinable', c1, cy, 'Only listings I can join', settings.joinable_only) settings.joinable_only = v changed = changed or ch
     cy = cy + S(34)
     v, ch = toggle(dl, '##t_startmini', c1, cy, 'Start as the beacon', settings.start_mini) settings.start_mini = v changed = changed or ch
-    cy = cy + S(34)
-    v, ch = toggle(dl, '##t_pad', c1, cy, 'Game pad support (XInput, experimental)', PAD.enabled()) if ch then PAD.set_enabled(v) end -- one switch for every addon (vanacore.ini)
     cy = cy + S(30)
     cy = section(dl, c1, cy, c1w, 'KEYS', 'gamepad')
     cy = cy + S(12)
@@ -3947,7 +3945,7 @@ local function draw_main_compact(t)
     end
     if st.settings_open then
         local cw = math.min(S(800), sw - S(40))
-        local ch = math.min((st.settings_h or S(508)), sh - S(40))
+        local ch = math.min((st.settings_h or S(474)), sh - S(40))
         dialog('##pf_settings_dlg', cw, ch, 0, function (ddl, dx, dy) draw_settings(ddl, dx, dy, cw, t) end)
     end
 end
@@ -3957,7 +3955,7 @@ local function draw_main(t)
     if st.compact then return draw_main_compact(t) end
     local sw, sh = vana.ui.screen()
     local legend_h = (PAD.shown() and st.pad_focused) and S(28) or 0 -- the window the controller is in shows the legend
-    local extra = ((st.create and st.create.open) and S(168) or 0) + (st.settings_open and ((st.settings_h or S(542)) + S(8)) or 0) + legend_h
+    local extra = ((st.create and st.create.open) and S(168) or 0) + (st.settings_open and ((st.settings_h or S(446)) + S(8)) or 0) + legend_h
     local w, h = math.min(S(W.w), sw - 40), math.min(S(W.h) + extra, sh - 40)
     imgui.SetNextWindowPos({ sw / 2, sh / 2 }, FIRST_USE_EVER, { 0.5, 0.5 })
     imgui.SetNextWindowSize({ w, h }, ALWAYS)

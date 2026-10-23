@@ -65,9 +65,9 @@ with the gil waiting in your delivery box, and keeps the sale on the item's reco
 number so typing replaces it. Enter in the asking price is Checkout, Enter in the bid box opens the bid's
 confirmation (never a bid straight away), and Esc leaves the box, then a second Esc closes the window.
 
-**A controller (experimental, off by default).** Turn on **Game pad support** in the settings: one switch for every
-addon, kept in `vanacore.ini` as `[addons] gamepad=1` (Party Finder's settings show the same one). With two windows
-open, the one with the focus answers the pad. Tested with XInput
+**A controller (experimental, off by default).** The switch is VanaCore's: `/vana`, Client, Gamepads, **XInput
+gamepad support in VanaCore addons**, one for every addon (`vanacore.ini`'s `[addons] gamepad=1`; `/ah pad on` sets
+it too). With two windows open, the one with the focus answers the pad. Tested with XInput
 pads in mind; a DirectInput pad (a PlayStation controller without a wrapper) is read through the game's own button
 map and may not line up. With it on, the window takes the pad while it's open, so your character stays put and the game's menus stay closed: the D-pad moves a ring between
 things, Confirm presses, Cancel backs out (the confirmation, the settings, then the window), the bumpers turn the
