@@ -56,7 +56,8 @@ local st = {
     query = { '' }, results = nil, result_total = 0,
     lists = {}, hist = {}, fetching = {},
     counter = { near = false, dist = nil, at = 0 }, zone_ok = nil, work_at = 0,
-    sales = {}, sales_at = 0, sales_open = false, sales_wait = false,
+    sales = {}, sales_at = 0, sales_open = false, sales_wait = false, -- rows keyed (page - 1) * 6 + slot + 1
+    sweep = nil, server_page = nil, page_n = nil, reply_page = nil, sales_total = nil, -- the server's pages (its ah_pagination module)
     sell = { slot = nil, stack = false, price = { '' }, fee = nil, asked = nil, pending = false, at = 0 },
     buy = { price = { '' }, pending = nil },
     inventory = {}, inv_at = 0, gil = 0,
@@ -265,7 +266,18 @@ local function free_slot()
     return 0
 end
 local function send_work_check() send(CMD.WorkCheck, -1) st.work_at = clock() end
-local function send_sales() send(CMD.Info, -1) st.sales_at = clock() st.sales_wait = true end
+local function send_sales() send(CMD.Info, -1) st.sales_at = clock() st.sales_wait = true st.reply_page = nil end
+
+-- CatsEyeXI's server (its ah_pagination module) hands your listings out six to a page: each Info request shows the
+-- next page (and says which in a chat line, "Current page: P of T. Showing n items."), past the last it says "No
+-- results" and starts over at page 1, and it answers at most once every 1.5 s. A sweep asks again and again until
+-- every page has been seen, so the window lists all of them; a take-down must be sent while the house is showing the
+-- listing's page (the server cancels by the slot of the page it last showed), so a sweep can also be after one page.
+local SWEEP_GAP = 1.6
+local function start_sweep(want)
+    st.sweep = { seen = {}, want = want, steps = 0 }
+    send_sales()
+end
 local function send_bid(item, price, stack)
     send(CMD.Bid, free_slot(), { { at = 0x08, u32 = price }, { at = 0x0C, u16 = item }, { at = 0x10, u32 = stack and 0 or 1 } })
 end
@@ -329,7 +341,57 @@ local function on_sales_slot(d)
     if stat == 0 then return end -- an empty slot
     local item = u16(d, 0x28)
     local qty = u8(d, 0x2A)
-    st.sales[slot + 1] = { slot = slot, id = item, stack = qty == 0, price = rd32(d, 0x2C), at = rd32(d, 0x38) }
+    if st.reply_page == nil then
+        -- no page line came before the rows: a server without pages, whose one list is all there is
+        st.sales, st.reply_page, st.server_page = {}, 1, nil
+    end
+    local page = st.reply_page
+    local key = (page - 1) * 6 + slot + 1
+    st.sales[key] = { key = key, page = page, slot = slot, id = item, stack = qty == 0, price = rd32(d, 0x2C), at = rd32(d, 0x38) }
+end
+
+-- a sweep has seen everything once a page comes round again, or once a short page (the last) has every page before
+-- it seen too; a server without pages has one list, seen at once
+local function sweep_complete(sw)
+    if sw.done or st.server_page == nil then return true end
+    if (st.page_n or 0) >= 6 then return false end
+    for p = 1, st.server_page do if not sw.seen[p] then return false end end
+    return true
+end
+
+-- a sweep's next move, once the page asked for has had its 1.6 s: the next page, the take-down, or the end
+local function sweep_step()
+    local sw = st.sweep
+    if sw == nil then return end
+    sw.steps = sw.steps + 1
+    if sw.want then
+        local w = sw.want
+        if st.server_page == w.page then
+            local row = st.sales[w.key]
+            st.sweep = nil
+            if row and row.id == w.id and row.price == w.price then
+                st.cancel_pending, st.cancel_at = w.key, clock()
+                send_cancel(w.slot)
+            else
+                U.toast('warn', 'The list changed', 'That listing is not where it was; look again', 5, 'triangle-exclamation')
+                st.sales_dirty = true
+            end
+            return
+        elseif sweep_complete(sw) or sw.steps > 24 then
+            st.sweep = nil
+            U.toast('warn', "Couldn't reach that page", 'The house never showed it; refresh and try again', 5, 'triangle-exclamation')
+            return
+        end
+    elseif sweep_complete(sw) or sw.steps > 24 then
+        -- every page seen (or the last one, short): pages not seen this time are stale
+        if st.server_page ~= nil then
+            for key, row in pairs(st.sales) do if not sw.seen[row.page] then st.sales[key] = nil end end
+        end
+        st.sweep = nil
+        st.sales_open = true
+        return
+    end
+    send_sales()
 end
 
 local function on_packet(e)
@@ -355,24 +417,28 @@ local function on_packet(e)
     elseif cmd == CMD.Info then
         if result == RESULT.Wait then
             st.sales_wait = false
-            U.toast('warn', 'One moment', 'The house is still fetching your sales', 3, 'clock')
+            if st.sweep == nil then U.toast('warn', 'One moment', 'The house is still fetching your sales', 3, 'clock') end
+            -- (a sweep that asked too soon simply asks again after its gap)
         else
+            -- the rows follow, after the page line when the server has pages (that line clears the page; without one
+            -- the first row clears the lot)
             st.zone_ok = true
-            st.sales = {}
             st.sales_wait = false
-            st.sales_open = true
+            st.reply_page = nil
+            if st.sweep == nil then st.sales_open = true end
         end
     elseif cmd == CMD.LotCancel and result == 0 and work >= 0 and (#d < 0x14 or u8(d, 0x14) ~= 0) and st.cancel_pending == nil then
         -- a sales-status row (the server lists them with this command)
         on_sales_slot(d)
     elseif cmd == CMD.LotCancel then
         if st.cancel_pending ~= nil and result == 0 then
-            local row = st.sales[st.cancel_pending + 1]
-            st.sales[st.cancel_pending + 1] = nil
+            local row = st.sales[st.cancel_pending]
+            st.sales[st.cancel_pending] = nil
             st.cancel_pending = nil
             U.toast('ok', 'Taken down', row and (I.name(row.id) .. ' is back in your bag') or 'Returned to your bag', 4, 'box-open')
             if row then LEDGER.add({ kind = 'taken', id = row.id, stack = row.stack, price = row.price }) end
             refresh_inventory()
+            st.sales_dirty = true -- the house closes the gap: the pages are read again once the cooldown passes
         elseif st.cancel_pending ~= nil then
             st.cancel_pending = nil
             U.toast('danger', "Couldn't take it down", result == RESULT.Full and 'Your inventory is full' or 'Try again in a moment', 5, 'triangle-exclamation')
@@ -691,11 +757,17 @@ local function do_list()
     send_lot_in(a.slot, a.price, a.stack)
 end
 
-local function do_cancel(slot)
+-- take a listing down: straight away while the house is showing its page, else by turning the pages to it first
+local function do_cancel(c)
     if not may_trade() then say('Talk to an auction clerk.') return end
-    st.cancel_pending = slot
-    st.cancel_at = clock()
-    send_cancel(slot)
+    if st.server_page == nil or st.server_page == c.page then
+        st.cancel_pending = c.key
+        st.cancel_at = clock()
+        send_cancel(c.slot)
+    else
+        U.toast('info', 'Turning to page ' .. c.page, 'The house shows one page at a time; a moment', 4, 'clock')
+        start_sweep({ page = c.page, slot = c.slot, key = c.key, id = c.item, price = c.price })
+    end
 end
 
 -- follow an item (singles or stacks), or stop
@@ -739,7 +811,7 @@ local function on_sold(name, buyer, price)
     local stack = row and row.stack or false
     -- the listings are only ever what's still up: the sold one leaves them, and the sale goes on the record
     LEDGER.add({ kind = 'sold', id = id, name = id == nil and name or nil, stack = stack, price = price, who = buyer })
-    if row then st.sales[row.slot + 1] = nil end
+    if row then st.sales[row.key] = nil end
     st.sales_dirty = true
     -- the price record gets the sale from the house's own history, with its time (recording it here too would count it
     -- twice)
@@ -1658,11 +1730,14 @@ end
 local function draw_sales(dl, x, y, w, h, t)
     local rows = {}
     for _, row in pairs(st.sales) do rows[#rows + 1] = row end
-    table.sort(rows, function (a, b) return a.slot < b.slot end)
-    text(dl, x + S(6), y, 'UP FOR SALE  ·  ' .. #rows .. (#rows == 1 and ' item' or ' items'), P.dim, F.disp, T.small)
-    local cooling = clock() - st.sales_at < LIMITS.sales
-    if button(dl, '##sales_refresh', x + w - S(130), y - S(6), S(124), S(26), st.sales_wait and 'Asking…' or 'Refresh', cooling and P.faint or P.accent, 'ghost', 'rotate-right', F.semi, T.tiny) and not cooling and may_trade() then
-        send_sales()
+    table.sort(rows, function (a, b) return a.key < b.key end)
+    local pages = 0
+    for _, row in ipairs(rows) do if row.page > pages then pages = row.page end end
+    text(dl, x + S(6), y, 'UP FOR SALE  ·  ' .. #rows .. (#rows == 1 and ' item' or ' items') .. (pages > 1 and ('  ·  ' .. pages .. ' pages') or ''), P.dim, F.disp, T.small)
+    local cooling = clock() - st.sales_at < LIMITS.sales or st.sweep ~= nil
+    local label = st.sweep and ('Page ' .. (st.server_page or '…')) or (st.sales_wait and 'Asking…' or 'Refresh')
+    if button(dl, '##sales_refresh', x + w - S(130), y - S(6), S(124), S(26), label, cooling and P.faint or P.accent, 'ghost', 'rotate-right', F.semi, T.tiny) and not cooling and may_trade() then
+        start_sweep()
     end
     local cy = y + S(32)
     if #rows == 0 then
@@ -1695,9 +1770,10 @@ local function draw_sales(dl, x, y, w, h, t)
         text(cdl, x + S(68), cy + S(8), r.name .. (row.stack and ('  ·  stack of ' .. r.stack) or ''), P.text, F.disp, T.h2)
         local pl = gil(row.price) .. ' gil'
         text_mid(cdl, x + w - S(254) - measure(pl, F.disp, T.h2), cy + rh / 2, pl, GOLD, F.disp, T.h2) -- centred on the row, as the buttons are
-        text(cdl, x + S(68), cy + S(34), 'Slot ' .. (row.slot + 1) .. (row.at and row.at > 0 and ('  ·  listed ' .. ago(row.at)) or ''), P.dim, F.text, T.tiny)
+        local where = st.server_page ~= nil and ('Page ' .. row.page .. '  ·  slot ' .. (row.slot + 1)) or ('Slot ' .. (row.slot + 1))
+        text(cdl, x + S(68), cy + S(34), where .. (row.at and row.at > 0 and ('  ·  listed ' .. ago(row.at)) or ''), P.dim, F.text, T.tiny)
         -- its recent sales, asked for only when wanted (the search server isn't asked for what nobody looks at)
-        if button(cdl, '##hist' .. row.slot, x + w - S(130) - S(8) - S(104), cy + S(14), S(104), S(32), open and 'Hide' or 'History', open and P.cyan or P.accent, 'ghost', 'clock-rotate-left', F.semi, T.small) then
+        if button(cdl, '##hist' .. row.key, x + w - S(130) - S(8) - S(104), cy + S(14), S(104), S(32), open and 'Hide' or 'History', open and P.cyan or P.accent, 'ghost', 'clock-rotate-left', F.semi, T.small) then
             if open then
                 st.sales_hist = nil -- (not `open and nil or key`: that is always key)
             else
@@ -1706,8 +1782,8 @@ local function draw_sales(dl, x, y, w, h, t)
             end
         end
         local can = may_trade() and st.cancel_pending == nil
-        if button(cdl, '##cancel' .. row.slot, x + w - S(130), cy + S(14), S(116), S(32), 'Take down', can and P.danger or P.faint, 'ghost', 'xmark', F.semi, T.small) and can then
-            st.confirm = { kind = 'cancel', slot = row.slot, item = row.id }
+        if button(cdl, '##cancel' .. row.key, x + w - S(130), cy + S(14), S(116), S(32), 'Take down', can and P.danger or P.faint, 'ghost', 'xmark', F.semi, T.small) and can then
+            st.confirm = { kind = 'cancel', slot = row.slot, item = row.id, page = row.page, key = row.key, price = row.price }
         end
         cy = cy + rh
         if open then
@@ -2010,6 +2086,7 @@ local function draw_confirm()
     local c = st.confirm
     if c == nil then return end
     local w, h = S(420), c.kind == 'sell' and S(206) or S(176)
+    if c.kind == 'cancel' and st.server_page ~= nil and st.server_page ~= c.page then h = h + S(18) end -- a line about the page
     U.dialog('##ah_confirm', w, h, 0, function (dl, x, y)
         shadow(dl, x, y, w, h, S(16), 1.5)
         panel(dl, x, y, w, h, P.glass, 1, S(16), GOLD, true)
@@ -2033,6 +2110,9 @@ local function draw_confirm()
         else
             title = 'Take it down?'
             body = I.name(c.item) .. ' comes back to your bag.\nThe listing fee is not returned.'
+            if st.server_page ~= nil and st.server_page ~= c.page then
+                body = body .. '\nThe house turns to page ' .. c.page .. ' first: a few seconds.'
+            end
             yes, ic, col = 'Take down', 'xmark', P.danger
         end
         text(dl, x + S(22), y + S(18), title, P.text, F.disp, T.h1)
@@ -2048,7 +2128,7 @@ local function draw_confirm()
         if yes_pressed then
             if c.kind == 'buy' then do_buy(c.item, c.price, c.stack)
             elseif c.kind == 'sell' then do_list()
-            else do_cancel(c.slot) end
+            else do_cancel(c) end
             st.confirm = nil
         end
         if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), 'Cancel', P.dim, 'ghost') then st.confirm = nil end
@@ -2244,14 +2324,18 @@ local function tick()
         if clock() - st.counter.at > LIMITS.scan then scan_counter() end
         -- the bag and the gil, kept current (a purchase or a fee changes the gil a moment after the house replies)
         if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
-        if st.sales_dirty and clock() - st.sales_at > LIMITS.sales and may_trade() then
+        if st.sweep and not st.sales_wait and clock() - st.sales_at >= SWEEP_GAP then sweep_step() end
+        if st.sales_dirty and st.sweep == nil and clock() - st.sales_at > LIMITS.sales and may_trade() then
             st.sales_dirty = false
-            send_sales()
+            start_sweep()
         end
-        if st.tab == 'sales' and not st.sales_open and not st.sales_wait and may_trade() and clock() - st.sales_at > LIMITS.sales and logged_in() then
-            send_sales()
+        if st.tab == 'sales' and not st.sales_open and st.sweep == nil and not st.sales_wait and may_trade() and clock() - st.sales_at > LIMITS.sales and logged_in() then
+            start_sweep()
         end
-        if st.sales_wait and clock() - st.sales_at > LIMITS.reply then st.sales_wait = false end
+        if st.sales_wait and clock() - st.sales_at > LIMITS.reply then
+            st.sales_wait = false
+            if st.sweep then st.sweep = nil st.sales_open = true end -- no answer: the sweep ends with what it has
+        end
         draw_main(t)
     end
     U.draw_toasts(t)
@@ -2301,9 +2385,22 @@ vana.events.on('packet_in', function (e)
         if name then
             local ok, err = pcall(on_sold, name, buyer, tonumber(price))
             if not ok then fail('sold', err) end
-        elseif st.sales_wait or clock() - st.sales_at < 2 then
-            -- the server's AH pagination module narrates the sales list in chat; the window shows it instead
-            if mes:find('items listed for sale', 1, true) or mes:find('No results for page', 1, true) or mes:find('Current page:', 1, true) then
+        elseif st.sales_wait or st.sweep or clock() - st.sales_at < 2 then
+            -- the server's AH pagination module narrates the sales list in chat; the window reads it and shows it instead
+            local total = mes:match('^You have (%d+) items? listed for sale')
+            local page, n = mes:match('^Current page: (%d+) of %d+%. Showing (%d+) items?')
+            if total then
+                st.sales_total = tonumber(total)
+            elseif page then
+                -- the page the rows that follow belong to: its old rows go, and a sweep notes it
+                page, n = tonumber(page), tonumber(n)
+                st.server_page, st.page_n, st.reply_page = page, n, page
+                for key, row in pairs(st.sales) do if row.page == page then st.sales[key] = nil end end
+                if st.sweep then
+                    if st.sweep.seen[page] then st.sweep.done = true else st.sweep.seen[page] = true end
+                end
+            end
+            if total or page or mes:find('No results for page', 1, true) then
                 e.blocked = true
                 return true
             end
@@ -2312,6 +2409,7 @@ vana.events.on('packet_in', function (e)
         -- zoning: the house's state is gone with the zone
         st.open = false
         st.sales, st.sales_open, st.sales_wait = {}, false, false
+        st.sweep, st.server_page, st.page_n, st.reply_page = nil, nil, nil, nil -- the house starts at page 1 again
         st.cancel_pending = nil -- the server drops a take-down with the zone, without a reply
         st.lists = {}
         st.counter.near = false
