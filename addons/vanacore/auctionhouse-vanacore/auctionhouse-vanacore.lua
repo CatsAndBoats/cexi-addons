@@ -274,9 +274,11 @@ local function send_sales() send(CMD.Info, -1) st.sales_at = clock() st.sales_wa
 -- every page has been seen, so the window lists all of them; a take-down must be sent while the house is showing the
 -- listing's page (the server cancels by the slot of the page it last showed), so a sweep can also be after one page.
 local SWEEP_GAP = 1.6
+local function sweep_send() st.sweep.got, st.sweep.started = nil, true send_sales() end
 local function start_sweep(want)
     st.sweep = { seen = {}, want = want, steps = 0 }
-    send_sales()
+    -- asked too soon after the last request, the house only says "wait": the tick sends once the gap has passed
+    if clock() - st.sales_at >= SWEEP_GAP then sweep_send() end
 end
 local function send_bid(item, price, stack)
     send(CMD.Bid, free_slot(), { { at = 0x08, u32 = price }, { at = 0x0C, u16 = item }, { at = 0x10, u32 = stack and 0 or 1 } })
@@ -346,6 +348,7 @@ local function on_sales_slot(d)
         st.sales, st.reply_page, st.server_page = {}, 1, nil
     end
     local page = st.reply_page
+    if st.sweep then st.sweep.got = true end
     local key = (page - 1) * 6 + slot + 1
     st.sales[key] = { key = key, page = page, slot = slot, id = item, stack = qty == 0, price = rd32(d, 0x2C), at = rd32(d, 0x38) }
 end
@@ -364,6 +367,11 @@ local function sweep_step()
     local sw = st.sweep
     if sw == nil then return end
     sw.steps = sw.steps + 1
+    if not sw.got then
+        -- nothing came of the last request (the house said wait, or nothing): ask again, up to the cap
+        if sw.steps > 24 then st.sweep = nil st.sales_open = true else sweep_send() end
+        return
+    end
     if sw.want then
         local w = sw.want
         if st.server_page == w.page then
@@ -417,8 +425,11 @@ local function on_packet(e)
     elseif cmd == CMD.Info then
         if result == RESULT.Wait then
             st.sales_wait = false
-            if st.sweep == nil then U.toast('warn', 'One moment', 'The house is still fetching your sales', 3, 'clock') end
-            -- (a sweep that asked too soon simply asks again after its gap)
+            if st.sweep == nil then
+                U.toast('warn', 'One moment', 'The house is still fetching your sales', 3, 'clock')
+            else
+                return true -- a sweep that asked too soon asks again after its gap; the game needn't print the wait
+            end
         else
             -- the rows follow, after the page line when the server has pages (that line clears the page; without one
             -- the first row clears the lot)
@@ -765,7 +776,7 @@ local function do_cancel(c)
         st.cancel_at = clock()
         send_cancel(c.slot)
     else
-        U.toast('info', 'Turning to page ' .. c.page, 'The house shows one page at a time; a moment', 4, 'clock')
+        U.toast('info', 'Finding that listing', 'The house shows a few at a time; a moment', 4, 'clock')
         start_sweep({ page = c.page, slot = c.slot, key = c.key, id = c.item, price = c.price })
     end
 end
@@ -1731,11 +1742,14 @@ local function draw_sales(dl, x, y, w, h, t)
     local rows = {}
     for _, row in pairs(st.sales) do rows[#rows + 1] = row end
     table.sort(rows, function (a, b) return a.key < b.key end)
-    local pages = 0
-    for _, row in ipairs(rows) do if row.page > pages then pages = row.page end end
-    text(dl, x + S(6), y, 'UP FOR SALE  ·  ' .. #rows .. (#rows == 1 and ' item' or ' items') .. (pages > 1 and ('  ·  ' .. pages .. ' pages') or ''), P.dim, F.disp, T.small)
+    local head = 'UP FOR SALE  ·  ' .. #rows .. (#rows == 1 and ' item' or ' items')
+    text(dl, x + S(6), y, head, P.dim, F.disp, T.small)
+    if st.sweep then
+        -- the pages are the server's business (see start_sweep); the player just sees the list fill
+        text(dl, x + S(6) + measure(head, F.disp, T.small) + S(12), y + S(1), 'reading your listings…', P.cyan, F.text, T.tiny)
+    end
     local cooling = clock() - st.sales_at < LIMITS.sales or st.sweep ~= nil
-    local label = st.sweep and ('Page ' .. (st.server_page or '…')) or (st.sales_wait and 'Asking…' or 'Refresh')
+    local label = (st.sweep or st.sales_wait) and 'Reading…' or 'Refresh'
     if button(dl, '##sales_refresh', x + w - S(130), y - S(6), S(124), S(26), label, cooling and P.faint or P.accent, 'ghost', 'rotate-right', F.semi, T.tiny) and not cooling and may_trade() then
         start_sweep()
     end
@@ -1770,8 +1784,10 @@ local function draw_sales(dl, x, y, w, h, t)
         text(cdl, x + S(68), cy + S(8), r.name .. (row.stack and ('  ·  stack of ' .. r.stack) or ''), P.text, F.disp, T.h2)
         local pl = gil(row.price) .. ' gil'
         text_mid(cdl, x + w - S(254) - measure(pl, F.disp, T.h2), cy + rh / 2, pl, GOLD, F.disp, T.h2) -- centred on the row, as the buttons are
-        local where = st.server_page ~= nil and ('Page ' .. row.page .. '  ·  slot ' .. (row.slot + 1)) or ('Slot ' .. (row.slot + 1))
-        text(cdl, x + S(68), cy + S(34), where .. (row.at and row.at > 0 and ('  ·  listed ' .. ago(row.at)) or ''), P.dim, F.text, T.tiny)
+        -- its category, and when it went up where the server says (its pages don't); the page and slot are the house's
+        local sub = I.CATEGORY_NAME[I.category_of(row.id) or 0] or ''
+        if row.at and row.at > 0 then sub = sub .. (sub ~= '' and '  ·  ' or '') .. 'listed ' .. ago(row.at) end
+        text(cdl, x + S(68), cy + S(34), sub, P.dim, F.text, T.tiny)
         -- its recent sales, asked for only when wanted (the search server isn't asked for what nobody looks at)
         if button(cdl, '##hist' .. row.key, x + w - S(130) - S(8) - S(104), cy + S(14), S(104), S(32), open and 'Hide' or 'History', open and P.cyan or P.accent, 'ghost', 'clock-rotate-left', F.semi, T.small) then
             if open then
@@ -2086,7 +2102,7 @@ local function draw_confirm()
     local c = st.confirm
     if c == nil then return end
     local w, h = S(420), c.kind == 'sell' and S(206) or S(176)
-    if c.kind == 'cancel' and st.server_page ~= nil and st.server_page ~= c.page then h = h + S(18) end -- a line about the page
+    if c.kind == 'cancel' and st.server_page ~= nil and st.server_page ~= c.page then h = h + S(18) end -- a line about the wait
     U.dialog('##ah_confirm', w, h, 0, function (dl, x, y)
         shadow(dl, x, y, w, h, S(16), 1.5)
         panel(dl, x, y, w, h, P.glass, 1, S(16), GOLD, true)
@@ -2111,7 +2127,7 @@ local function draw_confirm()
             title = 'Take it down?'
             body = I.name(c.item) .. ' comes back to your bag.\nThe listing fee is not returned.'
             if st.server_page ~= nil and st.server_page ~= c.page then
-                body = body .. '\nThe house turns to page ' .. c.page .. ' first: a few seconds.'
+                body = body .. '\nThe house needs a moment to find this one.'
             end
             yes, ic, col = 'Take down', 'xmark', P.danger
         end
@@ -2324,7 +2340,9 @@ local function tick()
         if clock() - st.counter.at > LIMITS.scan then scan_counter() end
         -- the bag and the gil, kept current (a purchase or a fee changes the gil a moment after the house replies)
         if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
-        if st.sweep and not st.sales_wait and clock() - st.sales_at >= SWEEP_GAP then sweep_step() end
+        if st.sweep and not st.sales_wait and clock() - st.sales_at >= SWEEP_GAP then
+            if st.sweep.started then sweep_step() else sweep_send() end
+        end
         if st.sales_dirty and st.sweep == nil and clock() - st.sales_at > LIMITS.sales and may_trade() then
             st.sales_dirty = false
             start_sweep()
@@ -2397,6 +2415,7 @@ vana.events.on('packet_in', function (e)
                 st.server_page, st.page_n, st.reply_page = page, n, page
                 for key, row in pairs(st.sales) do if row.page == page then st.sales[key] = nil end end
                 if st.sweep then
+                    st.sweep.got = true
                     if st.sweep.seen[page] then st.sweep.done = true else st.sweep.seen[page] = true end
                 end
             end

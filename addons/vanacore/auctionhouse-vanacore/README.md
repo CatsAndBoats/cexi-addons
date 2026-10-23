@@ -59,12 +59,13 @@ price (recent sales are shown), and **List for N gil**: the house quotes its lis
 whole transaction (the item, the price, the fee paid now, the payout to your delivery box when it sells) for you to
 say **List it** to.
 
-**Listings.** What you have up, with the price, the slot and when it went up, and a **Take down** for each. The game's
-own window shows seven; CatsEyeXI's server (its `ah_pagination` module) keeps more, six to a page, and shows the next
-page each time the list is opened. This window reads every page: a refresh asks page after page (the server answers
-one every 1.5 s) until it has seen them all, and lists them together with each one's page and slot. Taking down a
-listing on another page turns the pages to it first (the house cancels by the slot of the page it last showed), which
-the confirmation says and takes a few seconds. **History**
+**Listings.** Everything you have up, in one scrolling list, with the price and a **Take down** for each. The list
+fills by itself when the tab opens, after you list or take something down, and on **Refresh**. The game's own window
+shows seven listings; CatsEyeXI's server (its `ah_pagination` module) keeps more, six to a page, showing the next page
+each time the list is asked for and answering once every 1.5 s, so a long list takes a few seconds to read
+("reading your listings…" while it does). The pages stay the server's business: the one thing you may notice is that
+taking down a listing the house isn't currently showing takes a moment (the confirmation says so) while the window
+brings the house round to it. **History**
 on a row asks the search server for that item's recent sales (only when you ask: nothing is fetched for rows nobody
 looks at) and shows last, median, range and trend under the row, with where your price stands against the median.
 When one of your listings sells while you're on, CatsEyeXI's server says so (its `ah_announcement` module, a system
