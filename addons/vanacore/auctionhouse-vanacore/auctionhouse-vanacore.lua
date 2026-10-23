@@ -1700,7 +1700,7 @@ local function draw_sell(dl, x, y, w, h, t)
     text(dl, sx, sy, 'RECENTLY SOLD FOR', P.accent, F.disp, T.small)
     sy = sy + S(20)
     if hs and hs.stats then
-        text(dl, sx, sy, gil(hs.stats.last) .. ' last  ·  ' .. gil(hs.stats.median) .. ' median  ·  ' .. gil(hs.stats.low) .. ' – ' .. gil(hs.stats.high), P.text, F.text, T.small)
+        text(dl, sx, sy, gil(hs.stats.last) .. ' last  ·  ' .. gil(hs.stats.median) .. ' median  ·  ' .. gil(hs.stats.low) .. ' – ' .. gil(hs.stats.high) .. ' range', P.text, F.text, T.small)
     elseif hs then
         text(dl, sx, sy, 'No ' .. (st.sell.stack and 'stacks' or 'singles') .. ' sold lately', P.dim, F.text, T.small)
     else
@@ -1821,7 +1821,7 @@ local function draw_sales(dl, x, y, w, h, t)
                 text(cdl, ix, ey + S(20), 'No ' .. (row.stack and 'stacks' or 'singles') .. ' sold lately', P.dim, F.text, T.small)
             else
                 local st_ = hs.stats
-                local summary = 'last ' .. gil(st_.last) .. '  ·  median ' .. gil(st_.median) .. '  ·  ' .. gil(st_.low) .. ' – ' .. gil(st_.high)
+                local summary = 'last ' .. gil(st_.last) .. '  ·  median ' .. gil(st_.median) .. '  ·  range ' .. gil(st_.low) .. ' – ' .. gil(st_.high)
                 if st_.trend then
                     local flat = math.abs(st_.trend) <= 0.02
                     summary = summary .. '  ·  ' .. (flat and 'steady' or string.format('%s%.0f%%', st_.trend > 0 and '+' or '', st_.trend * 100))
