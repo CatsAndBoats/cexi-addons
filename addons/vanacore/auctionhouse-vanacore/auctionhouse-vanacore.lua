@@ -1775,7 +1775,7 @@ local function draw_sales(dl, x, y, w, h, t)
     for _, row in ipairs(rows) do
         local rh = S(60)
         local key = row.id .. '/' .. (row.stack and 1 or 0)
-        local open = st.sales_hist == key
+        local open = st.sales_hist == row.key -- this listing's, not every listing of the same item
         -- open, the card grows to hold the history, outlined as one
         local hs, lines, eh = nil, 0, 0
         if open then
@@ -1798,7 +1798,7 @@ local function draw_sales(dl, x, y, w, h, t)
             if open then
                 st.sales_hist = nil -- (not `open and nil or key`: that is always key)
             else
-                st.sales_hist = key
+                st.sales_hist = row.key
                 fetch_history(row.id, row.stack)
             end
         end
