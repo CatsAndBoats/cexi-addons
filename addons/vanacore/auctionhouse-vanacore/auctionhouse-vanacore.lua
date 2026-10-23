@@ -380,7 +380,10 @@ local function on_packet(e)
         if status == 2 and result == RESULT.Ok then
             st.sell.fee = rd32(d, 0x08)
             st.sell.asked = { item = u16(d, 0x0E), slot = u16(d, 0x0C), stack = rd32(d, 0x10) == 0, price = st.sell.ask_price }
+            if st.sell.confirm_on_fee and st.open then st.confirm = { kind = 'sell' } end
+            st.sell.confirm_on_fee = nil
         else
+            st.sell.confirm_on_fee = nil
             st.sell.fee, st.sell.asked = nil, nil
             U.toast('danger', "Can't sell that", 'The house refused it (used, locked, or not for auction)', 5, 'ban')
         end
@@ -789,7 +792,7 @@ local GOLD, PALE = '#FFD166', '#FFF3C4'
 -- its idle one. This adds a gold ring with a soft glow while typing, a lighter edge on hover, a caret of a few pixels
 -- that blinks (and holds still while you type), a dimmer placeholder so a hint never looks like a value, and, for
 -- prices, the whole number selected on click so typing replaces it. Enter in a price box does what its button does
--- (Checkout, the fee; a bid goes to its confirmation, never straight through).
+-- (the List button; a bid goes to its confirmation, never straight through).
 -- ImGui keeps the real caret position to itself; ours sits at the end of the text, which is where it is after a click
 -- that selects all, or after typing. Once the caret could have moved elsewhere (arrows, Home/End, a click inside the
 -- box), ours steps aside and ImGui's, now gold, carries on.
@@ -1614,17 +1617,22 @@ local function draw_sell(dl, x, y, w, h, t)
     sy = sy + S(40)
     local price = tonumber(st.sell.price[1]) or 0
     local can = may_trade() and price > 0 and not st.sell.pending
-    if st.sell.asked and st.sell.asked.price == price and st.sell.asked.stack == st.sell.stack then
-        text(dl, sx, sy, 'Fee ' .. gil(st.sell.fee or 0) .. ' gil, paid now', st.sell.fee and st.sell.fee > st.gil and P.danger or P.dim, F.text, T.small)
-        sy = sy + S(26)
-        local ok = can and (st.sell.fee or 0) <= st.gil
-        if button(dl, '##list_btn', sx, sy, pw - S(32), S(36), st.sell.pending and 'Listing…' or 'Put it up for sale', ok and GOLD or P.faint, ok and 'solid' or 'ghost', 'tag') and ok then
-            st.confirm = { kind = 'sell' }
-        end
+    -- one button, named for the price: the house is asked its fee, and its answer opens the card with the whole
+    -- transaction (the price, the fee paid now, the payout) to say yes to; a fee already known opens it at once
+    local known = st.sell.asked and st.sell.asked.price == price and st.sell.asked.stack == st.sell.stack
+    if known then
+        text(dl, sx, sy, 'Listing fee ' .. gil(st.sell.fee or 0) .. ' gil, paid now', st.sell.fee and st.sell.fee > st.gil and P.danger or P.dim, F.text, T.small)
     else
-        text(dl, sx, sy, 'Checkout shows the listing fee before anything is listed', P.faint, F.text, T.tiny)
-        sy = sy + S(26)
-        if (button(dl, '##ask_btn', sx, sy, pw - S(32), S(36), st.sell.pending and 'Checking out…' or 'Checkout', can and P.accent or P.faint, can and 'solid' or 'ghost', 'receipt') or entered) and can then
+        text(dl, sx, sy, 'The house quotes its listing fee first; nothing is listed until you say so', P.faint, F.text, T.tiny)
+    end
+    sy = sy + S(26)
+    local label = st.sell.pending and 'Asking the house…' or (price > 0 and ('List for ' .. gil(price) .. ' gil') or 'List it')
+    local ok = can and (not known or (st.sell.fee or 0) <= st.gil)
+    if (button(dl, '##list_btn', sx, sy, pw - S(32), S(36), label, ok and GOLD or P.faint, ok and 'solid' or 'ghost', 'tag') or entered) and ok then
+        if known then
+            st.confirm = { kind = 'sell' }
+        else
+            st.sell.confirm_on_fee = true
             do_ask(st.sell.slot, id, price, st.sell.stack)
         end
     end
@@ -1648,39 +1656,107 @@ local function draw_sales(dl, x, y, w, h, t)
         text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and 'Sell something from your bag' or (may_trade() and 'Refresh lists what you have up' or 'Talk to an auction clerk'), P.dim, F.text, T.small)
         return
     end
+    -- the rows and what sold, in an area of their own that scrolls (seven up, one with its history open, don't fit)
+    local bottom = y + h - S(22)
+    imgui.SetCursorScreenPos({ x, cy })
+    imgui.BeginChild('##sales_rows', { w, bottom - cy }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
+    local cdl = imgui.GetWindowDrawList()
+    cy = cy - imgui.GetScrollY()
+    local top = cy
     for _, row in ipairs(rows) do
         local rh = S(60)
-        panel(dl, x + S(4), cy, w - S(8), rh, P.card, 0.95, S(10))
-        item_icon(dl, row.id, x + S(14), cy + S(8), S(44), 1)
+        local key = row.id .. '/' .. (row.stack and 1 or 0)
+        local open = st.sales_hist == key
+        -- open, the card grows to hold the history, outlined as one
+        local hs, lines, eh = nil, 0, 0
+        if open then
+            hs = history_of(row.id, row.stack)
+            lines = hs and math.min(5, #hs.sales) or 0
+            eh = S(60) + lines * S(19) + (hs and #hs.sales == 0 and S(4) or 0)
+        end
+        panel(cdl, x + S(4), cy, w - S(8), rh + eh, P.card, 0.95, S(10))
+        item_icon(cdl, row.id, x + S(14), cy + S(8), S(44), 1)
         local r = I.get(row.id)
-        text(dl, x + S(68), cy + S(8), r.name .. (row.stack and ('  ·  stack of ' .. r.stack) or ''), P.text, F.disp, T.h2)
+        text(cdl, x + S(68), cy + S(8), r.name .. (row.stack and ('  ·  stack of ' .. r.stack) or ''), P.text, F.disp, T.h2)
         local pl = gil(row.price) .. ' gil'
-        text(dl, x + w - S(150) - measure(pl, F.disp, T.h2), cy + S(10), pl, GOLD, F.disp, T.h2)
-        text(dl, x + S(68), cy + S(34), 'Slot ' .. (row.slot + 1) .. (row.at and row.at > 0 and ('  ·  listed ' .. ago(row.at)) or ''), P.dim, F.text, T.tiny)
+        text_mid(cdl, x + w - S(254) - measure(pl, F.disp, T.h2), cy + rh / 2, pl, GOLD, F.disp, T.h2) -- centred on the row, as the buttons are
+        text(cdl, x + S(68), cy + S(34), 'Slot ' .. (row.slot + 1) .. (row.at and row.at > 0 and ('  ·  listed ' .. ago(row.at)) or ''), P.dim, F.text, T.tiny)
+        -- its recent sales, asked for only when wanted (the search server isn't asked for what nobody looks at)
+        if button(cdl, '##hist' .. row.slot, x + w - S(130) - S(8) - S(104), cy + S(14), S(104), S(32), open and 'Hide' or 'History', open and P.cyan or P.accent, 'ghost', 'clock-rotate-left', F.semi, T.small) then
+            if open then
+                st.sales_hist = nil -- (not `open and nil or key`: that is always key)
+            else
+                st.sales_hist = key
+                fetch_history(row.id, row.stack)
+            end
+        end
         local can = may_trade() and st.cancel_pending == nil
-        if button(dl, '##cancel' .. row.slot, x + w - S(130), cy + S(14), S(116), S(32), 'Take down', can and P.danger or P.faint, 'ghost', 'xmark', F.semi, T.small) and can then
+        if button(cdl, '##cancel' .. row.slot, x + w - S(130), cy + S(14), S(116), S(32), 'Take down', can and P.danger or P.faint, 'ghost', 'xmark', F.semi, T.small) and can then
             st.confirm = { kind = 'cancel', slot = row.slot, item = row.id }
         end
-        cy = cy + rh + S(8)
+        cy = cy + rh
+        if open then
+            -- under the row: last, median, range and the trend, where your price stands, then the latest sales
+            cdl:AddRectFilled({ x + S(5), cy + S(2) }, { x + w - S(5), cy + eh - S(1) }, u32(P.well, 0.45), S(8))
+            cdl:AddLine({ x + S(16), cy + S(2) }, { x + w - S(16), cy + S(2) }, u32(P.line, 0.6), 1)
+            local ix = x + S(68)
+            local ey = cy + S(10)
+            text(cdl, ix, ey, 'RECENT SALES  ·  ' .. (row.stack and 'stacks' or 'singles'), P.accent, F.disp, T.tiny)
+            if st.fetching[key] then text(cdl, ix + S(150), ey + S(1), 'fetching…', P.cyan, F.text, T.tiny) end
+            if hs == nil then
+                text(cdl, ix, ey + S(20), st.search_error and ('Search server: ' .. tostring(st.search_error)) or 'Asking the house…', st.search_error and P.danger or P.dim, F.text, T.small)
+            elseif #hs.sales == 0 then
+                text(cdl, ix, ey + S(20), 'No ' .. (row.stack and 'stacks' or 'singles') .. ' sold lately', P.dim, F.text, T.small)
+            else
+                local st_ = hs.stats
+                local summary = 'last ' .. gil(st_.last) .. '  ·  median ' .. gil(st_.median) .. '  ·  ' .. gil(st_.low) .. ' – ' .. gil(st_.high)
+                if st_.trend then
+                    local flat = math.abs(st_.trend) <= 0.02
+                    summary = summary .. '  ·  ' .. (flat and 'steady' or string.format('%s%.0f%%', st_.trend > 0 and '+' or '', st_.trend * 100))
+                end
+                text(cdl, ix, ey + S(18), summary, P.text, F.semi, T.small)
+                -- where yours stands against the median
+                local d = st_.median > 0 and (row.price - st_.median) / st_.median or 0
+                local verdict, vcol
+                if math.abs(d) < 0.03 then verdict, vcol = 'yours is at the median', P.dim
+                elseif d > 0 then verdict, vcol = string.format('yours is %.0f%% above the median', d * 100), P.warn
+                else verdict, vcol = string.format('yours is %.0f%% under the median', -d * 100), P.ok end
+                text(cdl, x + w - S(20) - measure(verdict, F.text, T.tiny), ey + S(20), verdict, vcol, F.text, T.tiny)
+                local ry = ey + S(42)
+                for i = 1, lines do
+                    local sale = hs.sales[i]
+                    text(cdl, ix, ry, gil(sale.price), i == 1 and GOLD or P.text, F.semi, T.small)
+                    text(cdl, ix + S(96), ry, ago(sale.date), P.dim, F.text, T.small)
+                    local who = fit(sale.seller .. ' → ' .. sale.buyer, F.text, T.tiny, w - S(300))
+                    text(cdl, x + w - S(20) - measure(who, F.text, T.tiny), ry + S(2), who, P.faint, F.text, T.tiny)
+                    ry = ry + S(19)
+                end
+            end
+            cy = cy + eh
+        end
+        cy = cy + S(8)
     end
     -- what sold while you were on (the server's announcement), newest first
     if #st.sold > 0 then
         cy = cy + S(8)
-        text(dl, x + S(6), cy, 'SOLD WHILE YOU WERE ON  ·  the gil is in your delivery box', P.ok, F.disp, T.small)
+        text(cdl, x + S(6), cy, 'SOLD WHILE YOU WERE ON  ·  the gil is in your delivery box', P.ok, F.disp, T.small)
         cy = cy + S(24)
         for i, s in ipairs(st.sold) do
             local rh = S(48)
-            if cy + rh > y + h - S(24) then break end
-            panel(dl, x + S(4), cy, w - S(8), rh, P.card, 0.8, S(10))
-            if s.id then item_icon(dl, s.id, x + S(14), cy + S(6), S(36), 1) end
+            panel(cdl, x + S(4), cy, w - S(8), rh, P.card, 0.8, S(10))
+            if s.id then item_icon(cdl, s.id, x + S(14), cy + S(6), S(36), 1) end
             local what = s.id and I.name(s.id) or s.name
-            text(dl, x + S(60), cy + S(6), what .. (s.stack and ('  ·  stack') or ''), P.text, F.disp, T.body)
-            text(dl, x + S(60), cy + S(28), 'to ' .. s.buyer .. '  ·  ' .. ago(s.at), P.dim, F.text, T.tiny)
+            text(cdl, x + S(60), cy + S(6), what .. (s.stack and ('  ·  stack') or ''), P.text, F.disp, T.body)
+            text(cdl, x + S(60), cy + S(28), 'to ' .. s.buyer .. '  ·  ' .. ago(s.at), P.dim, F.text, T.tiny)
             local pl = gil(s.price) .. ' gil'
-            text(dl, x + w - S(20) - measure(pl, F.disp, T.h2), cy + S(12), pl, P.ok, F.disp, T.h2)
+            text(cdl, x + w - S(20) - measure(pl, F.disp, T.h2), cy + S(12), pl, P.ok, F.disp, T.h2)
             cy = cy + rh + S(6)
         end
     end
+    imgui.SetCursorScreenPos({ x, cy + S(2) })
+    imgui.Dummy({ 1, 1 })
+    imgui.EndChild()
+    cy = bottom
     text(dl, x + S(6), cy + S(4), 'Sold items pay out to your delivery box; the house holds unsold ones until you take them down.', P.faint, F.text, T.tiny)
 end
 
@@ -1843,7 +1919,7 @@ end
 local function draw_confirm()
     local c = st.confirm
     if c == nil then return end
-    local w, h = S(420), S(176)
+    local w, h = S(420), c.kind == 'sell' and S(206) or S(176)
     U.dialog('##ah_confirm', w, h, 0, function (dl, x, y)
         shadow(dl, x, y, w, h, S(16), 1.5)
         panel(dl, x, y, w, h, P.glass, 1, S(16), GOLD, true)
@@ -1857,9 +1933,12 @@ local function draw_confirm()
         elseif c.kind == 'sell' then
             local a = st.sell.asked
             local r = I.get(a.item)
-            title = 'List it for ' .. gil(a.price) .. ' gil?'
-            body = r.name .. (a.stack and ('  ·  stack of ' .. r.stack) or '  ·  one') .. '\nFee ' .. gil(st.sell.fee or 0) .. ' gil now, kept whether or not it sells.'
-            yes, ic, col = 'Put it up', 'tag', GOLD
+            local what = r.name .. (a.stack and (' (a stack of ' .. r.stack .. ')') or '')
+            title = 'List ' .. what .. ' for ' .. gil(a.price) .. ' gil?'
+            body = 'Listing fee: ' .. gil(st.sell.fee or 0) .. ' gil, paid now and kept whether or not it sells.'
+                .. '\nWhen it sells, ' .. gil(a.price) .. ' gil goes to your delivery box.'
+                .. '\nUnsold, it waits at the house until you take it down.'
+            yes, ic, col = 'List it', 'tag', GOLD
             item_icon(dl, a.item, x + w - S(22) - S(48), y + S(16), S(48), 1)
         else
             title = 'Take it down?'
