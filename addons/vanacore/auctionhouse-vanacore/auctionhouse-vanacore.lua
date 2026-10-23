@@ -961,6 +961,11 @@ local function pad_price_box(id, hint, buf, width, size, fs)
         v, buf[1] = 0, ''
         changed = buf[1] ~= fs.orig
     end
+    -- the bid box, not being edited: Up is the singles/stacks switch above it (for an item that stacks)
+    if focused and not fs.pad_on and id == '##bid' and st.selected and I.get(st.selected).stack > 1 then
+        st.pad_hold = true
+        if PAD.pressed('up') then st.pad_seat = 'stack' end
+    end
     if fs.pad_on then
         st.pad_editing, st.pad_hold = true, 'all'
         local n = v > 0 and #tostring(v) or 0 -- digits the number has; columns past n are zeros in front
@@ -1665,8 +1670,27 @@ local function draw_detail(dl, x, y, w, h, t)
     stock_pills(dl, x + w - S(16), cy - S(2), id, 1, true)
     cy = cy + S(26)
     if r.stack > 1 then
+        -- a controller is sent here by Up from the price box (ImGui's own Up skipped it for the sidebar): the side in
+        -- use takes the focus, asked again each frame until it has (VanaCore moves ImGui's focus on the same press)
+        if st.pad_seat == 'stack' then
+            imgui.SetKeyboardFocusHere(st.stack and 1 or 0) -- (the switch's two buttons are its next two items)
+            st.stack_tries = (st.stack_tries or 0) + 1
+        end
         local picked = U.segments(dl, '##ss', cx, cy, S(26), { { false, 'SINGLE' }, { true, 'STACK of ' .. r.stack } }, st.stack, function () return GOLD end, F.disp, T.tiny)
         if picked ~= st.stack then st.stack = picked st.buy.price[1] = '' end
+        local fo = U.anim.focus
+        local on_switch = PAD.shown() and fo ~= nil and fo.at == now_t and (fo.key == '##ss1' or fo.key == '##ss2')
+        if st.pad_seat == 'stack' and (on_switch or st.stack_tries > 6) then st.pad_seat, st.stack_tries = nil, nil end
+        -- on it: Left and Right pick singles or stacks, Down goes back to the price box
+        if on_switch and st.pad_seat == nil then
+            st.card_focus, st.pad_hold = true, 'all'
+            local want = st.stack
+            if PAD.pressed('left') then want = false end
+            if PAD.pressed('right') then want = true end
+            if want ~= st.stack then st.stack, st.buy.price[1] = want, '' end
+            if PAD.pressed('left') or PAD.pressed('right') then st.pad_seat = 'stack' end -- (kept on the side picked)
+            if PAD.pressed('down') then st.pad_seat = 'price' end
+        end
         cy = cy + S(34)
     end
     -- the history
@@ -1747,7 +1771,7 @@ local function draw_detail(dl, x, y, w, h, t)
     by = by + S(22)
     imgui.SetCursorScreenPos({ cx, by })
     local _, _, entered = field('##bid', hs and hs.stats and ('last sold ' .. tostring(hs.stats.last)) or 'gil', st.buy.price, w - S(32) - S(110), T.body, true)
-    st.card_focus = imgui.IsItemFocused() -- a controller's focus is on the card: Cancel goes back to the list
+    st.card_focus = st.card_focus or imgui.IsItemFocused() -- a controller's focus is on the card: Cancel goes back to the list
     local price = tonumber(st.buy.price[1]) or (hs and hs.stats and hs.stats.last) or 0
     local can = may_trade() and price > 0 and logged_in() and st.buy.pending == nil
     local label = st.buy.pending and 'Bidding…' or 'Bid'

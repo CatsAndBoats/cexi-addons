@@ -94,7 +94,8 @@ scrolls the list, X and Y are the In stock and Usable chips, View the Compare ch
 Buy tab goes left to right, one pane at a time: the ring starts on the category in use in the sidebar; Confirm on a
 category moves it to that list's first item; Confirm on an item opens its card with the ring on the price box;
 Confirm there edits the price (below), Confirm again keeps it and moves to **Bid**, Confirm on Bid opens the
-confirmation, where Bid is already under the ring, so Confirm once more bids. Cancel walks back the same way (the
+confirmation, where Bid is already under the ring, so Confirm once more bids. For an item that stacks, Up from the
+price box is the **Single / Stack** switch: Left and Right pick one, Down goes back to the price box. Cancel walks back the same way (the
 confirmation, the card to its item, the list to its category, then the window), and the legend says what Confirm and
 Cancel do in the pane you're in. A Confirm only ever does one thing: the press that keeps a price doesn't also press
 Bid. **A price:** the price box (Left from Bid, or Up from List on the Sell tab, gets back to it) takes Confirm as a digit editor, since a pad can't
