@@ -3825,11 +3825,23 @@ local function draw_orb(t)
         local wx, wy = imgui.GetWindowPos()
         local cx, cy = wx + size / 2, wy + size / 2
         local r = size / 2 - S(6)
+        -- the glow and the rings reach past the window's square, and ImGui clipped them to one: a dark square with
+        -- rounded corners round the beacon. They're drawn with the room round it (clicks still go by the window);
+        -- the clip goes back even if a drawing fails, so ImGui's stack stays whole
+        local m = S(30)
+        local function wide(fn)
+            dl:PushClipRect({ wx - m, wy - m }, { wx + size + m, wy + size + m }, false)
+            local ok, err = pcall(fn)
+            dl:PopClipRect()
+            if not ok then error(err, 0) end
+        end
         local pulse = 0.5 + 0.5 * math.sin(t * 2.2)
         local hot = #st.requests > 0 or (now_t - (st.pin_alert_at or -100)) < 20
-        for i = 3, 1, -1 do
-            dl:AddCircleFilled({ cx, cy }, r + S(5) * i * (0.6 + 0.4 * pulse), u32(hot and P.gold or P.accent, 0.06), 32)
-        end
+        wide(function ()
+            for i = 3, 1, -1 do
+                dl:AddCircleFilled({ cx, cy }, r + S(5) * i * (0.6 + 0.4 * pulse), u32(hot and P.gold or P.accent, 0.06), 32)
+            end
+        end)
         beacon(dl, cx, cy, r * 2, t)
         dl:PathClear()
         dl:PathArcTo({ cx, cy }, r + S(2), t * 1.2, t * 1.2 + math.pi * 1.3, 32)
@@ -3842,7 +3854,7 @@ local function draw_orb(t)
             text_center(dl, bx - S(12), by, S(24), tostring(n), P.ink, F.bold, T.tiny)
         end
         if hot then
-            dl:AddCircle({ cx, cy }, r + S(5), u32(P.gold, 0.6 + 0.4 * pulse), 48, S(2))
+            wide(function () dl:AddCircle({ cx, cy }, r + S(5), u32(P.gold, 0.6 + 0.4 * pulse), 48, S(2)) end)
         end
         imgui.SetCursorScreenPos({ wx, wy })
         local _, hovered = hit('##orbhit', size, size)
@@ -3854,7 +3866,7 @@ local function draw_orb(t)
             with_font(F.text, T.small, imgui.SetTooltip, string.format('%d looking   ·   %d recruiting   ·   click to open, drag to move', count_type(1), count_type(2)))
         end
         if st.orb_drag and st.orb_drag.moved then
-            dl:AddCircle({ cx, cy }, r + S(8), u32(P.cyan, 0.5), 48, S(1.5))
+            wide(function () dl:AddCircle({ cx, cy }, r + S(8), u32(P.cyan, 0.5), 48, S(1.5)) end)
         end
         st.orb.x, st.orb.y = wx, wy
         -- the duty frame under it
