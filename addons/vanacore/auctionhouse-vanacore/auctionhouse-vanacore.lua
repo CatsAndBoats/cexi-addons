@@ -71,6 +71,7 @@ local settings = {
     scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, take_over = true, spots = {}, search_host = '', search_port = 54002,
     sort = 'name', in_stock = false, remember = {},
     chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false, compare = false,
+    sellable_only = false, -- the Sell tab hides what the house won't take
 }
 
 local function copy(v)
@@ -902,10 +903,107 @@ end
 
 local FIELD = { CharsDecimal = 1, AutoSelectAll = 4096, InputTextCursor = 33, TextDisabled = 1, TextSelectedBg = 53, active_frame = -10 }
 local field_state = {}
+-- A price box under a controller. A text box would open for typing, which a pad can't do, so while the pad is in use
+-- and the box has the focus it is a digit editor of its own instead, worked as the game's own bid box is: Confirm
+-- takes it with the ones digit lit, Left moves the light up the columns (one past the top digit is a new column, a
+-- 0 to raise), Right brings it back down, Up and Down change the lit digit (carrying over, never below 0), Confirm
+-- keeps the number and moves on to the box's button (Bid, or List), Cancel puts the old number back. ImGui's own
+-- navigation still moves on a D-pad press (VanaCore feeds it), so the box takes the focus back each frame while it
+-- is being edited.
+local function pad_price_box(id, hint, buf, width, size, fs)
+    local im = imgui
+    local h = fs.h or (S(size) + S(12))
+    -- (or sent here from its button: Left from Bid, Up from List; asked again each frame until it has taken)
+    if fs.pad_on or st.pad_seat == 'price' then im.SetKeyboardFocusHere() end
+    local pressed = im.InvisibleButton(id, { width, h }, 8)
+    local x0, y0 = im.GetItemRectMin()
+    local dl = im.GetWindowDrawList()
+    local focused = im.IsItemFocused()
+    if st.pad_seat == 'price' then
+        fs.seat_tries = (fs.seat_tries or 0) + 1
+        if focused or fs.seat_tries > 6 then st.pad_seat, fs.seat_tries = nil, nil end
+    end
+    fs.focused = focused or st.pad_seat == 'price'
+    local changed = false
+    local v = tonumber(buf[1]) or 0
+    if pressed then
+        if fs.pad_on then
+            fs.pad_on = false
+            st.pad_seat = id == '##bid' and 'bid' or 'list' -- on to the button
+        elseif focused then
+            -- from 0, the ones lit, as the game's box starts (Cancel brings back what was there)
+            fs.pad_on, fs.orig, fs.col = true, buf[1] or '', 0
+            v, buf[1] = 0, ''
+            changed = buf[1] ~= fs.orig
+        end
+    end
+    if fs.pad_on then
+        st.pad_editing, st.pad_hold = true, 'all'
+        local n = v > 0 and #tostring(v) or 0 -- digits the number has; columns past n are zeros in front
+        local step = 10 ^ fs.col
+        local nv = v
+        if PAD.repeating('up') and v + step <= 999999999 then nv = v + step end
+        if PAD.repeating('down') then nv = v >= step and v - step or 0 end
+        if PAD.repeating('left') and fs.col < 8 then fs.col = fs.col + 1 end -- past the top digit: another zero, up to nine digits
+        if PAD.repeating('right') then
+            if fs.col > 0 then fs.col = fs.col - 1 else nv = 0 end -- Right at the ones clears the number
+        end
+        if PAD.pressed('cancel') then
+            fs.pad_on = false
+            nv = tonumber(fs.orig) or 0
+            buf[1] = fs.orig
+        end
+        if nv ~= v then
+            buf[1] = nv > 0 and tostring(nv) or ''
+            changed, v = true, nv
+        end
+    end
+    if focused or fs.pad_on then U.anim.focus = { x = x0, y = y0, w = width, h = h, at = now_t, key = id } end -- the ring
+    -- the box, as the text box looks: a gold ring and glow while editing, the plain line otherwise
+    local r = S(9)
+    if fs.pad_on then
+        for i = 3, 1, -1 do
+            local g = S(2) * i
+            dl:AddRect({ x0 - g, y0 - g }, { x0 + width + g, y0 + h + g }, u32(GOLD, 0.07 * (4 - i)), r + g, 0, S(2))
+        end
+        dl:AddRect({ x0, y0 }, { x0 + width, y0 + h }, u32(GOLD, 0.9), r, 0, math.max(1, S(1.5)))
+    else
+        dl:AddRect({ x0, y0 }, { x0 + width, y0 + h }, u32(P.line, 0.9), r, 0, 1)
+    end
+    local ty = y0 + h / 2
+    if fs.pad_on then
+        -- the digits one by one, right-aligned as the game's bid box is (the ones column stays put, new columns grow
+        -- to the left), the lit one on a gold tab; a lit column in front of the number is a 0 to raise
+        local s = v > 0 and tostring(v) or ''
+        if fs.col >= #s then s = string.rep('0', fs.col - #s + 1) .. s end
+        local n = #s
+        local total = 0
+        for i = 1, n do total = total + measure(s:sub(i, i), F.text, size) + S(1) end
+        local tx = x0 + width - S(12) - total
+        for i = 1, n do
+            local ch = s:sub(i, i)
+            local cw = measure(ch, F.text, size)
+            if n - i == fs.col then
+                dl:AddRectFilled({ tx - S(2), ty - S(size) / 2 - S(2) }, { tx + cw + S(2), ty + S(size) / 2 + S(2) }, u32(GOLD, 0.95), S(4))
+                text_mid(dl, tx, ty, ch, P.ink, F.semi, size)
+            else
+                text_mid(dl, tx, ty, ch, P.text, F.text, size)
+            end
+            tx = tx + cw + S(1)
+        end
+    elseif (buf[1] or '') ~= '' then
+        text_mid(dl, x0 + width - S(12) - measure(buf[1], F.text, size), ty, buf[1], P.text, F.text, size)
+    else
+        text_mid(dl, x0 + S(12), ty, hint or '', P.faint, F.text, size)
+    end
+    return changed, false, false
+end
+
 local function field(id, hint, buf, width, size, numeric, overlap)
     local im = imgui
     local fs = field_state[id]
     if fs == nil then fs = { trust = false, last = buf[1] or '', edit_at = 0 } field_state[id] = fs end
+    if numeric and PAD.shown() and (fs.pad_on or fs.focused or st.pad_seat == 'price') then return pad_price_box(id, hint, buf, width, size, fs) end
     im.SetNextItemWidth(width)
     -- a button laid over the box (the search box's clear) needs this to get the click: ImGui gives it to the first item
     if overlap then im.SetNextItemAllowOverlap() end
@@ -924,6 +1022,7 @@ local function field(id, hint, buf, width, size, numeric, overlap)
     local dl = im.GetWindowDrawList()
     local active, hovered = im.IsItemActive(), im.IsItemHovered()
     local now = clock()
+    fs.h, fs.focused = h, im.IsItemFocused() and not active -- for the controller's digit editor, should it take over
     -- a controller, with the box focused but not being typed in: up and down step the price (a tenth of its size,
     -- at least 10 gil); an empty box starts from the hint's last sale
     if numeric and im.IsItemFocused() and not active then
@@ -1613,7 +1712,11 @@ local function draw_detail(dl, x, y, w, h, t)
     -- a controller: Confirm on the picked row, or a closed confirmation, lands the focus here
     if st.pad_seat == 'bid' then imgui.SetKeyboardFocusHere() st.pad_seat = nil end
     local bid_pressed = button(dl, '##bid_btn', x + w - S(16) - S(104), by, S(104), S(34), label, can and GOLD or P.faint, can and 'solid' or 'ghost', 'gavel')
-    if imgui.IsItemFocused() then st.card_focus = true end
+    if imgui.IsItemFocused() then
+        st.card_focus = true
+        st.pad_hold = 'all' -- the D-pad is the window's here: Left is the price box (ImGui's own Left wandered off to the sidebar)
+        if PAD.pressed('left') then st.pad_seat = 'price' end
+    end
     if bid_pressed and can then
         if settings.confirm_buy then
             st.confirm = { kind = 'buy', item = id, price = price, stack = st.stack }
@@ -1634,7 +1737,21 @@ end
 local function draw_sell(dl, x, y, w, h, t)
     if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
     local bagw = w - S(340)
-    text(dl, x + S(6), y, 'YOUR BAG  ·  ' .. #st.inventory .. ' items', P.dim, F.disp, T.small)
+    -- what's shown: the whole bag, or only what the house takes (the SELLABLE chip, remembered)
+    local items, hidden = {}, 0
+    for _, it in ipairs(st.inventory) do
+        local r = I.get(it.id)
+        local sellable = I.rows[it.id] ~= nil and bit.band(r.flags, 0x40) == 0 -- the house lists it, and it isn't NOAUCTION-flagged by the DAT
+        if settings.sellable_only and not sellable then hidden = hidden + 1
+        else items[#items + 1] = { it = it, r = r, sellable = sellable } end
+    end
+    text(dl, x + S(6), y, 'YOUR BAG  ·  ' .. #st.inventory .. ' items' .. (hidden > 0 and ('  ·  ' .. hidden .. " the house won't take, hidden") or ''), P.dim, F.disp, T.small)
+    local chip_x = x + bagw - S(8) - chip_width('SELLABLE')
+    if filter_chip(dl, '##sellable', chip_x, y - S(4), 'SELLABLE', settings.sellable_only, GOLD,
+        settings.sellable_only and "Hiding what the house won't take" or "Hide what the house won't take", 'tag', 'tag') then
+        settings.sellable_only = not settings.sellable_only
+        save_settings()
+    end
     local gy = y + S(28)
     local gh = h - S(28)
     imgui.SetCursorScreenPos({ x, gy })
@@ -1646,9 +1763,11 @@ local function draw_sell(dl, x, y, w, h, t)
     local per = math.max(1, math.floor((bagw - S(16)) / (cell + S(6))))
     local cx, cy = x + S(4), gy - imgui.GetScrollY()
     local n = 0
-    for _, it in ipairs(st.inventory) do
-        local r = I.get(it.id)
-        local sellable = I.rows[it.id] ~= nil and bit.band(r.flags, 0x40) == 0 -- the house lists it, and it isn't NOAUCTION-flagged by the DAT
+    if #items == 0 and hidden > 0 then
+        text_center(cdl, x, gy + S(40), bagw, 'Nothing in your bag the house takes', P.dim, F.disp, T.body)
+    end
+    for _, entry in ipairs(items) do
+        local it, r, sellable = entry.it, entry.r, entry.sellable
         local key = '##bag' .. it.slot
         imgui.SetCursorScreenPos({ cx, cy })
         local seat = st.pad_first and n == 0 and PAD.capturing()
@@ -1738,7 +1857,13 @@ local function draw_sell(dl, x, y, w, h, t)
     sy = sy + S(26)
     local label = st.sell.pending and 'Asking the house…' or (price > 0 and ('List for ' .. gil(price) .. ' gil') or 'List it')
     local ok = can and (not known or (st.sell.fee or 0) <= st.gil)
-    if (button(dl, '##list_btn', sx, sy, pw - S(32), S(36), label, ok and GOLD or P.faint, ok and 'solid' or 'ghost', 'tag') or entered) and ok then
+    if st.pad_seat == 'list' then imgui.SetKeyboardFocusHere() st.pad_seat = nil end -- a controller, from the price box
+    local list_pressed = button(dl, '##list_btn', sx, sy, pw - S(32), S(36), label, ok and GOLD or P.faint, ok and 'solid' or 'ghost', 'tag')
+    if imgui.IsItemFocused() then
+        st.pad_hold = true -- Up from List is the price box, the window's to do
+        if PAD.pressed('up') then st.pad_seat = 'price' end
+    end
+    if (list_pressed or entered) and ok then
         if known then
             st.confirm = { kind = 'sell' }
         else
@@ -2189,6 +2314,7 @@ local CAT_ORDER = {}
 for _, g in ipairs(I.GROUPS) do for _, c in ipairs(g.cats) do CAT_ORDER[#CAT_ORDER + 1] = { cat = c, group = g.id } end end
 
 local function pad_buttons()
+    if st.pad_editing then return end -- a price box has the pad (pad_price_box)
     if PAD.pressed('cancel') and not imgui.IsAnyItemActive() then
         st.pad_cancels = (st.pad_cancels or 0) + 1
         if st.confirm then
@@ -2243,10 +2369,11 @@ local LEGEND = {
     sell = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'updown', 'Price' }, { 'start', 'Settings' } },
     activity = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Page' }, { 'options', 'Filter' }, { 'start', 'Settings' } },
     other = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'start', 'Settings' } },
+    edit = { { 'updown', 'Digit' }, { 'left right', 'Column' }, { 'confirm', 'Keep' }, { 'cancel', 'Undo' } },
 }
 local function draw_legend(dl, x, y, w)
     dl:AddLine({ x + S(16), y }, { x + w - S(16), y }, u32(P.line, 0.8), 1)
-    local items = LEGEND[st.tab] or LEGEND.other
+    local items = st.pad_editing and LEGEND.edit or LEGEND[st.tab] or LEGEND.other
     -- measured by drawing off screen once, then centred
     local lw = PAD.legend(dl, -10000, -10000, items, 0)
     PAD.legend(dl, x + (w - lw) / 2, y + S(14), items, 1)
@@ -2279,6 +2406,7 @@ local function draw_main(t)
         -- the controller's buttons are the focused window's (RootAndChildWindows): two open windows never both answer
         st.pad_focused = imgui.IsWindowFocused(3)
         if PAD.capturing() and st.pad_focused then pad_buttons() end
+        st.pad_editing = false -- set again by a price box being edited, drawn below
         local hy = draw_header(dl, x, y, w, t)
         local ty = y + hy + S(10)
         draw_tabs(dl, x, ty, w)
@@ -2339,7 +2467,7 @@ local function tick()
     now_t = t
     if not U.frame(dt, scale, t) then return end
     -- the controller: its reads since the last frame become ImGui's keys, while the window has it
-    PAD.frame(t, { id = 'auctionhouse', capture = function () return st.open end, hold_vertical = st.pad_hold == true })
+    PAD.frame(t, { id = 'auctionhouse', capture = function () return st.open end, hold = st.pad_hold or false })
     st.pad_hold = false
     U.anim.pad_shown = PAD.shown()
     local fo = U.anim.focus

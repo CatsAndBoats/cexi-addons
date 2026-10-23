@@ -113,9 +113,15 @@ local function capturing_now()
     return false
 end
 local function any_enabled() return PAD.enabled() end
+-- what a window keeps from ImGui's navigation: true, up and down (a price box stepping); 'all', the whole D-pad
+-- (a price box being edited digit by digit)
 local function hold_vertical()
-    for _, h in pairs(st.hosts) do if h.hold_vertical then return true end end
-    return false
+    local r = false
+    for _, h in pairs(st.hosts) do
+        if h.hold == 'all' then return 'all' end
+        if h.hold or h.hold_vertical then r = true end
+    end
+    return r
 end
 
 -------------------------------------------------------------------------------
@@ -348,9 +354,9 @@ function PAD.frame(t, host)
         if capturing and st.fake then
             feed(KEY.a, st.now[st.map.confirm] == true)
             feed(KEY.b, st.now[st.map.cancel] == true and imgui.IsAnyItemActive())
-            feed(KEY.left, st.now.left == true)
-            feed(KEY.right, st.now.right == true)
             local hold = hold_vertical()
+            feed(KEY.left, st.now.left == true and hold ~= 'all')
+            feed(KEY.right, st.now.right == true and hold ~= 'all')
             feed(KEY.up, st.now.up == true and not hold)
             feed(KEY.down, st.now.down == true and not hold)
         elseif next(st.fed) then
@@ -374,9 +380,9 @@ function PAD.frame(t, host)
     -- is being typed in (ImGui leaves it), the window handling it otherwise. The rest is the window's.
     feed(KEY.a, st.now[st.map.confirm] == true)
     feed(KEY.b, st.now[st.map.cancel] == true and imgui.IsAnyItemActive())
-    feed(KEY.left, st.now.left == true)
-    feed(KEY.right, st.now.right == true)
     local hold = hold_vertical()
+    feed(KEY.left, st.now.left == true and hold ~= 'all')
+    feed(KEY.right, st.now.right == true and hold ~= 'all')
     feed(KEY.up, st.now.up == true and not hold)
     feed(KEY.down, st.now.down == true and not hold)
     -- the sticks stay the window's (PAD.stick): ImGui would scroll the window with the focus, the root, which has none

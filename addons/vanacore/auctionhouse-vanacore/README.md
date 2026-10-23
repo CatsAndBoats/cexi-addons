@@ -54,7 +54,8 @@ lately, when the record is shorter), the median, a sparkline of the last thirty 
 Watched items are checked every five minutes while you play, house open or not, and a sale under your price or
 stock coming back shows as a notice. Clicking a row opens its card.
 
-**Sell.** Your bag, with the items the house doesn't take greyed. Pick one, choose single or full stack, set a
+**Sell.** Your bag, with the items the house doesn't take greyed (the **Sellable** chip above the bag hides them
+instead, and is remembered). Pick one, choose single or full stack, set a
 price (recent sales are shown), and **List for N gil**: the house quotes its listing fee, and a card spells out the
 whole transaction (the item, the price, the fee paid now, the payout to your delivery box when it sells) for you to
 say **List it** to.
@@ -92,8 +93,12 @@ things, Confirm presses, Cancel backs out (the confirmation, the settings, then 
 tabs, the triggers walk the categories, a stick scrolls the list, X and Y are the In stock and Usable chips, View the
 Compare chip, Menu the settings. **To buy:** Confirm on an item opens its card; Confirm again on the same item moves
 the ring to the card's **Bid** button, Confirm there opens the confirmation, where Bid is already under the ring, so
-Confirm once more bids. Cancel from the card goes back to the item in the list. On a price box, up and down step the
-price (a tenth of its size, 10 gil at least). A legend of the buttons runs along the
+Confirm once more bids. Cancel from the card goes back to the item in the list. **A price:** Left from Bid (or Up
+from List, on the Sell tab) is the price box, and Confirm there takes it over as a digit editor, since a pad can't
+type, worked as the game's own bid box is: the number starts at 0, right-aligned, with the ones digit lit; Left
+moves the light up the columns (past the top digit it adds a zero in front, up to nine digits), Right brings it back
+down and, at the ones, clears the number; Up and Down change the lit digit (carrying over, never below 0); Confirm
+keeps the number and moves on to the button; Cancel puts back what was there. A legend of the buttons runs along the
 bottom while the pad is in use; the mouse takes over the moment it moves. The game's Confirm and Cancel bindings are
 honoured when VanaCore passes them (`[ffxi] gamepad.buttons`); otherwise A and B. With VanaCore 0.8.39 or later,
 VanaCore itself feeds the pad to the window and keeps it from the game (`vana.gamepad.nav`); on an older VanaCore the
