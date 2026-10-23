@@ -3970,9 +3970,11 @@ local function draw_main(t)
         -- the controller's buttons are the focused window's: two open windows never both answer a press
         st.pad_focused = imgui.IsWindowFocused(3)
         if PAD.capturing() and st.pad_focused then PAD.pf_buttons() end
-        -- kept on the screen (a larger scale grows the window past its edge)
+        -- kept on the screen (a larger scale grows the window past its edge): from the next frame, while this one
+        -- draws where ImGui has the window, inside its clip rectangle; dragged past an edge it follows the mouse and
+        -- comes back whole when let go (drawn at the clamped place at once, its far side was cut off by the clip)
         local cx, cy0 = math.max(0, math.min(x, sw - w)), math.max(0, math.min(y, sh - h))
-        if cx ~= x or cy0 ~= y then imgui.SetWindowPos({ cx, cy0 }) x, y = cx, cy0 end
+        if cx ~= x or cy0 ~= y then imgui.SetWindowPos({ cx, cy0 }) end
         -- the glass body: shadow, fill, a vignette, the edge light; the window's opacity fades all of it
         local appear = ease(math.min(1, (now_t - st.opened_at) / 0.35))
         WINDOW_ALPHA = math.max(0.3, math.min(1, settings.opacity or 0.96)) * appear

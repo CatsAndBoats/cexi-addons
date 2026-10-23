@@ -1959,8 +1959,10 @@ local function draw_main(t)
         local drew, err = pcall(function ()
         local dl = imgui.GetWindowDrawList()
         local x, y = imgui.GetWindowPos()
+        -- kept on the screen from the next frame; this one draws where ImGui has the window (dragged past an edge it
+        -- follows the mouse, whole, and comes back when let go)
         local cx, cy = math.max(0, math.min(x, sw - w)), math.max(0, math.min(y, sh - h))
-        if cx ~= x or cy ~= y then imgui.SetWindowPos({ cx, cy }) x, y = cx, cy end
+        if cx ~= x or cy ~= y then imgui.SetWindowPos({ cx, cy }) end
         st.main = { x = x, y = y, w = w, h = h }
         local fade = math.min(1, (t - st.opened_at) * 4)
         shadow(dl, x, y, w, h, S(16), fade)
