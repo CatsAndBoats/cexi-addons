@@ -90,7 +90,7 @@ it too). With two windows open, the one with the focus answers the pad. Tested w
 pads in mind; a DirectInput pad (a PlayStation controller without a wrapper) is read through the game's own button
 map and may not line up. With it on, the window takes the pad while it's open, so your character stays put and the game's menus stay closed: the D-pad moves a ring between
 things, Confirm presses, Cancel backs out, the bumpers turn the tabs, the triggers walk the categories, a stick
-scrolls the list, X and Y are the In stock and Usable chips, View the Compare chip, Menu the settings. **To buy**, the
+scrolls the list, X is the In stock chip, Y swaps single and stack on the picked item, View the Compare chip, Menu the settings. **To buy**, the
 Buy tab goes left to right, one pane at a time: the ring starts on the category in use in the sidebar; Confirm on a
 category moves it to that list's first item; Confirm on an item opens its card with the ring on the price box;
 Confirm there edits the price (below), Confirm again keeps it and moves to **Bid**, Confirm on Bid opens the
@@ -122,6 +122,19 @@ Settings or with `/ah theme <name>`. A `themes\<id>.lua` in the addon's folder a
 built-in one, in Party Finder's format (`return { name = '…', palette = { bg = '#…', glass, card, card_hi, line,
 well, accent, accent2, cyan } }`).
 
+## Languages
+
+On a Japanese client the window is in Japanese: item names and descriptions as the client has them (Shift-JIS, read
+through Windows into UTF-8), the official auction-house category names, one-character job marks (戦 モ 白 …), the
+window's own text, the compare card and the controller's help, drawn with Meiryo (or Yu Gothic, or MS Gothic) from
+Windows; without those (Wine, a Mac), a `NotoSansJP-Regular.otf` dropped into `C:\Windows\Fonts` (Noto Sans JP, OFL,
+from github.com/notofonts/noto-cjk) is used, and with no Japanese font at all the window says so once and stays
+English. An English client stays English. Which one is decided from VanaCore's `[language] playonline` setting, then
+from what the client's item names look like; **Settings → Language** (or `/ah lang auto|en|ja`) overrides it, with
+a flag beside it for the language in use. The Japanese strings are in `lang.lua`.
+
+The Japanese localization is Hando's work (cexi-addons PR #11) — thank you.
+
 ## Commands
 
 | Command | Action |
@@ -134,6 +147,7 @@ well, accent, accent2, cyan } }`).
 | `/ah server <host[:port]>` | Which search server to ask; `/ah server auto` finds it from your login again |
 | `/ah theme <name>` | Switch theme; `/ah theme` lists them |
 | `/ah sound <name>` / `off` / `on` | The sound as the window opens; `/ah sound` lists them |
+| `/ah lang auto\|en\|ja` | The window's language: the client's own, English, or Japanese |
 | `/ah scale <percent>` | Window size, 50 to 300 |
 | `/ah opacity <percent>` | Window opacity, 40 to 100 |
 | `/ah refresh` | Forget fetched lists and histories |
@@ -175,6 +189,7 @@ dropped.
 - `search.lua`, `bf_tables.lua` — the search-server client and LandSandBoat's Blowfish boxes
 - `items.lua` — the game's item data through the resource manager, icon textures, the catalogue and name search
 - `prices.lua` — the price record (every sale seen, per server) and the graphs drawn from it
+- `lang.lua` — the Japanese strings and which language is in use (the setting, VanaCore's, or the client's item names)
 - `ledger.lua` — the activity record (bought, listed, taken down, sold; per character), its pages and totals
 - `compare.lua` — gear stats read from the game's item descriptions, what you wear, and the Compare card
 - `pad.lua` — the controller: VanaCore's XInput and DirectInput reads as ImGui's gamepad keys, the game kept from them
@@ -188,3 +203,5 @@ dropped.
 - `fonts/` — Inter and Rajdhani (SIL Open Font License, licenses included); `images/jobs.png` — the job sprites
 - `sounds/` — the bells the window opens with: `small_bell.wav` is BigSoundBank's "Small Bell #1" (CC0), the rest are
   synthesized for this addon; `sounds/README.txt` has the sources
+- `fonts/` — Inter and Rajdhani (SIL Open Font License, licenses included); `images/jobs.png` — the job sprites;
+  `images/badge_cat.png` — the header's badge (Settings → Icon: the cat and its coin, or the drawn glass gil)

@@ -391,11 +391,25 @@ local function load_fonts()
         local ok, font = pcall(imgui.AddFontFromFileTTF, dir .. file, size)
         return ok and font or nil
     end
-    F.text = try('Inter-Regular.ttf', 18) or F.icons
-    F.semi = try('Inter-SemiBold.ttf', 18) or F.text
-    F.bold = try('Inter-Bold.ttf', 18) or F.semi
-    F.disp = try('Rajdhani-SemiBold.ttf', 24) or F.semi
-    F.dispb = try('Rajdhani-Bold.ttf', 24) or F.disp
+    -- a Japanese client (the host says so: F.want_japanese): a Windows font with the kana and kanji for every face,
+    -- Meiryo first; ImGui 1.92 loads the glyphs as they're used, so no ranges are given
+    local jp = nil
+    if F.want_japanese then
+        -- (Noto Sans JP, under its OFL, for a Windows without Microsoft's fonts: Wine, a Mac)
+        for _, file in ipairs({ 'meiryo.ttc', 'YuGothM.ttc', 'msgothic.ttc', 'NotoSansJP-Regular.otf', 'NotoSansCJKjp-Regular.otf' }) do
+            local path = 'C:\\Windows\\Fonts\\' .. file
+            if vana.fs.exists(path) then
+                local ok, font = pcall(imgui.AddFontFromFileTTF, path, 18)
+                if ok and font then jp = font break end
+            end
+        end
+    end
+    F.japanese_font = jp ~= nil -- (for the host: none found, and Japanese text would be boxes)
+    F.text = jp or try('Inter-Regular.ttf', 18) or F.icons
+    F.semi = jp or try('Inter-SemiBold.ttf', 18) or F.text
+    F.bold = jp or try('Inter-Bold.ttf', 18) or F.semi
+    F.disp = jp or try('Rajdhani-SemiBold.ttf', 24) or F.semi
+    F.dispb = jp or try('Rajdhani-Bold.ttf', 24) or F.disp
     F.loaded = true
 end
 
@@ -1753,14 +1767,15 @@ local function aurora(dl, x, y, w, h, t, radius)
         dl:AddRectFilledMultiColor({ x + ins, y + dy }, { x + w - ins, y + dy + 1 }, lc(f0), rc(f0), rc(f1), lc(f1))
     end
     dl:AddRectFilledMultiColor({ x, y + r }, { x + w, y + h }, lc(r / h), rc(r / h), u32(P.glass, 0), u32(P.glass, 0))
+    -- the grid fades out with the colour: cut off at the bottom it drew a hard edge across the glass under it
     local gx = x + S(24)
     while gx < x + w do
-        dl:AddLine({ gx, y }, { gx, y + h }, u32('#FFFFFF', 0.025), 1)
+        dl:AddRectFilledMultiColor({ gx, y }, { gx + 1, y + h }, u32('#FFFFFF', 0.025), u32('#FFFFFF', 0.025), u32('#FFFFFF', 0), u32('#FFFFFF', 0))
         gx = gx + S(28)
     end
     local gy = y + S(14)
     while gy < y + h do
-        dl:AddLine({ x, gy }, { x + w, gy }, u32('#FFFFFF', 0.02), 1)
+        dl:AddLine({ x, gy }, { x + w, gy }, u32('#FFFFFF', 0.02 * (1 - (gy - y) / h)), 1)
         gy = gy + S(28)
     end
     for i = 1, 3 do
@@ -1768,7 +1783,10 @@ local function aurora(dl, x, y, w, h, t, radius)
         local oy = y + h * 0.4 + math.cos(t * 0.5 + i) * h * 0.25
         local col = i == 1 and P.cyan or (i == 2 and P.accent2 or P.accent)
         for k = 5, 1, -1 do
-            dl:AddCircleFilled({ ox, oy }, S(22) * k, u32(col, 0.022), 24)
+            -- a ring that would cross the bottom edge is dimmed by how far it crosses: clipped whole, it drew a step
+            local rk = S(22) * k
+            local cut = math.max(0, math.min(1, (y + h - oy) / rk))
+            dl:AddCircleFilled({ ox, oy }, rk, u32(col, 0.022 * cut), 24)
         end
     end
     dl:PopClipRect()

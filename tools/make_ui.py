@@ -180,6 +180,8 @@ function U.frame(frame_dt, frame_scale, t)
     return true
 end
 function U.set_window_alpha(a) WINDOW_ALPHA = a end
+function U.reload_fonts() F.loaded = false end -- the language changed: the faces are chosen again next frame
+function U.load_image(key, path) return load_texture(key, path) end -- a texture of the host's own (released by key)
 function U.fonts() return F end
 function U.sizes() return T end
 function U.scale() return scale end

@@ -6,6 +6,7 @@ local imgui = vana.imgui
 local bit = require('bit')
 local U = require('ui')
 local I = require('items')
+local LANG = require('lang')
 local P, S = U.P, U.S
 local T, F = U.sizes(), U.fonts()
 local u32, text, measure, mix, fit, wrap, icon = U.u32, U.text, U.measure, U.mix, U.fit, U.wrap, U.icon
@@ -22,7 +23,15 @@ local function trim(s) return (s:gsub('^%s+', ''):gsub('%s+$', '')) end
 -- the game's equipment slots, in its order; an item's Slots mask has bit n for slot n
 local SLOT = { [0] = 'Main', 'Sub', 'Ranged', 'Ammo', 'Head', 'Body', 'Hands', 'Legs', 'Feet', 'Neck', 'Waist',
     'Ear 1', 'Ear 2', 'Ring 1', 'Ring 2', 'Back' }
+local SLOT_JA = { [0] = 'メイン', 'サブ', '遠隔', '弾', '頭', '胴', '両手', '両脚', '両足', '首', '腰',
+    '耳1', '耳2', '指1', '指2', '背' }
 C.SLOT = SLOT
+local function ja() return LANG.ja() end
+local function slot_label(s, upper)
+    local name = ja() and (SLOT_JA[s] or '') or (SLOT[s] or '')
+    if upper and not ja() then name = name:upper() end
+    return name
+end
 
 -- the slots a piece could take: either of a pair for earrings and rings, otherwise the first slot it names
 -- (a one-handed weapon names Main and Sub; it's set against your main hand)
@@ -261,12 +270,16 @@ end
 -- why you can't wear it as you are, or nil
 local function cannot(r, w)
     if w == nil or (w.job or 0) == 0 then return nil end
-    local who = (U.JOBS[w.job] or '?') .. w.level
-    if bit.band(r.jobs or 0, bit.lshift(1, w.job)) == 0 then return 'Your ' .. who .. " can't wear this" end
-    if (w.race or 0) > 0 and (r.races or 0) ~= 0 and bit.band(r.races, bit.lshift(1, w.race)) == 0 then
-        return "Your race can't wear this"
+    local who = (LANG.job_label(w.job, U.JOBS[w.job]) or '?') .. w.level
+    if bit.band(r.jobs or 0, bit.lshift(1, w.job)) == 0 then
+        return ja() and (who .. 'では装備できません') or ('Your ' .. who .. " can't wear this")
     end
-    if (r.level or 0) > (w.level or 0) then return 'Needs level ' .. r.level .. ' (your ' .. who .. ')' end
+    if (w.race or 0) > 0 and (r.races or 0) ~= 0 and bit.band(r.races, bit.lshift(1, w.race)) == 0 then
+        return ja() and 'この種族では装備できません' or "Your race can't wear this"
+    end
+    if (r.level or 0) > (w.level or 0) then
+        return ja() and ('必要レベル ' .. r.level .. '（' .. who .. '）') or ('Needs level ' .. r.level .. ' (your ' .. who .. ')')
+    end
     return nil
 end
 
@@ -342,8 +355,8 @@ local function card(dl, x, y, w, c, a, draw)
         dl:AddRect({ x + pad, cy }, { x + pad + isz, cy + isz }, u32(P.line, 0.9 * a), S(7), 15, 1)
         icon(dl, x + pad + isz / 2, cy + isz / 2, 'plus', P.faint, T.small, a)
         local nx = x + pad + isz + S(12)
-        text(dl, nx, cy + S(3), c.ghost or 'Nothing equipped', P.dim, F.semi, T.small, a)
-        text(dl, nx, cy + S(24), 'An empty slot', P.faint, F.text, T.tiny, a)
+        text(dl, nx, cy + S(3), c.ghost or (ja() and '何も装備していない' or 'Nothing equipped'), P.dim, F.semi, T.small, a)
+        text(dl, nx, cy + S(24), ja() and '空いている' or 'An empty slot', P.faint, F.text, T.tiny, a)
     end
     cy = cy + isz + S(12)
 
@@ -407,16 +420,16 @@ local function card(dl, x, y, w, c, a, draw)
         end
         cy = cy + shown * row_h
         if #list > shown then
-            if draw then text(dl, x + pad + S(4), cy + S(2), '+' .. (#list - shown) .. ' more', P.faint, F.text, T.tiny, a) end
+            if draw then text(dl, x + pad + S(4), cy + S(2), ja() and ('ほか' .. (#list - shown)) or ('+' .. (#list - shown) .. ' more'), P.faint, F.text, T.tiny, a) end
             cy = cy + S(18)
         end
     end
     if c.rows and #c.rows > 0 then rows(c.rows)
     elseif c.id then
-        if draw then text(dl, x + pad, cy + S(2), c.empty_rows or 'No stats', P.dim, F.text, T.small, a) end
+        if draw then text(dl, x + pad, cy + S(2), c.empty_rows or (ja() and 'ステータスなし' or 'No stats'), P.dim, F.text, T.small, a) end
         cy = cy + S(22)
     end
-    rows(c.lost, "YOU'D LOSE", P.warn, 'circle-minus')
+    rows(c.lost, ja() and '失うもの' or "YOU'D LOSE", P.warn, 'circle-minus')
 
     -- words: latent effects, set bonuses, added effects
     for _, n in ipairs(c.notes or {}) do
@@ -460,7 +473,7 @@ end
 
 local function sub_of(id, slot)
     local r = I.get(id)
-    local sub = SLOT[slot] or ''
+    local sub = slot_label(slot)
     if (r.level or 0) > 0 then sub = sub .. '  ·  Lv ' .. r.level end
     if (r.ilevel or 0) > 0 then sub = sub .. '  ·  iLv ' .. r.ilevel end
     return sub
@@ -495,19 +508,20 @@ function C.card(id, mx, my, ctx)
 
     -- the piece under the mouse
     local verdict
-    if same_item then verdict = { 'WEARING', P.cyan, 'shirt' }
-    elseif why then verdict = { "CAN'T WEAR", P.warn, 'ban' }
-    elseif df.up > 0 and df.down == 0 then verdict = { 'UPGRADE', P.ok, 'caret-up' }
-    elseif df.down > 0 and df.up == 0 then verdict = { 'DOWNGRADE', P.danger, 'caret-down' }
-    elseif df.up > 0 then verdict = { 'TRADE-OFF', P.warn, 'scale-balanced' }
-    else verdict = { 'SAME STATS', P.dim, 'scale-balanced' } end
+    local function verdict_of(en, jp, color, icon) return { ja() and jp or en, color, icon } end
+    if same_item then verdict = verdict_of('WEARING', '装備中', P.cyan, 'shirt')
+    elseif why then verdict = verdict_of("CAN'T WEAR", '装備不可', P.warn, 'ban')
+    elseif df.up > 0 and df.down == 0 then verdict = verdict_of('UPGRADE', '強化', P.ok, 'caret-up')
+    elseif df.down > 0 and df.up == 0 then verdict = verdict_of('DOWNGRADE', '弱化', P.danger, 'caret-down')
+    elseif df.up > 0 then verdict = verdict_of('TRADE-OFF', '一長一短', P.warn, 'scale-balanced')
+    else verdict = verdict_of('SAME STATS', '同じ性能', P.dim, 'scale-balanced') end
     local main = { id = id, tag = verdict, accent = verdict[2], sub = sub_of(id, cmp.slot), rows = {}, lost = {},
         name_col = why and mix(P.text, P.dim, 0.35) or mix(P.text, GOLD, 0.75), warn = why, notes = {} }
     if not same_item then
         main.chips = {}
-        if df.up > 0 then main.chips[#main.chips + 1] = { df.up .. ' better', P.ok, 'caret-up' } end
-        if df.down > 0 then main.chips[#main.chips + 1] = { df.down .. ' worse', P.danger, 'caret-down' } end
-        if df.up == 0 and df.down == 0 then main.chips[#main.chips + 1] = { 'No stat changes', P.dim, 'minus' } end
+        if df.up > 0 then main.chips[#main.chips + 1] = { ja() and (df.up .. 'つ上昇') or (df.up .. ' better'), P.ok, 'caret-up' } end
+        if df.down > 0 then main.chips[#main.chips + 1] = { ja() and (df.down .. 'つ下降') or (df.down .. ' worse'), P.danger, 'caret-down' } end
+        if df.up == 0 and df.down == 0 then main.chips[#main.chips + 1] = { ja() and '変化なし' or 'No stat changes', P.dim, 'minus' } end
     end
     for _, row in ipairs(df.rows) do
         local col = row.good > 0 and P.ok or (row.good < 0 and P.danger or P.faint)
@@ -527,8 +541,8 @@ function C.card(id, mx, my, ctx)
     end
     local new_note, old_note = df.a.note or '', df.b.note or ''
     if new_note == old_note and not same_item then new_note, old_note = '', '' end
-    main.notes[1] = { same_item and 'EFFECTS' or 'IT ALSO HAS', P.accent, 'wand-magic-sparkles', note_lines(new_note, inner) }
-    main.empty_rows = 'No stats on this one'
+    main.notes[1] = { same_item and (ja() and '効果' or 'EFFECTS') or (ja() and 'ほかの効果' or 'IT ALSO HAS'), P.accent, 'wand-magic-sparkles', note_lines(new_note, inner) }
+    main.empty_rows = ja() and 'ステータスはありません' or 'No stats on this one'
 
     -- what you wear there: for a pair, both, the one it would replace marked
     local side = {}
@@ -538,19 +552,19 @@ function C.card(id, mx, my, ctx)
         for _, s in ipairs(slots) do
             local wid = wearing(s)
             local replaced = s == cmp.slot
-            local where = (SLOT[s] or ''):upper()
+            local where = slot_label(s, true)
             local tag
-            if wid == nil then tag = { 'EMPTY · ' .. where, P.faint, 'plus' }
-            elseif replaced and pair then tag = { 'REPLACES · ' .. where, P.accent, 'arrow-right' }
-            else tag = { 'EQUIPPED · ' .. where, replaced and P.accent or P.dim, 'shirt' } end
+            if wid == nil then tag = { (ja() and '空き · ' or 'EMPTY · ') .. where, P.faint, 'plus' }
+            elseif replaced and pair then tag = { (ja() and '交換 · ' or 'REPLACES · ') .. where, P.accent, 'arrow-right' }
+            else tag = { (ja() and '装備中 · ' or 'EQUIPPED · ') .. where, replaced and P.accent or P.dim, 'shirt' } end
             local c = { id = wid, tag = tag,
-                quiet = true, accent = P.accent, ghost = 'Nothing in ' .. (SLOT[s] or 'that slot') }
+                quiet = true, accent = P.accent, ghost = ja() and (where .. 'は空いています') or ('Nothing in ' .. (SLOT[s] or 'that slot')) }
             if wid then
                 c.sub = sub_of(wid, s)
                 c.rows = plain_rows(wid)
-                c.empty_rows = 'No stats'
+                c.empty_rows = ja() and 'ステータスなし' or 'No stats'
                 local st = C.stats(wid)
-                c.notes = { { 'EFFECTS', P.dim, 'wand-magic-sparkles', note_lines(st.note, inner) } }
+                c.notes = { { ja() and '効果' or 'EFFECTS', P.dim, 'wand-magic-sparkles', note_lines(st.note, inner) } }
             end
             if wid or replaced then side[#side + 1] = c end
         end

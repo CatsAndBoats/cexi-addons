@@ -3,11 +3,14 @@
 -- item table). Nothing here touches the network.
 local ffi = require('ffi')
 local U = require('ui')
+local LANG = require('lang')
 local CATALOGUE = require('catalogue')
 
 local I = {}
 
 pcall(ffi.cdef, [[
+int MultiByteToWideChar(unsigned int CodePage, unsigned long dwFlags, const char* lpMultiByteStr, int cbMultiByte, wchar_t* lpWideCharStr, int cchWideChar);
+int WideCharToMultiByte(unsigned int CodePage, unsigned long dwFlags, const wchar_t* lpWideCharStr, int cchWideChar, char* lpMultiByteStr, int cbMultiByte, const char* lpDefaultChar, int* lpUsedDefaultChar);
 typedef struct { uint16_t AbilityId; int8_t Level; uint8_t Unknown0000; } ah_IMonAbility;
 typedef struct {
     uint32_t Id; uint16_t Flags; uint16_t StackSize; uint16_t Type; uint16_t ResourceId; uint16_t Targets;
@@ -47,6 +50,47 @@ end
 
 local function cstr(p) return p ~= nil and ffi.string(p) or '' end
 
+-- Shift-JIS to UTF-8 (Windows API)
+local function sjis_to_utf8(str)
+    if not str or str == '' then return str end
+    local CP_SHIFTJIS, CP_UTF8 = 932, 65001
+    local wlen = ffi.C.MultiByteToWideChar(CP_SHIFTJIS, 0, str, -1, nil, 0)
+    if wlen <= 0 then return str end
+    local wbuf = ffi.new("wchar_t[?]", wlen)
+    ffi.C.MultiByteToWideChar(CP_SHIFTJIS, 0, str, -1, wbuf, wlen)
+    local ulen = ffi.C.WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, nil, 0, nil, nil)
+    if ulen <= 0 then return str end
+    local ubuf = ffi.new("char[?]", ulen)
+    ffi.C.WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, ubuf, ulen, nil, nil)
+    return ffi.string(ubuf)
+end
+
+-- whether the client's item names are Japanese, for lang.lua when neither the setting nor VanaCore says: an English
+-- client has ASCII in Name[0]; a Japanese one has it empty or non-ASCII, with high bytes in Name[1]
+local function names_look_japanese()
+    local get = resources()
+    if not get then return false end
+    for _, id in ipairs({ 4096, 4097, 1255 }) do
+        local it = get(id)
+        if it and it.Name then
+            local raw0 = cstr(it.Name[0])
+            if raw0 ~= '' and not raw0:find('[\128-\255]') then return false end
+            local raw1 = cstr(it.Name[1])
+            if raw1 ~= '' and raw1:find('[\128-\255]') then return true end
+        end
+    end
+    return false
+end
+LANG.set_sniff(names_look_japanese)
+local function is_japanese() return LANG.ja() end
+
+-- chat on a Japanese client is Shift-JIS; the search index is UTF-8. ASCII names pass through.
+function I.client_text(str)
+    str = str or ''
+    if str == '' or not is_japanese() then return str end
+    return sjis_to_utf8(str)
+end
+
 -------------------------------------------------------------------------------
 -- An item's record, read once and kept
 -------------------------------------------------------------------------------
@@ -61,10 +105,22 @@ function I.get(id)
     if it == nil then
         r = { id = id, name = 'Item ' .. id, desc = '', level = 0, ilevel = 0, jobs = 0, slots = 0, races = 0, stack = 1, flags = 0, type = 0, dmg = 0, delay = 0, missing = true }
     else
-        local name = cstr(it.Name[0])
-        if name == '' then name = cstr(it.Name[2]) end
-        local desc = cstr(it.Description[0])
-        if desc == '' then desc = cstr(it.Description[2]) end
+        local name, desc
+        if is_japanese() then
+            name = cstr(it.Name[1])
+            if name == '' then name = cstr(it.Name[2]) end
+            if name == '' then name = cstr(it.Name[0]) end
+            name = sjis_to_utf8(name)
+            desc = cstr(it.Description[1])
+            if desc == '' then desc = cstr(it.Description[2]) end
+            if desc == '' then desc = cstr(it.Description[0]) end
+            desc = sjis_to_utf8(desc)
+        else
+            name = cstr(it.Name[0])
+            if name == '' then name = cstr(it.Name[1]) end
+            desc = cstr(it.Description[0])
+            if desc == '' then desc = cstr(it.Description[1]) end
+        end
         desc = desc:gsub('\n+$', '')
         r = {
             id = id, name = name, desc = desc, level = it.Level, ilevel = it.ItemLevel, jobs = it.Jobs, slots = it.Slots,
@@ -122,6 +178,9 @@ function I.release_icons()
     for id in pairs(icons) do U.release_texture('icon' .. id) end
     icons, icon_count = {}, 0
 end
+
+-- the language changed: the names and descriptions are read again in the new one
+function I.forget_records() records = {} end
 
 -------------------------------------------------------------------------------
 -- The catalogue: categories, their items, and a name search
@@ -230,11 +289,11 @@ function I.jobs_line(id)
     local jobs = I.jobs_of(r.jobs)
     local who
     if #jobs == 0 then who = ''
-    elseif #jobs >= 22 or I.all_jobs(r.jobs) then who = 'All jobs'
-    elseif #jobs > 8 then who = #jobs .. ' jobs'
+    elseif #jobs >= 22 or I.all_jobs(r.jobs) then who = LANG.lang() == 'ja' and '全ジョブ' or 'All jobs'
+    elseif LANG.lang() ~= 'ja' and #jobs > 8 then who = #jobs .. ' jobs'
     else
         local names = {}
-        for _, j in ipairs(jobs) do names[#names + 1] = U.JOBS[j] end
+        for _, j in ipairs(jobs) do names[#names + 1] = LANG.job_label(j, U.JOBS[j]) end
         who = table.concat(names, ' ')
     end
     if r.level > 0 then return 'Lv ' .. r.level .. (who ~= '' and ('  ·  ' .. who) or '') end
