@@ -511,14 +511,19 @@ local function on_packet(e)
     elseif cmd == CMD.LotCancel then
         if st.cancel_pending ~= nil and result == 0 then
             local row = st.sales[st.cancel_pending]
+            local rl = st.relist
+            if rl and rl.stage == 'cancel' and rl.key == st.cancel_pending then rl.stage, rl.at = 'bag', clock() end
             st.sales[st.cancel_pending] = nil
             st.cancel_pending = nil
-            U.toast('ok', 'Taken down', row and (I.name(row.id) .. ' is back in your bag') or 'Returned to your bag', 4, 'box-open')
+            if not (rl and rl.stage == 'bag') then
+                U.toast('ok', 'Taken down', row and (I.name(row.id) .. ' is back in your bag') or 'Returned to your bag', 4, 'box-open')
+            end
             if row then LEDGER.add({ kind = 'taken', id = row.id, stack = row.stack, price = row.price }) end
             refresh_inventory()
             st.sales_dirty = true -- the house closes the gap: the pages are read again once the cooldown passes
         elseif st.cancel_pending ~= nil then
             st.cancel_pending = nil
+            st.relist = nil -- still up at its old price
             U.toast('danger', "Couldn't take it down", result == RESULT.Full and 'Your inventory is full' or 'Try again in a moment', 5, 'triangle-exclamation')
         else
             on_sales_slot(d)
@@ -535,7 +540,8 @@ local function on_packet(e)
         else
             st.sell.confirm_on_fee = nil
             st.sell.fee, st.sell.asked = nil, nil
-            U.toast('danger', "Can't sell that", 'The house refused it (used, locked, or not for auction)', 5, 'ban')
+            U.toast('danger', "Can't sell that", 'The house refused it (used, locked, or not for auction)' .. (st.relist and ' (it is in your bag)' or ''), 5, 'ban')
+            st.relist = nil
         end
     elseif cmd == CMD.LotIn then
         st.sell.pending = false
@@ -547,10 +553,12 @@ local function on_packet(e)
                 LEDGER.add({ kind = 'listed', id = a.item, stack = a.stack, price = a.price, fee = st.sell.fee })
             end
             st.sell.asked, st.sell.fee, st.sell.slot = nil, nil, nil
+            st.relist = nil
             refresh_inventory()
             st.sales_dirty = true
         else
-            U.toast('danger', "Couldn't list it", 'Not enough gil for the fee, the slots are full, or the item changed', 6, 'triangle-exclamation')
+            U.toast('danger', "Couldn't list it", 'Not enough gil for the fee, the slots are full, or the item changed' .. (st.relist and ' (it is in your bag)' or ''), 6, 'triangle-exclamation')
+            st.relist = nil
         end
     elseif cmd == CMD.Bid then
         local b = st.buy.pending
@@ -868,6 +876,73 @@ local function do_cancel(c)
         U.toast('info', 'Finding that listing', 'The house shows a few at a time; a moment', 4, 'clock')
         start_sweep({ page = c.page, slot = c.slot, key = c.key, id = c.item, price = c.price })
     end
+end
+
+-- RELIST: a listing taken down and put up again at a new price. Each step waits on the house: the take-down (turning
+-- its pages to the listing first when needed), the item back in the bag, the new fee quoted; then the usual listing
+-- confirmation opens with that fee, and saying yes lists it. Stopped anywhere after the take-down, the item is in the bag
+local function relist_end(why)
+    if st.relist and why then U.toast('warn', LANG.t('Not relisted'), why, 6, 'box-open') end
+    st.relist = nil
+end
+
+local function relist_step()
+    local rl = st.relist
+    if rl == nil then return end
+    if rl.stage == 'cancel' then
+        -- the take-down ended without coming down (refused, the page never shown, no clerk): its own notice said why
+        if st.cancel_pending == nil and st.sweep == nil and clock() - rl.at > 2 then st.relist = nil end
+    elseif rl.stage == 'bag' then
+        -- the house sends the bag's change a moment after its reply: look until the item (a whole stack, for a stack) is in
+        if clock() - (rl.look or 0) < 0.3 then return end
+        rl.look = clock()
+        refresh_inventory()
+        local need = rl.stack and I.get(rl.id).stack or 1
+        local slot = nil
+        for _, it in ipairs(st.inventory) do
+            if it.id == rl.id and it.count >= need then slot = it.slot break end
+        end
+        if slot then
+            rl.stage, rl.at = 'quote', clock()
+            st.sell.confirm_on_fee = true
+            do_ask(slot, rl.id, rl.price, rl.stack)
+            if not st.sell.pending then relist_end(LANG.t('It is in your bag; list it from the Sell tab')) end
+        elseif clock() - rl.at > 8 then
+            relist_end(LANG.t('It is in your bag; list it from the Sell tab'))
+        end
+    elseif rl.stage == 'quote' then
+        -- the fee came (the confirmation is up) or didn't; once the confirmation is gone without a listing, it's over
+        if st.confirm and st.confirm.kind == 'sell' then rl.stage = 'confirm'
+        elseif not st.sell.pending then relist_end(LANG.t('It is in your bag; list it from the Sell tab')) end
+    elseif rl.stage == 'confirm' then
+        if st.confirm == nil and not st.sell.pending then relist_end(LANG.t('It is in your bag; list it from the Sell tab')) end
+    end
+end
+
+-- the new prices offered for a listing: cuts off its price, and the market's median and last sale when they're under
+-- it; one is suggested (the median when the listing is above it, else a small cut)
+local function relist_options(price, hs)
+    local opts = {}
+    local function add(label, p, kind)
+        p = math.floor(p)
+        if p < 1 or p >= price then return end
+        for _, o in ipairs(opts) do if o.price == p then return end end
+        opts[#opts + 1] = { label = label, price = p, kind = kind }
+    end
+    for _, pc in ipairs({ 1, 5, 10, 20 }) do add('-' .. pc .. '%', price * (1 - pc / 100), 'cut') end
+    local s_ = hs and hs.stats
+    if s_ then
+        add(LANG.t('Median'), s_.median, 'median')
+        add(LANG.t('Last sale'), s_.last, 'last')
+    end
+    table.sort(opts, function (a, b) return a.price > b.price end)
+    local suggest = nil
+    for _, o in ipairs(opts) do
+        if s_ and price > s_.median then
+            if o.kind == 'median' then suggest = o end
+        elseif o.label == ((s_ and price <= s_.median) and '-1%' or '-5%') then suggest = o end
+    end
+    return opts, suggest or opts[1]
 end
 
 -- follow an item (singles or stacks), or stop
@@ -2305,9 +2380,10 @@ local function draw_sales(dl, x, y, w, h, t)
         panel(cdl, x + S(4), cy, w - S(8), rh + eh, P.card, 0.95, S(10))
         item_icon(cdl, row.id, x + S(14), cy + S(8), S(44), 1)
         local r = I.get(row.id)
-        text(cdl, x + S(68), cy + S(8), r.name .. (row.stack and ('  ·  ' .. LANG.t('stack of') .. ' ' .. r.stack) or ''), P.text, F.disp, T.h2)
         local pl = gil(row.price) .. ' gil'
-        text_mid(cdl, x + w - S(254) - measure(pl, F.disp, T.h2), cy + rh / 2, pl, GOLD, F.disp, T.h2) -- centred on the row, as the buttons are
+        local plw = measure(pl, F.disp, T.h2)
+        text(cdl, x + S(68), cy + S(8), fit(r.name .. (row.stack and ('  ·  ' .. LANG.t('stack of') .. ' ' .. r.stack) or ''), F.disp, T.h2, w - S(68) - S(386) - plw - S(12)), P.text, F.disp, T.h2)
+        text_mid(cdl, x + w - S(366) - plw, cy + rh / 2, pl, GOLD, F.disp, T.h2) -- centred on the row, as the buttons are
         -- its category, and when it went up where the server says (its pages don't); the page and slot are the house's
         local sub = LANG.t(I.CATEGORY_NAME[I.category_of(row.id) or 0] or '')
         if row.at and row.at > 0 then sub = sub .. (sub ~= '' and '  ·  ' or '') .. 'listed ' .. ago(row.at) end
@@ -2321,7 +2397,12 @@ local function draw_sales(dl, x, y, w, h, t)
                 fetch_history(row.id, row.stack)
             end
         end
-        local can = may_trade() and st.cancel_pending == nil and not busy
+        local can = may_trade() and st.cancel_pending == nil and not busy and st.relist == nil and not st.sell.pending
+        -- relist: down, and up again at a new price (a new fee), after picking the price and confirming
+        if button(cdl, '##relist' .. row.key, x + w - S(130) - S(8) - S(104) - S(8) - S(104), cy + S(14), S(104), S(32), LANG.t('Relist'), can and GOLD or P.faint, 'ghost', 'rotate-right', F.semi, T.small) and can then
+            fetch_history(row.id, row.stack)
+            st.confirm = { kind = 'relist', slot = row.slot, item = row.id, page = row.page, key = row.key, price = row.price, stack = row.stack }
+        end
         if button(cdl, '##cancel' .. row.key, x + w - S(130), cy + S(14), S(116), S(32), LANG.t('Take down'), can and P.danger or P.faint, 'ghost', 'xmark', F.semi, T.small) and can then
             st.confirm = { kind = 'cancel', slot = row.slot, item = row.id, page = row.page, key = row.key, price = row.price }
         end
@@ -2690,10 +2771,78 @@ local function draw_confirm()
     local c = st.confirm
     if c == nil then return end
     local w, h = S(420), (c.kind == 'sell' or c.kind == 'clear') and S(206) or S(176)
+    if c.kind == 'relist' then w, h = S(470), S(338) end
+    if c.kind == 'sell' and st.relist then h = h + S(18) end
     if c.kind == 'cancel' and st.server_page ~= nil and st.server_page ~= c.page then h = h + S(18) end -- a line about the wait
     U.dialog('##ah_confirm', w, h, 0, function (dl, x, y)
         shadow(dl, x, y, w, h, S(16), 1.5)
         panel(dl, x, y, w, h, P.glass, 1, S(16), GOLD, true)
+        if c.kind == 'relist' then
+            -- the new price: a cut, the median or the last sale, or typed; then down it comes and the fee is asked
+            local r = I.get(c.item)
+            local hs = history_of(c.item, c.stack)
+            local opts, suggest = relist_options(c.price, hs)
+            -- the box starts at the suggestion and follows it (the sales arrive a moment after the dialog opens) until a
+            -- choice is clicked or a price typed
+            local sp = suggest and tostring(suggest.price) or tostring(c.price)
+            if c.buf == nil then c.buf, c.auto = { sp }, sp end
+            if c.auto and c.buf[1] == c.auto and sp ~= c.auto then c.buf[1], c.auto = sp, sp end
+            if c.auto and c.buf[1] ~= c.auto then c.auto = nil end
+            text(dl, x + S(22), y + S(18), fit(LANG.t('Relist') .. ' ' .. r.name .. (c.stack and ('  ·  ' .. LANG.t('stack of') .. ' ' .. r.stack) or '') .. '?', F.disp, T.h1, w - S(110)), P.text, F.disp, T.h1)
+            item_icon(dl, c.item, x + w - S(22) - S(48), y + S(16), S(48), 1)
+            if c.stack then stack_badge(dl, x + w - S(22) - S(48), y + S(16), S(48), r.stack) end
+            local now = LANG.t('Up now for') .. ' ' .. gil(c.price) .. ' gil'
+            if hs and hs.stats then now = now .. '  ·  ' .. LANG.t('median') .. ' ' .. gil(hs.stats.median) .. '  ·  ' .. LANG.t('last') .. ' ' .. gil(hs.stats.last)
+            elseif hs then now = now .. '  ·  ' .. LANG.t('none sold lately')
+            else now = now .. '  ·  ' .. LANG.t('asking for its sales…') end
+            text(dl, x + S(22), y + S(50), fit(now, F.text, T.small, w - S(110)), P.dim, F.text, T.small)
+            text(dl, x + S(22), y + S(80), LANG.t('NEW PRICE'), GOLD, F.disp, T.small)
+            -- the choices, three to a row, each with its price; the suggested one marked
+            local per, gap = 3, S(8)
+            local bw = (w - S(44) - gap * (per - 1)) / per
+            local oy = y + S(100)
+            local picked = tonumber(c.buf[1])
+            for i, o in ipairs(opts) do
+                local col_, row_ = (i - 1) % per, math.floor((i - 1) / per)
+                local bx, by = x + S(22) + col_ * (bw + gap), oy + row_ * S(38)
+                local on = picked == o.price
+                local label = o.label .. '  ' .. gil(o.price) .. (o == suggest and ' ★' or '')
+                if button(dl, '##rl' .. i, bx, by, bw, S(32), fit(label, F.semi, T.small, bw - S(14)), on and GOLD or (o == suggest and P.accent or P.dim), on and 'solid' or 'ghost', nil, F.semi, T.small) then
+                    c.buf[1] = tostring(o.price)
+                    c.auto = nil
+                end
+            end
+            if #opts == 0 then text(dl, x + S(22), oy + S(8), LANG.t('Type the new price'), P.faint, F.text, T.small) end
+            local fy = oy + math.max(1, math.ceil(#opts / per)) * S(38) + S(4)
+            imgui.SetCursorScreenPos({ x + S(22), fy })
+            field('##relist_price', LANG.t('type a price in gil'), c.buf, w - S(44), T.body, true)
+            local np = tonumber(c.buf[1]) or 0
+            local note
+            if np > 0 and hs and hs.stats and hs.stats.median > 0 then
+                local d = (np - hs.stats.median) / hs.stats.median
+                if math.abs(d) < 0.03 then note = LANG.t('at the median')
+                elseif d > 0 then note = string.format(LANG.t('%d%% above the median'), math.floor(d * 100 + 0.5))
+                else note = string.format(LANG.t('%d%% under the median'), math.floor(-d * 100 + 0.5)) end
+                text(dl, x + w - S(22) - measure(note, F.text, T.tiny), y + S(82), note, P.dim, F.text, T.tiny)
+            end
+            local ly = fy + S(42)
+            for _, l in ipairs(wrap(LANG.t('It comes down now, and the house quotes the new fee before it goes back up: you confirm that as any listing. The old fee is not returned.'), F.text, T.tiny, w - S(44))) do
+                text(dl, x + S(22), ly, l, P.faint, F.text, T.tiny)
+                ly = ly + S(15)
+            end
+            local ok = np >= 1 and np <= 999999999 and may_trade() and st.cancel_pending == nil and st.relist == nil
+            local yes_pressed = button(dl, '##cyes', x + w - S(22) - S(136), y + h - S(50), S(136), S(34), LANG.t('Relist'), ok and GOLD or P.faint, ok and 'solid' or 'ghost', 'rotate-right')
+            if st.pad_mute then yes_pressed = false end
+            if yes_pressed and ok then
+                st.relist = { stage = 'cancel', id = c.item, stack = c.stack, old = c.price, price = np, key = c.key, at = clock() }
+                st.confirm = nil
+                do_cancel(c)
+            end
+            if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), 'Cancel', P.dim, 'ghost') then
+                st.confirm = nil
+            end
+            return
+        end
         local title, body, yes, ic, col
         if c.kind == 'buy' then
             local r = I.get(c.item)
@@ -2706,8 +2855,8 @@ local function draw_confirm()
             local a = st.sell.asked
             local r = I.get(a.item)
             local what = r.name .. (a.stack and (' (a stack of ' .. r.stack .. ')') or '')
-            title = 'List ' .. what .. ' for ' .. gil(a.price) .. ' gil?'
-            body = 'Listing fee: ' .. gil(st.sell.fee or 0) .. ' gil, paid now and kept whether or not it sells.'
+            title = (st.relist and LANG.t('Relist') or 'List') .. ' ' .. what .. ' for ' .. gil(a.price) .. ' gil?'
+            body = (st.relist and (string.format(LANG.t('It was up for %s gil and is in your bag now.'), gil(st.relist.old)) .. '\n') or '') .. 'Listing fee: ' .. gil(st.sell.fee or 0) .. ' gil, paid now and kept whether or not it sells.'
                 .. '\nWhen it sells, ' .. gil(a.price) .. ' gil goes to your delivery box.'
                 .. '\nUnsold, it waits at the house until you take it down.'
             yes, ic, col = LANG.t('List it'), 'tag', GOLD
@@ -2998,6 +3147,7 @@ local function tick()
         st.cancel_pending = nil
         U.toast('danger', 'No answer', 'The house did not answer the take-down: refresh My Sales to see where it stands', 6, 'hourglass-end')
     end
+    relist_step()
     if st.open then
         -- what the house lists is asked a category at a time as you open them, as the game's own window does. Only when
         -- you ask a search to include the categories never opened on this server (the button under the results) are

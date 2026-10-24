@@ -78,6 +78,12 @@ taking down a listing the house isn't currently showing takes a moment (the conf
 brings the house round to it. **History**
 on a row asks the search server for that item's recent sales (only when you ask: nothing is fetched for rows nobody
 looks at) and shows last, median, range and trend under the row, with where your price stands against the median.
+**Relist** takes a listing down and puts it back up at a new price. Its dialog shows the price it's up for, the
+median and the last sale, and offers cuts of 1, 5, 10 and 20 % with the price each gives, plus the median and the last
+sale when they're lower; one is starred (the median when your price is above it, else a small cut), or type any price.
+The listing comes down (the house's pages are turned to it first when needed), and once it's back in your bag the
+house quotes the new fee, which you confirm as any listing: the fee is charged again and the old one isn't returned.
+Cancel there, or anything the house refuses, leaves the item in your bag, and the window says so.
 When one of your listings sells while you're on, CatsEyeXI's server says so (its `ah_announcement` module, a system
 line naming the item, the buyer and the price): the window shows it as a notice, drops the listing, puts the sale on
 the Activity tab, and keeps the price on the item's record. The chat line stays too.
