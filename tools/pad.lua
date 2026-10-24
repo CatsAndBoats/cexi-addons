@@ -329,6 +329,8 @@ function PAD.frame(t, host)
     if frame_no == st.frame_no then return end
     st.frame_no = frame_no
     local now = clock()
+    -- the game's button map (padsin000, or VanaCore's bindings) can change while this stays loaded
+    if now - (st.bound_at or -1e9) > 2 then st.bound_at = now read_bindings() end
     -- a synthetic read stands in for the controller's
     if st.fake then
         take(st.fake.raw)
