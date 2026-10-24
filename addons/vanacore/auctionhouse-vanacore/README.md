@@ -16,6 +16,48 @@ the city Auction Counters and the outpost clerks of Jeuno, Rabao, Norg, Kazham, 
 rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default) opens it anywhere
 for browsing; bidding and selling need you at a clerk, which `/ah` knows once you've talked to one there (below).
 
+## Japanese client — 1.0.0Ja
+
+This work localizes **only** `addons/vanacore/auctionhouse-vanacore`. No other addon in cexi-addons is changed.
+
+Japanese text is used only when the game client is Japanese. An English client keeps the original English interface, item names, and help.
+
+Version **1.0.0Ja**. Later Japanese revisions are **1.0.0Jb**, **1.0.0Jc**, and so on. Authors: Carver, Hando.
+
+### English
+
+- Item names from a Japanese client are shown in Japanese (the client encoding is converted to UTF-8). Window text is translated. Meiryo is used when Windows has it.
+- Jobs that can equip an item use the familiar one-character marks (戦, モ, 白, 黒, 赤, シ, ナ, 暗, 獣, 詩, 狩, 侍, 忍, 竜, 召, 青, コ, か, 踊, 学, 風, ル). On a Japanese client every mark is listed, on up to two lines. An item for every job reads 全ジョブ. An English client still shortens a long job list.
+- `/ah s` is the same as `/ah search`. A Japanese name typed in chat is passed through without being garbled.
+- Help text and the compare card’s labels are Japanese on a Japanese client. The Buy tab is 入札. Category names follow the official Japanese auction-house menu (食品, 錬金術材, 雑貨, 獣人製品, カード, 忍具, 呪物, からくり部品, 釣り具, and the rest). The groups themselves are unchanged.
+- A controller uses the button roles from the game’s own settings (Confirm, Cancel, Main menu, Active window). While this window is open, the pad stays with it.
+  - L1 and R1 change tabs. In the categories and in the results, up and down move, and left and right scroll one page.
+  - Cancel steps back. It does not close the window. Confirm on the Close button closes it.
+  - Confirm on a result moves to the price field and stays there. Left and right move between the price field and Bid. Confirm enters the amount, and the next Confirm moves to Bid. Cancel from the price field, the history, single or stack, the watch star, or Bid returns to the result list.
+  - The active-window button, from the categories, moves among Compare, In stock, and Usable. Left and right move between them, Confirm turns one on or off, and the active-window button or Cancel returns. From the results it moves among Name, Level, and Stock. Left and right move between them, Confirm flips the order, and the active-window button or Cancel returns. On an item’s bid card it cycles single, stack, watch, history, and the price field. An item that does not stack skips single and stack.
+  - The search box is not a D-pad target. Scrolling the sale history does not jump to the categories.
+  - The help along the bottom of the window matches these actions. On a Japanese client that help is Japanese. The button pictures follow the game’s pad settings.
+
+### 日本語
+
+この作業で日本語にしているのは、競売アドオン `addons/vanacore/auctionhouse-vanacore` だけです。cexi-addons の他のアドオンは変更していません。
+
+表示が日本語になるのは、日本語クライアントのときだけです。英語クライアントでは、画面もアイテム名もヘルプも、これまでどおり英語です。
+
+バージョンは **1.0.0Ja** です。このあとの日本語版は **1.0.0Jb**、**1.0.0Jc** と続けます。作者は Carver、Hando です。
+
+- 日本語クライアントのアイテム名を日本語で表示します（クライアントの文字コードを UTF-8 に変換）。画面の文言を翻訳し、Meiryo があればそれを使います。
+- 装備可能ジョブは、見慣れた一文字です（戦・モ・白・黒・赤・シ・ナ・暗・獣・詩・狩・侍・忍・竜・召・青・コ・か・踊・学・風・ル）。日本語クライアントでは、省略せず最大2段ですべて出します。全ジョブ対応は「全ジョブ」です。英語クライアントは、ジョブが多いときの省略を残しています。
+- `/ah s` は `/ah search` と同じです。チャットに日本語の商品名を書いても文字化けしません。
+- ヘルプと比較カードの表示は、日本語クライアントでは日本語です。購入タブは「入札」です。区分名は公式の競売メニューに合わせています（食品、錬金術材、雑貨、獣人製品、カード、忍具、呪物、からくり部品、釣り具など）。区分のまとめ方自体は変えていません。
+- コントローラーは、ゲームの設定にあるボタンの役割を使います（決定、キャンセル、メインメニュー、アクティブウィンドウ切替）。この画面を開いているあいだ、パッドはこの画面が受け取ります。
+  - L1 / R1 でタブを切り替えます。区分と検索結果では、上下が移動、左右が1ページ分のスクロールです。
+  - キャンセルは一段戻るだけで、画面は閉じません。閉じるボタンの上で決定すると閉じます。
+  - 検索結果で決定すると、金額欄に留まります。左右で金額欄と入札ボタンを移動します。決定で金額を入力し、もう一度決定すると入札ボタンへ移ります。金額欄、履歴、単品・スタック、ウォッチ、入札ボタンのどこでキャンセルしても、検索結果へ戻ります。
+  - アクティブウィンドウ切替は、区分にいるときは比較・在庫あり・装備可能へ移ります。左右で移動し、決定でオンとオフを切り替え、アクティブウィンドウ切替かキャンセルで戻ります。検索結果にいるときは名前・レベル・在庫へ移ります。左右で移動し、決定で昇順と降順を入れ替え、アクティブウィンドウ切替かキャンセルで戻ります。入札欄では、単品、スタック、ウォッチ、履歴、金額欄の順に移ります。スタックできないアイテムでは、単品とスタックは飛ばします。
+  - 検索欄は十字キーの移動先にしません。履歴のスクロールから区分へは飛びません。
+  - 画面下のヘルプは、今の操作に合わせています。日本語クライアントでは日本語です。ボタンの絵は、ゲームのパッド設定に従います。
+
 ## Install
 
 Copy the `auctionhouse-vanacore` folder to `Vanacore\addons\vanacore\` and add `/addon load auctionhouse-vanacore`
@@ -94,8 +136,7 @@ scrolls the list, X and Y are the In stock and Usable chips, View the Compare ch
 Buy tab goes left to right, one pane at a time: the ring starts on the category in use in the sidebar; Confirm on a
 category moves it to that list's first item; Confirm on an item opens its card with the ring on the price box;
 Confirm there edits the price (below), Confirm again keeps it and moves to **Bid**, Confirm on Bid opens the
-confirmation, where Bid is already under the ring, so Confirm once more bids. For an item that stacks, Up from the
-price box is the **Single / Stack** switch: Left and Right pick one, Down goes back to the price box. Cancel walks back the same way (the
+confirmation, where Bid is already under the ring, so Confirm once more bids. Cancel walks back the same way (the
 confirmation, the card to its item, the list to its category, then the window), and the legend says what Confirm and
 Cancel do in the pane you're in. A Confirm only ever does one thing: the press that keeps a price doesn't also press
 Bid. **A price:** the price box (Left from Bid, or Up from List on the Sell tab, gets back to it) takes Confirm as a digit editor, since a pad can't

@@ -116,15 +116,18 @@ local function capturing_now()
     return false
 end
 local function any_enabled() return PAD.enabled() end
--- what a window keeps from ImGui's navigation: true, up and down (a price box stepping); 'all', the whole D-pad
--- (a price box being edited digit by digit)
-local function hold_vertical()
-    local r = false
+-- what a window keeps from ImGui's navigation: true blocks up and down (a price box stepping); 'x' blocks left and
+-- right (a list whose sideways press scrolls a page); 'all' blocks the whole D-pad (a price edited digit by digit)
+local function hold_axes()
+    local vert, horiz = false, false
     for _, h in pairs(st.hosts) do
-        if h.hold == 'all' then return 'all' end
-        if h.hold or h.hold_vertical then r = true end
+        local hold = h.hold
+        if h.hold_vertical then vert = true end
+        if hold == 'all' then return true, true end
+        if hold == 'x' then horiz = true
+        elseif hold then vert = true end
     end
-    return r
+    return vert, horiz
 end
 
 -------------------------------------------------------------------------------
@@ -329,6 +332,8 @@ function PAD.frame(t, host)
     if frame_no == st.frame_no then return end
     st.frame_no = frame_no
     local now = clock()
+    -- the game's button map (padsin / VanaCore's bindings) can change while this stays loaded
+    if now - (st.bound_at or 0) > 2 then st.bound_at = now read_bindings() end
     -- a synthetic read stands in for the controller's
     if st.fake then
         take(st.fake.raw)
@@ -361,11 +366,11 @@ function PAD.frame(t, host)
         if capturing and st.fake then
             feed(KEY.a, st.now[st.map.confirm] == true)
             feed(KEY.b, st.now[st.map.cancel] == true and imgui.IsAnyItemActive())
-            local hold = hold_vertical()
-            feed(KEY.left, st.now.left == true and hold ~= 'all')
-            feed(KEY.right, st.now.right == true and hold ~= 'all')
-            feed(KEY.up, st.now.up == true and not hold)
-            feed(KEY.down, st.now.down == true and not hold)
+            local vert, horiz = hold_axes()
+            feed(KEY.left, st.now.left == true and not horiz)
+            feed(KEY.right, st.now.right == true and not horiz)
+            feed(KEY.up, st.now.up == true and not vert)
+            feed(KEY.down, st.now.down == true and not vert)
         elseif next(st.fed) then
             release_all()
             st.fed = {}
@@ -387,11 +392,11 @@ function PAD.frame(t, host)
     -- is being typed in (ImGui leaves it), the window handling it otherwise. The rest is the window's.
     feed(KEY.a, st.now[st.map.confirm] == true)
     feed(KEY.b, st.now[st.map.cancel] == true and imgui.IsAnyItemActive())
-    local hold = hold_vertical()
-    feed(KEY.left, st.now.left == true and hold ~= 'all')
-    feed(KEY.right, st.now.right == true and hold ~= 'all')
-    feed(KEY.up, st.now.up == true and not hold)
-    feed(KEY.down, st.now.down == true and not hold)
+    local vert, horiz = hold_axes()
+    feed(KEY.left, st.now.left == true and not horiz)
+    feed(KEY.right, st.now.right == true and not horiz)
+    feed(KEY.up, st.now.up == true and not vert)
+    feed(KEY.down, st.now.down == true and not vert)
     -- the sticks stay the window's (PAD.stick): ImGui would scroll the window with the focus, the root, which has none
 end
 
