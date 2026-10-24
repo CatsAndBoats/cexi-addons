@@ -94,7 +94,7 @@ fa_block[-1] = '''    khanda = 0xF66D, scroll = 0xF70E, flask = 0xF0C3, utensils
     ['circle-minus'] = 0xF056, ['circle-plus'] = 0xF055, ['hand-holding-dollar'] = 0xF4C0, ['money-bill'] = 0xF0D6, ['arrows-rotate'] = 0xF021,
     ['box-open'] = 0xF49E, ['wand-magic-sparkles'] = 0xE2CA, ['circle-dot'] = 0xF192, ['square-check'] = 0xF14A, ['list-ul'] = 0xF0CA,
     ['chart-line'] = 0xF201, ['chart-simple'] = 0xE473, ['star-half-stroke'] = 0xF5C0, binoculars = 0xF1E5, ['bell-on'] = 0xF8FA,
-    ['scale-balanced'] = 0xF24E, shirt = 0xF553, ['caret-up'] = 0xF0D8, ['caret-down'] = 0xF0D7, plus = 0xF067, minus = 0xF068,
+    ['scale-balanced'] = 0xF24E, shirt = 0xF553, ['caret-up'] = 0xF0D8, ['caret-down'] = 0xF0D7, plus = 0xF067, minus = 0xF068, ['table-cells'] = 0xF00A, ['trash-can'] = 0xF2ED,
 }'''
 parts += fa_block
 parts += ['local fa_cache = {}']

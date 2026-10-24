@@ -1,6 +1,7 @@
 -- Items: what the game itself knows about them (names, descriptions, stats and icons, straight from its DATs through the
 -- resource manager) and what the house lists (which items, in which category: the search server's own answers, kept
--- per server in a file so the next session starts with them). Nothing here touches the network itself.
+-- per server in a file, so a category opened once on a server is known from then on). Nothing here touches the
+-- network itself.
 local ffi = require('ffi')
 local U = require('ui')
 local LANG = require('lang')
@@ -48,6 +49,45 @@ local function resources()
 end
 
 local function cstr(p) return p ~= nil and ffi.string(p) or '' end
+
+-- The spell a scroll teaches, by the scroll's English name ("Fire II", or "Scroll of Fire II"), through the resource
+-- manager's GetSpellByName (vtable slot 4, language 2 = English): its learn level for each job (LevelRequired, by job
+-- number; -1 for a job that never learns it, over 99 for job points). nil for anything that isn't a spell's scroll.
+pcall(ffi.cdef, [[
+typedef struct {
+    uint16_t Index; uint16_t Type; uint16_t Element; uint16_t Targets; uint16_t Skill; uint16_t ManaCost;
+    uint8_t CastTime; uint8_t RecastDelay; int16_t LevelRequired[24];
+} ah_ISpellHead;
+]])
+local get_spell = nil
+local spells_of = {} -- item id -> levels table, or false
+function I.scroll_levels(id)
+    local have = spells_of[id]
+    if have ~= nil then return have or nil end
+    spells_of[id] = false
+    if get_spell == nil then
+        local res = vana.ashita.object('resources')
+        if res == nil then return nil end
+        local ptr = ffi.cast('void*', res)
+        local fn = ffi.cast('void* (__thiscall *)(void*, const char*, uint32_t)', ffi.cast('void***', ptr)[0][4])
+        get_spell = function (name) return fn(ptr, name, 2) end
+    end
+    local get = resources()
+    local it = get and get(id) or nil
+    if it == nil then return nil end
+    -- the English name: slot 2 on a Japanese client, slot 0 (the default) on an English one
+    local name = cstr(it.Name[2])
+    if name == '' or name:find('[\128-\255]') then name = cstr(it.Name[0]) end
+    name = name:gsub('^[Ss]croll of ', '')
+    if name == '' or name:find('[\128-\255]') then return nil end
+    local ok, p = pcall(get_spell, name)
+    if not ok or p == nil then return nil end
+    local sp = ffi.cast('ah_ISpellHead*', p)
+    local levels = {}
+    for job = 0, 23 do levels[job] = sp.LevelRequired[job] end
+    spells_of[id] = levels
+    return levels
+end
 
 -- Shift-JIS to UTF-8 (Windows API)
 local function sjis_to_utf8(str)
@@ -218,15 +258,14 @@ I.GROUPS = {
 
 -- What the house lists, from the house itself: each category's search-server answer (the list the game's own window
 -- shows) is that category's items, and an item's category is the one the house files it under. Nothing is shipped:
--- a new auction item is here as soon as the server lists it. The answers are kept per server (I.load_index /
--- I.save_index), so a session starts with the last ones while the house is asked again.
+-- a new auction item is here as soon as the server lists it and its category is opened. The answers are kept per
+-- server (I.load_index / I.save_index), so a session starts with the last ones while the house is asked again.
 I.rows = {}          -- id -> { id, category }: every item the house lists
 local served = {}    -- category -> { [id] = true }, once its answer is in (this session's, or the file's)
 local fresh = {}     -- category -> true once answered this session
 local sorted_cats = {}
 local index = nil    -- the name search's index (below), built on the first search
 local index_path, index_dirty, index_saved_at = nil, false, 0
-local index_at = 0 -- when every category was last asked (0: never), kept in the file
 
 function I.set_served(cat, ids, from_file)
     -- the items it no longer lists leave it (and the house, unless another category lists them)
@@ -274,7 +313,7 @@ function I.load_index(file)
     for cat in pairs(served) do served[cat] = nil end
     for k in pairs(fresh) do fresh[k] = nil end
     for k in pairs(I.rows) do I.rows[k] = nil end
-    sorted_cats, index, index_dirty, index_at = {}, nil, false, 0
+    sorted_cats, index, index_dirty = {}, nil, false
     if file == nil or not vana.fs.exists(file) then return end
     local ok, chunk = pcall(loadfile, file)
     if not ok or chunk == nil then return end
@@ -283,12 +322,8 @@ function I.load_index(file)
     for cat, ids in pairs(data) do
         if type(ids) == 'table' then I.set_served(tonumber(cat) or cat, ids, true) end
     end
-    index_at = tonumber(data.at) or 0
 end
--- every category has just been asked (the window's sweep): the file says so, for the next sweep's age
-function I.mark_swept() index_at = os.time() index_dirty = true end
--- how long since every category was asked, in seconds (huge if never); and whether any answers are kept
-function I.index_age() return index_at > 0 and (os.time() - index_at) or 1e12 end
+-- whether any answers are kept
 function I.has_index() return next(I.rows) ~= nil end
 function I.save_index(force)
     if index_path == nil or not index_dirty then return end
@@ -298,7 +333,7 @@ function I.save_index(force)
     if dir then pcall(vana.fs.create_dir, dir) end
     local f = io.open(index_path, 'w')
     if f == nil then return end
-    f:write('return {\n', 'at=', index_at, ',\n')
+    f:write('return {\n')
     local cats = {}
     for cat in pairs(served) do cats[#cats + 1] = cat end
     table.sort(cats)

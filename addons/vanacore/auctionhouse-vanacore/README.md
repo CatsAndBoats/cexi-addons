@@ -14,7 +14,9 @@ when asked (on a stock server that tab stays empty), and sold notices come from 
 Talking to any auction clerk opens it in place of the game's menu (a setting; off, the game's menu comes back):
 the city Auction Counters and the outpost clerks of Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Nashmau and the
 rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default) opens it anywhere
-for browsing; bidding and selling need you at a clerk, which `/ah` knows once you've talked to one there (below).
+for browsing; bidding, selling and taking down always need you at a clerk, which `/ah` knows once you've talked to
+one there (below). That isn't a setting: the server only checks that the zone has an auction house, so the addon
+keeps trading at the counter, as the game's own window does.
 
 ## Install
 
@@ -28,9 +30,10 @@ beside each category is how many of its items are up right now. The list shows e
 how many singles and stacks are up, and the last sale once it's known; sort it by name, level or stock (names A to Z, level and stock highest first; click the sort in use again
 to turn it round, and its arrow shows which way it runs), and the
 **In stock** chip hides everything with nothing up, and the **Usable** chip hides gear your current main job,
-at its level, and your race can't wear; anything that isn't gear (food, medicines, materials) stays listed (both
-chips at the right of the tab row, both remembered). Gear you can wear has a yellow
-name in the list and gear you can't is dimmed. The search box in the header finds any listed item by
+at its level, and your race can't wear, and spell scrolls neither your main job nor your sub job can learn at
+their current levels (the server's own rule when a scroll is used); anything else (food, medicines, materials) stays
+listed (both chips at the right of the tab row, both remembered). Gear you can wear and scrolls you can learn have a
+yellow name in the list, and the rest of those are dimmed. The search box in the header finds any listed item by
 name, across every category. Click an item for its card: description, the jobs that can use it, stock, the last
 ten sales for singles or stacks with **last · median · range** and the trend, a price graph, and the bid box. The
 house fills the cheapest listing at or under your bid and you pay what you bid, as always; the box starts at the
@@ -55,7 +58,9 @@ Watched items are checked every five minutes while you play, house open or not, 
 stock coming back shows as a notice. Clicking a row opens its card.
 
 **Sell.** Your bag, with the items the house doesn't take greyed (the **Sellable** chip above the bag hides them
-instead, and is remembered). Pick one and choose single or full stack, and the **market** for it shows above the
+instead, and is remembered). The two buttons beside it show the bag as icons or as a list with each item's name,
+how many you have, its category and the last price it sold for once you've looked at it (also remembered). Pick one
+and choose single or full stack (a stack's prices show even when you hold fewer; listing one waits for a full stack), and the **market** for it shows above the
 price: how many are up right now (singles and stacks), last, median and range with the trend, the price graph
 when there's room (each sale's difference from the median when there isn't), and the latest sales (price, when, who sold to whom).
 Clicking last, median or any sale puts that price in the box, and beside the label it says how yours compares to the
@@ -81,7 +86,8 @@ the Activity tab, and keeps the price on the item's record. The chat line stays 
 listing (with its fee), take-down and sale, newest first, twenty to a page (**Newer** / **Older**), with **All**,
 **Bought** and **Sold** filters. The strip above it totals the gil over the whole record: spent on purchases, earned
 from sales, paid in listing fees, and the net of the three. A sale is known only when the server announces it to you,
-so one that happens while you're logged out shows in your delivery box, not here.
+so one that happens while you're logged out shows in your delivery box, not here. **Clear** (beside the filters) empties the
+whole record and its totals after asking; it doesn't touch anything you have up at the house.
 
 **Typing a price.** The box you're typing in glows gold with a blinking caret; clicking a price box selects the
 number so typing replaces it. Enter in the asking price is the List button, Enter in the bid box opens the bid's
@@ -113,7 +119,7 @@ addon's own bridge (`pad.lua`) does the same from the game's controller reads. `
 state, `/ah pad off` turns it off (a setting), and `/ah pad <button>` presses a button as a controller would, for
 trying it without one.
 
-**Settings** (the gear): the theme, bid and sell only at an auction clerk, talking to a clerk opens this window, confirm before
+**Settings** (the gear): the theme, talking to a clerk opens this window, confirm before
 bidding, the price graph, background checks of watched items, opacity and scale, and the sound as it opens: a small
 bell by default, or Counter bell, Door chime, Chapel bell, Crystal chime, Tiny bell, or Off (picking one plays it, and
 the speaker beside it plays it again; `/ah sound <name>` and `/ah sound off` do the same). The search server isn't shown
@@ -159,9 +165,11 @@ The Japanese localization is Hando's work (cexi-addons PR #11) — thank you.
 
 Settings and the watch list are kept per character in `Vanacore\config\addons\auctionhouse-vanacore\<name>.lua`; the
 activity record is `<name>-activity.lua` beside it (up to 2,000 entries); the price record is
-`index-<search host>.lua` is what the house lists in each category, as its search server last said (asked again
-one category at a time when it's missing or over 12 hours old, and whenever a category is opened; nothing about
-which items are sold is shipped with the addon, so a new auction item shows up as soon as the server lists it);
+`index-<search host>.lua` is what the house lists in each category, as its search server last said. Like the game's
+own window, only the category you open is asked (again each time you open it); nothing about which items are sold
+is shipped with the addon, so a new auction item shows up as soon as the server lists it. Search covers the
+categories opened on that server so far; under the results, **Include the other categories** asks the rest once
+(one at a time) and keeps them too.
 `prices-<search host>.lua`, one per server, up to 160 sales per item and kind, series with no sale in 120 days
 dropped.
 
