@@ -10,13 +10,14 @@
     server answers with the house's Open packet, and that is what lets you bid and sell (and where you stood is kept,
     so /ah there later can trade as well).
 
+    1.0.0Jb (Hando): a Confirm on the sort or filter strip toggles once and stays.
     1.0.0Ja (Hando): Japanese client text, and the controller layout described in README.md.
-    An English client keeps the original English UI. Later Japanese revisions are 1.0.0Jb, 1.0.0Jc, and so on.
+    An English client keeps the original English UI. Later Japanese revisions are 1.0.0Jc, and so on.
 ]]
 
 addon.name    = 'auctionhouse-vanacore'
 addon.author  = 'Carver, Hando'
-addon.version = '1.0.0Ja'
+addon.version = '1.0.0Jb'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -1359,6 +1360,13 @@ end
 local function chip_width(label)
     return S(22) + S(12) + S(6) + measure(label, F.disp, T.tiny)
 end
+-- Confirm on a strip is handled in pad_buttons. ImGui then clicks that same chip a frame later,
+-- which turned the switch straight back. Ignore that click until the button has been let go.
+local function strip_pad_click()
+    if st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then return false end
+    return PAD.pressed('confirm') or U.anim.suppress_press or st.pad_mute ~= nil
+end
+
 local function filter_chip(dl, key, fx, fy, label, on, color, tip, icon_on, icon_off)
     local gs, ch = S(12), S(24)
     local lw = measure(label, F.disp, T.tiny)
@@ -1414,21 +1422,21 @@ local function draw_tabs(dl, x, y, w)
             tip = settings.usable and ('Hiding gear your ' .. who .. " can't wear") or ('Hide gear your ' .. who .. " can't wear (job, level and race); everything else stays")
         end
         if st.pad_where == 'filters' and st.pad_strip_i == 3 then U.focus_key('##usable') end
-        if filter_chip(dl, '##usable', cx, fy, U.t('USABLE'), settings.usable, GOLD, tip, 'user-check', 'user') and not (st.pad_where == 'filters' and (PAD.pressed('confirm') or U.anim.suppress_press)) then
+        if filter_chip(dl, '##usable', cx, fy, U.t('USABLE'), settings.usable, GOLD, tip, 'user-check', 'user') and not strip_pad_click() then
             settings.usable = not settings.usable
             save_settings()
         end
         cx = cx - S(8) - chip_width(U.t('IN STOCK'))
         tip = settings.in_stock and U.t('Showing only what is up for sale') or U.t('Show only what is up for sale')
         if st.pad_where == 'filters' and st.pad_strip_i == 2 then U.focus_key('##instock') end
-        if filter_chip(dl, '##instock', cx, fy, U.t('IN STOCK'), settings.in_stock, P.ok, tip, 'square-check', 'filter') and not (st.pad_where == 'filters' and (PAD.pressed('confirm') or U.anim.suppress_press)) then
+        if filter_chip(dl, '##instock', cx, fy, U.t('IN STOCK'), settings.in_stock, P.ok, tip, 'square-check', 'filter') and not strip_pad_click() then
             settings.in_stock = not settings.in_stock
             save_settings()
         end
         cx = cx - S(8) - chip_width(U.t('COMPARE'))
         tip = settings.compare and U.t('Hovering gear sets it against what you wear') or U.t('Hover gear to set it against what you wear in that slot')
         if st.pad_where == 'filters' and st.pad_strip_i == 1 then U.focus_key('##compare') end
-        if filter_chip(dl, '##compare', cx, fy, U.t('COMPARE'), settings.compare, P.cyan, tip, 'scale-balanced', 'scale-balanced') and not (st.pad_where == 'filters' and (PAD.pressed('confirm') or U.anim.suppress_press)) then
+        if filter_chip(dl, '##compare', cx, fy, U.t('COMPARE'), settings.compare, P.cyan, tip, 'scale-balanced', 'scale-balanced') and not strip_pad_click() then
             settings.compare = not settings.compare
             save_settings()
         end
@@ -1690,9 +1698,9 @@ local function draw_list(dl, x, y, w, h, t)
         elseif measure('fetching…', F.text, T.tiny) <= left then note = 'fetching…' end
         if note then text(dl, x + S(6) + measure(title, F.disp, T.small) + S(10), y + S(2), note, P.cyan, F.text, T.tiny) end
     end
-    local _, _, clicked = U.segments(dl, '##sort', x + w - sw, y - S(6), S(24), sorts, current, nil, F.disp, T.tiny)
     if st.pad_where == 'sort' then U.focus_key('##sort' .. (st.pad_strip_i or 1)) end
-    if st.pad_where == 'sort' and (PAD.pressed('confirm') or U.anim.suppress_press) then clicked = nil end
+    local _, _, clicked = U.segments(dl, '##sort', x + w - sw, y - S(6), S(24), sorts, current, nil, F.disp, T.tiny)
+    if strip_pad_click() then clicked = nil end
     if clicked == current then
         settings.sort_desc = not desc
         save_settings()
@@ -2707,6 +2715,8 @@ local function pad_buttons()
                 elseif st.pad_strip_i == 3 then settings.usable = not settings.usable
                 else settings.compare = not settings.compare end
                 save_settings()
+                -- ImGui's own click on the focused chip arrives a frame later and would flip it straight back
+                st.pad_mute = 'held'
             end
         end
         if PAD.pressed('menu') and st.pad_where ~= 'filters' then settings.usable = not settings.usable save_settings() end
