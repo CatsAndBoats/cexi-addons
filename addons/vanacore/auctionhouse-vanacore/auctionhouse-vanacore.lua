@@ -269,6 +269,9 @@ local function configure_search()
     -- the price log is per server: what sells on the test server says nothing about live
     PRICES.save(true)
     PRICES.load(settings_dir() .. '\\prices-' .. (host:gsub('[^%w%.%-]', '_')) .. '.lua')
+    -- what the house lists is per server too: its last answers, asked again as the window is used
+    I.load_index(settings_dir() .. '\\index-' .. (host:gsub('[^%w%.%-]', '_')) .. '.lua')
+    st.index_swept, st.sweep_tries = false, nil
 end
 
 -------------------------------------------------------------------------------
@@ -605,6 +608,10 @@ local function fetch_list(cat, force)
         local items = {}
         -- the server sends -1 (0xFFFFFFFF) as the stack count of anything that doesn't stack: that is none, not many
         for _, it in ipairs(r.items) do items[it.id] = { single = it.single < 0x80000000 and it.single or 0, stack = it.stack < 0x80000000 and it.stack or 0 } end
+        -- the house's answer is the category's list (items.lua keeps it, per server)
+        local ids = {}
+        for _, it in ipairs(r.items) do ids[#ids + 1] = it.id end
+        I.set_served(cat, ids)
         st.lists[cat] = { items = items, at = clock(), total = r.total }
         st.list_at = clock()
     end)
@@ -1428,7 +1435,7 @@ local function draw_sidebar(dl, x, y, w, h)
         if open then
             for _, cat in ipairs(g.cats) do
                 local n = #I.category(cat)
-                if n > 0 then
+                if n > 0 or not I.answered(cat) then -- (one the house hasn't answered for yet shows, empty)
                     imgui.SetCursorScreenPos({ x, cy })
                     local seat = seating and cat == st.category
                     if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
@@ -1548,7 +1555,10 @@ end
 local function draw_list(dl, x, y, w, h, t)
     local ids, title
     if st.results then
-        ids, title = st.results, 'SEARCH  ·  ' .. #st.results .. (st.result_total > #st.results and (' of ' .. st.result_total) or '') .. ' results'
+        -- a result the house turns out not to list (its category answered without it) drops out
+        ids = {}
+        for _, id in ipairs(st.results) do if I.listed(id) then ids[#ids + 1] = id end end
+        title = 'SEARCH  ·  ' .. #ids .. (st.result_total > #st.results and (' of ' .. st.result_total) or '') .. ' results'
     else
         ids = I.category(st.category)
         title = LANG.t(I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' items'
@@ -1661,7 +1671,7 @@ local function draw_list(dl, x, y, w, h, t)
     local shown = 0
     local first_drawn = nil
     if #ids == 0 then
-        local why = hidden == 0 and (st.results and 'Nothing by that name' or 'Nothing here')
+        local why = hidden == 0 and (st.results and 'Nothing by that name' or (I.answered(st.category) and 'Nothing here' or LANG.t('Asking the house…')))
             or (settings.in_stock and settings.usable and 'Nothing up that you can wear')
             or (settings.usable and 'Nothing here you can wear') or 'Nothing in stock'
         text_center(cdl, x, ly + S(60), w, why, P.dim, F.disp, T.h1)
@@ -1976,7 +1986,7 @@ local function draw_sell(dl, x, y, w, h, t)
     local items, hidden = {}, 0
     for _, it in ipairs(st.inventory) do
         local r = I.get(it.id)
-        local sellable = I.rows[it.id] ~= nil and bit.band(r.flags, 0x40) == 0 -- the house lists it, and it isn't NOAUCTION-flagged by the DAT
+        local sellable = (I.listed(it.id) or not I.has_index()) and bit.band(r.flags, 0x40) == 0 -- the house lists it, and it isn't NOAUCTION-flagged by the DAT
         if settings.sellable_only and not sellable then hidden = hidden + 1
         else items[#items + 1] = { it = it, r = r, sellable = sellable } end
     end
@@ -2821,6 +2831,7 @@ local function tick()
     SEARCH.poll()
     PRICES.save()
     LEDGER.save()
+    I.save_index()
     -- the watch list, checked in the background
     -- a character logged in (or switched to) since the settings were read: its own settings, search host and key
     local name = my_name()
@@ -2847,6 +2858,22 @@ local function tick()
         U.toast('danger', 'No answer', 'The house did not answer the take-down: refresh My Sales to see where it stands', 6, 'hourglass-end')
     end
     if st.open then
+        -- what the house lists: with no answers kept, or ones over 12 hours old, each category is asked once, one at a
+        -- time and spaced out (the house's own window asks one per category opened); otherwise a category is asked as
+        -- it's opened, which keeps it current
+        if not st.index_swept and logged_in() and I.index_age() > 12 * 3600 and clock() - (st.sweep_at or 0) > 0.25 then
+            local busy = false
+            for k in pairs(st.fetching) do if tostring(k):sub(1, 3) == 'cat' then busy = true break end end
+            if not busy then
+                st.sweep_at = clock()
+                local next_cat = nil
+                for _, cat in ipairs(I.all_categories()) do
+                    st.sweep_tries = st.sweep_tries or {}
+                    if not I.fresh(cat) and (st.sweep_tries[cat] or 0) < 2 and not (st.hist_fail['cat' .. cat] and clock() - st.hist_fail['cat' .. cat] < LIMITS.retry) then next_cat = cat break end
+                end
+                if next_cat then st.sweep_tries[next_cat] = (st.sweep_tries[next_cat] or 0) + 1 fetch_list(next_cat) else st.index_swept = true I.mark_swept() I.save_index(true) end
+            end
+        end
         if clock() - st.counter.at > LIMITS.scan then scan_counter() end
         -- the bag and the gil, kept current (a purchase or a fee changes the gil a moment after the house replies)
         if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
@@ -2889,6 +2916,7 @@ vana.events.on('unload', function ()
     save_settings()
     PRICES.save(true)
     LEDGER.save(true)
+    I.save_index(true)
     SEARCH.cancel_all()
     I.release_icons()
     U.release_texture('badge')

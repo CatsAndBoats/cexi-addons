@@ -1,10 +1,9 @@
 -- Items: what the game itself knows about them (names, descriptions, stats and icons, straight from its DATs through the
--- resource manager) and the house's catalogue (which items it lists, in which category; generated from the server's
--- item table). Nothing here touches the network.
+-- resource manager) and what the house lists (which items, in which category: the search server's own answers, kept
+-- per server in a file so the next session starts with them). Nothing here touches the network itself.
 local ffi = require('ffi')
 local U = require('ui')
 local LANG = require('lang')
-local CATALOGUE = require('catalogue')
 
 local I = {}
 
@@ -128,11 +127,16 @@ function I.get(id)
             delay = it.Delay, image_size = tonumber(it.ImageSize) or 0,
         }
     end
+    -- a record the client has only a placeholder for ("." or nothing: an item the server added and the client's
+    -- DATs don't describe): the game's own window leaves these out, and so does this one
+    r.placeholder = r.missing or r.name == '' or r.name == '.'
     records[id] = r
     return r
 end
 
 function I.name(id) return I.get(id).name end
+-- whether the client has a real record for it (see placeholder above)
+function I.known(id) return not I.get(id).placeholder end
 
 -------------------------------------------------------------------------------
 -- Icons: the game's own, made into textures as they're first drawn; the least recently used go when there are many
@@ -183,7 +187,7 @@ end
 function I.forget_records() records = {} end
 
 -------------------------------------------------------------------------------
--- The catalogue: categories, their items, and a name search
+-- The categories, what the house lists in them, and a name search
 -------------------------------------------------------------------------------
 
 I.CATEGORY_NAME = {
@@ -212,23 +216,101 @@ I.GROUPS = {
     { id = 'others', name = 'Others', icon = 'box', cats = { 46, 64, 65, 99, 255 } },
 }
 
-I.rows = {}          -- id -> { id, category, stack, flags, level, jobs, slot }
-local by_cat = {}    -- category -> ids
-for _, row in ipairs(CATALOGUE) do
-    local r = { id = row[1], category = row[2], stack = row[3], flags = row[4], level = row[5], jobs = row[6], slot = row[7] }
-    I.rows[r.id] = r
-    by_cat[r.category] = by_cat[r.category] or {}
-    table.insert(by_cat[r.category], r.id)
-end
-
+-- What the house lists, from the house itself: each category's search-server answer (the list the game's own window
+-- shows) is that category's items, and an item's category is the one the house files it under. Nothing is shipped:
+-- a new auction item is here as soon as the server lists it. The answers are kept per server (I.load_index /
+-- I.save_index), so a session starts with the last ones while the house is asked again.
+I.rows = {}          -- id -> { id, category }: every item the house lists
+local served = {}    -- category -> { [id] = true }, once its answer is in (this session's, or the file's)
+local fresh = {}     -- category -> true once answered this session
 local sorted_cats = {}
--- a category's items, by name
+local index = nil    -- the name search's index (below), built on the first search
+local index_path, index_dirty, index_saved_at = nil, false, 0
+local index_at = 0 -- when every category was last asked (0: never), kept in the file
+
+function I.set_served(cat, ids, from_file)
+    -- the items it no longer lists leave it (and the house, unless another category lists them)
+    for id in pairs(served[cat] or {}) do
+        local row = I.rows[id]
+        if row and row.category == cat then I.rows[id] = nil end
+    end
+    local set = {}
+    for _, id in ipairs(ids) do
+        set[id] = true
+        I.rows[id] = { id = id, category = cat }
+    end
+    served[cat] = set
+    if not from_file then fresh[cat] = true index_dirty = true end
+    sorted_cats[cat] = nil
+    index = nil
+end
+-- whether the house has said what a category holds (this session, or in the file), and this session
+function I.answered(cat) return served[cat] ~= nil end
+function I.fresh(cat) return fresh[cat] == true end
+-- whether the house lists an item at all
+function I.listed(id) return I.rows[id] ~= nil end
+
+-- a category's items, by name (none until the house has answered for it)
 function I.category(cat)
     if sorted_cats[cat] then return sorted_cats[cat] end
-    local ids = by_cat[cat] or {}
+    local ids = {}
+    for id in pairs(served[cat] or {}) do if I.known(id) then ids[#ids + 1] = id end end
     table.sort(ids, function (a, b) return I.name(a) < I.name(b) end)
     sorted_cats[cat] = ids
     return ids
+end
+
+-- every category the window shows, in order
+function I.all_categories()
+    local out = {}
+    for _, g in ipairs(I.GROUPS) do for _, c in ipairs(g.cats) do out[#out + 1] = c end end
+    return out
+end
+
+-- the answers, kept per server: { [category] = { ids } }
+function I.load_index(file)
+    I.save_index(true)
+    index_path = file
+    for cat in pairs(served) do served[cat] = nil end
+    for k in pairs(fresh) do fresh[k] = nil end
+    for k in pairs(I.rows) do I.rows[k] = nil end
+    sorted_cats, index, index_dirty, index_at = {}, nil, false, 0
+    if file == nil or not vana.fs.exists(file) then return end
+    local ok, chunk = pcall(loadfile, file)
+    if not ok or chunk == nil then return end
+    local ok2, data = pcall(chunk)
+    if not ok2 or type(data) ~= 'table' then return end
+    for cat, ids in pairs(data) do
+        if type(ids) == 'table' then I.set_served(tonumber(cat) or cat, ids, true) end
+    end
+    index_at = tonumber(data.at) or 0
+end
+-- every category has just been asked (the window's sweep): the file says so, for the next sweep's age
+function I.mark_swept() index_at = os.time() index_dirty = true end
+-- how long since every category was asked, in seconds (huge if never); and whether any answers are kept
+function I.index_age() return index_at > 0 and (os.time() - index_at) or 1e12 end
+function I.has_index() return next(I.rows) ~= nil end
+function I.save_index(force)
+    if index_path == nil or not index_dirty then return end
+    if not force and os.time() - index_saved_at < 10 then return end
+    index_saved_at = os.time()
+    local dir = index_path:match('^(.*)\\[^\\]+$')
+    if dir then pcall(vana.fs.create_dir, dir) end
+    local f = io.open(index_path, 'w')
+    if f == nil then return end
+    f:write('return {\n', 'at=', index_at, ',\n')
+    local cats = {}
+    for cat in pairs(served) do cats[#cats + 1] = cat end
+    table.sort(cats)
+    for _, cat in ipairs(cats) do
+        local ids = {}
+        for id in pairs(served[cat]) do ids[#ids + 1] = id end
+        table.sort(ids)
+        f:write('[', tostring(cat), ']={', table.concat(ids, ','), '},\n')
+    end
+    f:write('}\n')
+    f:close()
+    index_dirty = false
 end
 
 function I.category_of(id)
@@ -243,14 +325,15 @@ function I.group_of(cat)
     return I.GROUPS[#I.GROUPS]
 end
 
--- every listed item whose name contains the words, best matches first; built on the first search
-local index = nil
+-- every listed item whose name contains the words, best matches first (the index is declared above)
 function I.search(query, limit)
     query = (query or ''):lower():gsub('^%s+', ''):gsub('%s+$', '')
     if query == '' then return {} end
     if index == nil then
         index = {}
-        for id in pairs(I.rows) do index[#index + 1] = { id = id, name = I.name(id):lower() } end
+        for id in pairs(I.rows) do
+            if I.known(id) then index[#index + 1] = { id = id, name = I.name(id):lower() } end
+        end
     end
     local words = {}
     for w in query:gmatch('%S+') do words[#words + 1] = w end

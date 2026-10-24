@@ -159,6 +159,9 @@ The Japanese localization is Hando's work (cexi-addons PR #11) — thank you.
 
 Settings and the watch list are kept per character in `Vanacore\config\addons\auctionhouse-vanacore\<name>.lua`; the
 activity record is `<name>-activity.lua` beside it (up to 2,000 entries); the price record is
+`index-<search host>.lua` is what the house lists in each category, as its search server last said (asked again
+one category at a time when it's missing or over 12 hours old, and whenever a category is opened; nothing about
+which items are sold is shipped with the addon, so a new auction item shows up as soon as the server lists it);
 `prices-<search host>.lua`, one per server, up to 160 sales per item and kind, series with no sale in 120 days
 dropped.
 
@@ -190,17 +193,14 @@ dropped.
 
 - `auctionhouse-vanacore.lua` — the addon: state, the game packets, the window
 - `search.lua`, `bf_tables.lua` — the search-server client and LandSandBoat's Blowfish boxes
-- `items.lua` — the game's item data through the resource manager, icon textures, the catalogue and name search
+- `items.lua` — the game's item data through the resource manager, icon textures, what the house lists (from its
+  own answers, kept per server) and the name search
 - `prices.lua` — the price record (every sale seen, per server) and the graphs drawn from it
 - `lang.lua` — the Japanese strings and which language is in use (the setting, VanaCore's, or the client's item names)
 - `ledger.lua` — the activity record (bought, listed, taken down, sold; per character), its pages and totals
 - `compare.lua` — gear stats read from the game's item descriptions, what you wear, and the Compare card
 - `pad.lua` — the controller: VanaCore's XInput and DirectInput reads as ImGui's gamepad keys, the game kept from them
   while the window has the pad, the legend; shared source in `tools/pad.lua`, copied here by `tools/make_ui.py`
-- `catalogue.lua` — every item the house lists (`item_basic.aH > 0`), with its category, stack size, level, jobs
-  and slot. Regenerate from the server database when items change:
-  `SELECT b.itemid, b.aH, b.stackSize, b.flags, COALESCE(e.level,0), COALESCE(e.jobs,0), COALESCE(e.slot,0) FROM item_basic b LEFT JOIN item_equipment e ON e.itemId = b.itemid WHERE b.aH > 0 ORDER BY b.itemid`
-  into `{id,cat,stack,flags,level,jobs,slot},` rows.
 - `ui.lua` — the drawing kit and the themes, generated from the Party Finder addon's helpers by this repo's `tools/make_ui.py`
   so the two look the same; edit there, not here
 - `fonts/` — Inter and Rajdhani (SIL Open Font License, licenses included); `images/jobs.png` — the job sprites
