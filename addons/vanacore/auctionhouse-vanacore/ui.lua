@@ -418,6 +418,7 @@ local TR = {
         ['Tabs'] = 'タブ',
         ['Category'] = '区分',
         ['Price'] = '金額',
+        ['Bag'] = 'バッグ',
         ['Digit'] = '桁',
         ['Column'] = '列',
         ['Keep'] = '確定',

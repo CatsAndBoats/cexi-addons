@@ -10,14 +10,15 @@
     server answers with the house's Open packet, and that is what lets you bid and sell (and where you stood is kept,
     so /ah there later can trade as well).
 
+    1.0.0Jc (Hando): search results take the cursor, Japanese sale notices, the sell-tab pad, and category-list wrap.
     1.0.0Jb (Hando): a Confirm on the sort or filter strip toggles once and stays.
-    1.0.0Ja (Hando): Japanese client text, and the controller layout described in README.md.
-    An English client keeps the original English UI. Later Japanese revisions are 1.0.0Jc, and so on.
+    1.0.0Ja (Tsuyumi, Hando): Japanese client text, begun by Tsuyumi, and the controller layout described in README.md.
+    An English client keeps the original English UI. Later Japanese revisions are 1.0.0Jd, and so on.
 ]]
 
 addon.name    = 'auctionhouse-vanacore'
-addon.author  = 'Carver, Hando'
-addon.version = '1.0.0Jb'
+addon.author  = 'Carver, Tsuyumi, Hando'
+addon.version = '1.0.0Jc'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -505,7 +506,12 @@ local function on_packet(e)
         local item, price, qty = u16(d, 0x0C), rd32(d, 0x08), rd32(d, 0x10)
         if result == RESULT.Ok then
             -- (the game says it in chat too: "You buy the ... for ... gil")
-            U.toast('ok', 'Bought ' .. I.name(item), (qty > 1 and (qty .. ' for ') or '') .. gil(price) .. ' gil', 5, 'cart-shopping')
+            if U.lang() == 'ja' then
+                local what = (qty > 1 and (I.name(item) .. 'のスタック') or I.name(item))
+                U.toast('ok', '落札', what .. 'を' .. gil(price) .. 'ギルで落札しました', 5, 'cart-shopping')
+            else
+                U.toast('ok', 'Bought ' .. I.name(item), (qty > 1 and (qty .. ' for ') or '') .. gil(price) .. ' gil', 5, 'cart-shopping')
+            end
             LEDGER.add({ kind = 'bought', id = item, stack = qty > 1, price = price })
             forget_history(item)
             st.inv_at = 0 -- the gil changes a moment after this reply: read the bag again on the next frame or two
@@ -516,9 +522,17 @@ local function on_packet(e)
             end
             refresh_inventory()
         elseif result == RESULT.Full then
-            U.toast('danger', "Couldn't buy", 'Your inventory is full, or you already hold that rare item', 6, 'triangle-exclamation')
+            if U.lang() == 'ja' then
+                U.toast('danger', '落札失敗', '所持品がいっぱい、またはそのレアアイテムをすでに持っています', 6, 'triangle-exclamation')
+            else
+                U.toast('danger', "Couldn't buy", 'Your inventory is full, or you already hold that rare item', 6, 'triangle-exclamation')
+            end
         else
-            U.toast('danger', 'Bid failed', 'Nobody is selling ' .. I.name(b and b.item or item) .. ' at that price', 6, 'hand-holding-dollar')
+            if U.lang() == 'ja' then
+                U.toast('danger', '落札失敗', I.name(b and b.item or item) .. 'は、その金額では出品されていません', 6, 'hand-holding-dollar')
+            else
+                U.toast('danger', 'Bid failed', 'Nobody is selling ' .. I.name(b and b.item or item) .. ' at that price', 6, 'hand-holding-dollar')
+            end
             forget_history(b and b.item or item)
         end
     end
@@ -845,7 +859,11 @@ local function on_sold(name, buyer, price)
         fetch_history(id, stack, true)
     end
     local what = id and I.name(id) or name
-    U.toast('ok', 'Sold!', what .. (stack and ' (stack)' or '') .. '  ·  ' .. gil(price) .. ' gil from ' .. buyer, 8, 'sack-dollar')
+    if U.lang() == 'ja' then
+        U.toast('ok', '売却', (stack and (what .. 'のスタック') or what) .. 'が' .. gil(price) .. 'ギルで売れました（' .. buyer .. '）', 8, 'sack-dollar')
+    else
+        U.toast('ok', 'Sold!', what .. (stack and ' (stack)' or '') .. '  ·  ' .. gil(price) .. ' gil from ' .. buyer, 8, 'sack-dollar')
+    end
 end
 
 -- ask the house about every watched item
@@ -946,7 +964,14 @@ local function pad_nav_allows(key)
     if key == '##ahsearch' then return false end -- the search box is typed into; the D-pad never moves there
     if s == nil then return true end
     if s == 'close' then return key == '##close' end
-    if s == 'cats' then return key:sub(1, 5) == '##grp' or key:sub(1, 5) == '##cat' end
+    if s == 'cats' then
+        -- one row at a time, so the D-pad cannot wrap downward on its own and stop at the top
+        if st.pad_cat_paging then return key:sub(1, 5) == '##grp' or key:sub(1, 5) == '##cat' end
+        if st.pad_cat_focus then return key == st.pad_cat_focus end
+        local order = st.pad_cat_order
+        if order and st.pad_cat_i and order[st.pad_cat_i] then return key == order[st.pad_cat_i] end
+        return key:sub(1, 5) == '##grp' or key:sub(1, 5) == '##cat'
+    end
     if s == 'items' then return key:sub(1, 6) == '##item' end
     if s == 'filters' then
         local keys = { '##compare', '##instock', '##usable' }
@@ -961,6 +986,12 @@ local function pad_nav_allows(key)
         return key == '##bid' or key == '##bid_btn'
     end
     if s == 'sell' then
+        -- on the asking price or the List button the D-pad stays there; Cancel is what returns to the bag
+        if st.pad_where == 'sell_box' then
+            if st.pad_sell_part == 'list' or st.pad_seat == 'list' then return key == '##list_btn' end
+            return key == '##ask'
+        end
+        if st.pad_where == 'bag' then return key:sub(1, 5) == '##bag' end
         return key:sub(1, 5) == '##bag' or key == '##list_btn' or key == '##ask' or key:sub(1, 8) == '##sellss' or key == '##sellable'
     end
     if key == '##close' or key == '##settings' or key == '##refresh' or key == '##mysales' or key == '##clearq' then return false end
@@ -978,6 +1009,15 @@ local field_state = {}
 
 local function on_bid_card()
     return st.tab == 'buy' and (st.pad_card ~= nil or st.pad_editing or st.pad_where == 'price' or st.pad_where == 'bid' or st.pad_where == 'card' or st.pad_where == 'hist')
+end
+
+-- cancel on the asking price or the List button returns to the bag item that was chosen
+local function seat_bag()
+    local fs = field_state['##ask']
+    if fs then fs.pad_on = false end
+    st.pad_editing = false
+    st.pad_first, st.pad_first_id, st.pad_cats, st.pad_bag, st.pad_close = 3, st.sell.slot, false, true, nil
+    st.pad_where, st.pad_seat, st.pad_card, st.pad_price_hold, st.pad_sell_part = 'bag', nil, nil, nil, nil
 end
 
 -- cancel anywhere on the bid card (price, history, single, stack, watch, Bid) returns to the result row
@@ -1025,6 +1065,7 @@ local function pad_price_box(id, hint, buf, width, size, fs)
     if fs.pad_on and (pressed or keep) then
         fs.pad_on = false
         st.pad_seat = id == '##bid' and 'bid' or 'list' -- on to the button
+        if id == '##ask' then st.pad_where, st.pad_sell_part, st.pad_price_hold = 'sell_box', 'list', nil end
         -- the same press, still held, must not also press the button the focus moves to (or open the box again)
         st.pad_mute = 'held'
     elseif pressed and focused and not st.pad_mute then
@@ -1048,7 +1089,8 @@ local function pad_price_box(id, hint, buf, width, size, fs)
             fs.pad_on = false
             nv = tonumber(fs.orig) or 0
             buf[1] = fs.orig
-            if id == '##bid' then seat_results() end
+            if id == '##bid' then seat_results()
+            elseif id == '##ask' then seat_bag() end
         end
         if nv ~= v then
             buf[1] = nv > 0 and tostring(nv) or ''
@@ -1063,6 +1105,10 @@ local function pad_price_box(id, hint, buf, width, size, fs)
         if PAD.pressed('left') or PAD.pressed('right') then
             st.pad_seat, st.pad_where, st.pad_card, st.pad_price_hold = 'bid', 'bid', 'price', nil
         end
+    elseif (focused or fs.pad_on) and id == '##ask' then
+        st.pad_where_now, st.pad_sell_part = 'sell_box', 'price'
+        st.pad_hold = 'all'
+        if PAD.pressed('cancel') then seat_bag() end
     end
     if (focused or fs.pad_on) and (st.pad_card == nil or st.pad_card == 'price' or st.pad_card == 'bid') and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then U.anim.focus = { x = x0, y = y0, w = width, h = h, at = now_t, key = id } end -- the ring
     -- the box, as the text box looks: a gold ring and glow while editing, the plain line otherwise
@@ -1461,7 +1507,10 @@ local function draw_sidebar(dl, x, y, w, h)
         if st.pad_first == 2 then imgui.SetWindowFocus() end
     end
     local page_y = st.pad_where == 'cats' and pad_page_scroll() or nil
+    st.pad_cat_paging = page_y ~= nil
     local origin = y + S(8)
+    local order = {}
+    if st.pad_cat_focus then U.focus_key(st.pad_cat_focus) end
     local page_seated = false
     local cy = origin - imgui.GetScrollY() -- drawn where the scroll puts it
     local function page_seat(row_h)
@@ -1469,6 +1518,7 @@ local function draw_sidebar(dl, x, y, w, h)
         if cy + imgui.GetScrollY() - origin + row_h > page_y + 1 then
             imgui.SetKeyboardFocusHere()
             page_seated = true
+            st.pad_cat_page_arm = true
         end
     end
     for _, g in ipairs(I.GROUPS) do
@@ -1476,8 +1526,15 @@ local function draw_sidebar(dl, x, y, w, h)
         if open == nil then open = (g.id == st.group) st.group_open[g.id] = open end
         imgui.SetCursorScreenPos({ x, cy })
         page_seat(S(30))
-        local pressed, _, hv = hit('##grp' .. g.id, w, S(30))
-        if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
+        local gkey = '##grp' .. g.id
+        order[#order + 1] = gkey
+        if st.pad_cat_page_arm then st.pad_cat_i, st.pad_cat_focus, st.pad_cat_page_arm = #order, gkey, nil end
+        local pressed, _, hv = hit(gkey, w, S(30))
+        if st.pad_cat_focus == gkey then imgui.SetScrollHereY(0.5) end
+        if imgui.IsItemFocused() then
+            st.pad_where_now, st.pad_cat_i = 'cats', #order
+            if st.pad_cat_focus == gkey then st.pad_cat_focus = nil end
+        end
         if pressed and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then st.group_open[g.id] = not open end
         local active = I.group_of(st.category).id == g.id
         cdl:AddRectFilled({ x + S(6), cy + S(2) }, { x + w - S(6), cy + S(28) }, u32(P.card_hi, (active and 0.5 or 0.15) + 0.3 * hv), S(8))
@@ -1493,9 +1550,16 @@ local function draw_sidebar(dl, x, y, w, h)
                     local seat = seating and cat == st.category
                     if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
                     page_seat(S(24))
-                    local cp, _, chv = hit('##cat' .. cat, w, S(24))
+                    local ckey = '##cat' .. cat
+                    order[#order + 1] = ckey
+                    if st.pad_cat_page_arm then st.pad_cat_i, st.pad_cat_focus, st.pad_cat_page_arm = #order, ckey, nil end
+                    local cp, _, chv = hit(ckey, w, S(24))
                     if seat then imgui.SetItemDefaultFocus() end
-                    if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
+                    if st.pad_cat_focus == ckey then imgui.SetScrollHereY(0.5) end
+                    if imgui.IsItemFocused() then
+                        st.pad_where_now, st.pad_cat_i = 'cats', #order
+                        if st.pad_cat_focus == ckey then st.pad_cat_focus = nil end
+                    end
                     local on = st.category == cat and st.results == nil
                     if cp and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
                         st.category, st.group = cat, g.id
@@ -1524,6 +1588,8 @@ local function draw_sidebar(dl, x, y, w, h)
     imgui.SetCursorScreenPos({ x, cy + S(4) }) -- the content's end, so the child knows how far it scrolls
     imgui.Dummy({ 1, 1 })
     imgui.EndChild()
+    st.pad_cat_order = order
+    st.pad_cat_paging = nil
 end
 
 -- the subtitle under an item's name. Japanese job marks are one character, so a long list wraps onto a second
@@ -1991,6 +2057,7 @@ local function draw_sell(dl, x, y, w, h, t)
     local cdl = imgui.GetWindowDrawList()
     pad_scroll()
     if st.pad_first and PAD.capturing() then imgui.SetScrollY(0) end
+    if st.pad_bag and st.pad_first == 2 and PAD.capturing() then imgui.SetWindowFocus() end
     local cell = S(52)
     local per = math.max(1, math.floor((bagw - S(16)) / (cell + S(6))))
     local cx, cy = x + S(4), gy - imgui.GetScrollY()
@@ -2020,13 +2087,21 @@ local function draw_sell(dl, x, y, w, h, t)
         if hovered then
             with_font(F.text, T.small, imgui.SetTooltip, r.name .. (it.count > 1 and (' x' .. it.count) or '') .. (sellable and '' or ('\n' .. U.t('The house does not take this'))))
         end
-        if pressed and sellable then
+        if pressed and sellable and st.pad_where ~= 'sell_box' then
+            local same = st.sell.slot == it.slot
             st.sell.slot, st.sell.item, st.sell.count = it.slot, it.id, it.count
-            st.sell.stack = false
-            st.sell.price[1] = ''
-            st.sell.fee, st.sell.asked = nil, nil
-            fetch_history(it.id, false)
-            if r.stack > 1 then fetch_history(it.id, true) end
+            if not same then
+                st.sell.stack = false
+                st.sell.price[1] = ''
+                st.sell.fee, st.sell.asked = nil, nil
+                fetch_history(it.id, false)
+                if r.stack > 1 then fetch_history(it.id, true) end
+            end
+            -- a controller: Confirm on a bag item stays on its asking price
+            if PAD.shown() then
+                st.pad_seat, st.pad_where, st.pad_sell_part, st.pad_price_hold, st.pad_mute = 'price', 'sell_box', 'price', 8, 'held'
+                st.pad_bag, st.pad_first = false, nil
+            end
         end
         n = n + 1
         if n % per == 0 then cx = x + S(4) cy = cy + cell + S(6) else cx = cx + cell + S(6) end
@@ -2092,13 +2167,15 @@ local function draw_sell(dl, x, y, w, h, t)
     sy = sy + S(26)
     local label = st.sell.pending and 'Asking the house…' or (price > 0 and (U.t('List for') .. ' ' .. gil(price) .. ' gil') or U.t('List it'))
     local ok = can and (not known or (st.sell.fee or 0) <= st.gil)
-    if st.pad_seat == 'list' then imgui.SetKeyboardFocusHere() st.pad_seat = nil end -- a controller, from the price box
+    if st.pad_seat == 'list' then imgui.SetKeyboardFocusHere() end -- kept until the focus has landed
     local list_pressed = button(dl, '##list_btn', sx, sy, pw - S(32), S(36), label, ok and GOLD or P.faint, ok and 'solid' or 'ghost', 'tag')
-    if st.pad_mute then list_pressed = false end -- the Confirm that kept the price, not a press of List
-    if imgui.IsItemFocused() then
-        st.pad_where_now = 'sell_box'
-        st.pad_hold = true -- Up from List is the price box, the window's to do
-        if PAD.pressed('up') then st.pad_seat = 'price' end
+    if st.pad_mute or U.anim.suppress_press then list_pressed = false end -- the Confirm or active button that moved here, not a press of List
+    if st.pad_seat == 'list' and imgui.IsItemFocused() then st.pad_seat = nil end
+    if imgui.IsItemFocused() or st.pad_seat == 'list' then
+        st.pad_where_now, st.pad_sell_part = 'sell_box', 'list'
+        st.pad_hold = 'all'
+        if PAD.pressed('cancel') then seat_bag() end
+        if PAD.pressed('up') then st.pad_seat, st.pad_sell_part, st.pad_price_hold = 'price', 'price', 4 end
     end
     if (list_pressed or entered) and ok then
         if known then
@@ -2508,7 +2585,8 @@ end
 local function draw_confirm()
     local c = st.confirm
     if c == nil then return end
-    local w, h = S(420), c.kind == 'sell' and S(206) or S(176)
+    local w, h = S(420), S(176)
+    if c.kind == 'sell' then h = (U.lang() == 'ja') and S(320) or S(206) end
     if c.kind == 'cancel' and st.server_page ~= nil and st.server_page ~= c.page then h = h + S(18) end -- a line about the wait
     U.dialog('##ah_confirm', w, h, 0, function (dl, x, y)
         shadow(dl, x, y, w, h, S(16), 1.5)
@@ -2523,11 +2601,21 @@ local function draw_confirm()
         elseif c.kind == 'sell' then
             local a = st.sell.asked
             local r = I.get(a.item)
-            local what = r.name .. (a.stack and (' (a stack of ' .. r.stack .. ')') or '')
-            title = 'List ' .. what .. ' for ' .. gil(a.price) .. ' gil?'
-            body = 'Listing fee: ' .. gil(st.sell.fee or 0) .. ' gil, paid now and kept whether or not it sells.'
-                .. '\nWhen it sells, ' .. gil(a.price) .. ' gil goes to your delivery box.'
-                .. '\nUnsold, it waits at the house until you take it down.'
+            if U.lang() == 'ja' then
+                local what = a.stack and (r.name .. 'のスタック（' .. r.stack .. '個）') or r.name
+                title = what .. 'を' .. gil(a.price) .. 'ギルで出品しますか？'
+                body = '出品手数料は' .. gil(st.sell.fee or 0) .. 'ギルです。売れなくても戻りません。'
+                    .. '\nヴァナ・ディール時間で30週間以内に最低落札価格以上の入札者が現れない場合は、'
+                    .. '\n出品を取り消しモグハウスに返送します。'
+                    .. '\n落札された場合は、代金がモグハウスに送られます。'
+                    .. '\nまた銘入りアイテムの場合は落札後、銘が消されますのでご了承ください。'
+            else
+                local what = r.name .. (a.stack and (' (a stack of ' .. r.stack .. ')') or '')
+                title = 'List ' .. what .. ' for ' .. gil(a.price) .. ' gil?'
+                body = 'Listing fee: ' .. gil(st.sell.fee or 0) .. ' gil, paid now and kept whether or not it sells.'
+                    .. '\nWhen it sells, ' .. gil(a.price) .. ' gil goes to your delivery box.'
+                    .. '\nUnsold, it waits at the house until you take it down.'
+            end
             yes, ic, col = U.t('List it'), 'tag', GOLD
             item_icon(dl, a.item, x + w - S(22) - S(48), y + S(16), S(48), 1)
         else
@@ -2556,7 +2644,7 @@ local function draw_confirm()
             st.confirm = nil
             if c.kind == 'buy' and PAD.shown() then st.pad_seat = 'bid' end -- the controller's focus comes back to the card
         end
-        if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), 'Cancel', P.dim, 'ghost') then
+        if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), U.t('Cancel'), P.dim, 'ghost') then
             st.confirm = nil
             if c.kind == 'buy' and PAD.shown() then st.pad_seat = 'bid' end
         end
@@ -2666,12 +2754,20 @@ local function pad_buttons()
             seat_results()
         elseif st.tab == 'buy' and st.pad_where == 'items' then
             seat_cats()
-        elseif st.tab == 'sell' and st.pad_where == 'sell_box' then
-            st.pad_first, st.pad_first_id, st.pad_cats, st.pad_bag, st.pad_close, st.pad_where = 3, st.sell.slot, false, true, nil, 'bag'
+        elseif st.tab == 'sell' and (st.pad_where == 'sell_box' or st.pad_editing) then
+            if st.pad_editing then st.pad_leave = true end -- the price box puts the old number back as it draws
+            seat_bag()
         else
             seat_close() -- Cancel moves onto Close; it does not shut the window
         end
         return
+    end
+    -- the active-window button, on the asking price, moves onto List. It does not press it.
+    if st.tab == 'sell' and not st.settings_open and not st.confirm and PAD.pressed('options') and (st.pad_editing or st.pad_where == 'sell_box') and st.pad_sell_part ~= 'list' then
+        local ask = field_state['##ask']
+        if ask then ask.pad_on = false end
+        st.pad_editing = false
+        st.pad_seat, st.pad_where, st.pad_sell_part, st.pad_price_hold, st.pad_mute = 'list', 'sell_box', 'list', nil, 'held'
     end
     if st.pad_editing then return end -- a price box has the pad (pad_price_box)
     st.confirm_kind_buy = st.confirm ~= nil and st.confirm.kind == 'buy'
@@ -2725,6 +2821,15 @@ local function pad_buttons()
             local page = (PAD.repeating('right', 0.28, 0.28) and 1 or 0) - (PAD.repeating('left', 0.28, 0.28) and 1 or 0)
             if page ~= 0 then st.pad_page_dir = page end
         end
+        if st.pad_where == 'cats' then
+            local dir = (PAD.repeating('down', 0.28, 0.08) and 1 or 0) - (PAD.repeating('up', 0.28, 0.08) and 1 or 0)
+            local order = st.pad_cat_order
+            if dir ~= 0 and order and #order > 0 then
+                local i = st.pad_cat_i or 1
+                st.pad_cat_i = (i - 1 + dir) % #order + 1
+                st.pad_cat_focus = order[st.pad_cat_i]
+            end
+        end
     end
     if st.tab == 'activity' and not st.settings_open then
         local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
@@ -2750,7 +2855,18 @@ end
 local function draw_legend(dl, x, y, w)
     dl:AddLine({ x + S(16), y }, { x + w - S(16), y }, u32(P.line, 0.8), 1)
     local LEGEND = legend_row()
-    local items = st.pad_editing and LEGEND.edit or LEGEND[st.tab] or LEGEND.other
+    local items = (st.pad_editing and st.tab == 'sell') and {
+            { 'updown', U.t('Digit') }, { 'left right', U.t('Column') }, { 'confirm', U.t('List it') }, { 'cancel', U.t('Bag') },
+        } or (st.pad_editing and LEGEND.edit or LEGEND[st.tab] or LEGEND.other)
+    if st.tab == 'sell' and not st.pad_editing then
+        if st.pad_where == 'sell_box' and st.pad_sell_part == 'list' then
+            items = { { 'confirm', U.t('List it') }, { 'cancel', U.t('Bag') }, { 'updown', U.t('Price') } }
+        elseif st.pad_where == 'sell_box' then
+            items = { { 'confirm', U.t('Amount') }, { 'cancel', U.t('Bag') }, { 'options', U.t('List it') } }
+        else
+            items = { { 'confirm', U.t('Price') }, { 'cancel', U.t('Go back') }, { 'l1 r1', U.t('Tabs') }, { 'start', U.t('Settings') } }
+        end
+    end
     -- on Buy, Confirm and Cancel say what they do in the pane the focus is in
     if st.tab == 'buy' and not st.pad_editing and (st.pad_where == 'filters' or st.pad_where == 'sort') then
         items = {
@@ -2874,7 +2990,14 @@ local function draw_main(t)
         -- a Cancel that just sent the focus somewhere keeps that pane until the move has landed
         if st.pad_where == 'filters' or st.pad_where == 'sort' then
             -- held: a chip's focus must not hand the pane back to the list
-        elseif (st.pad_price_hold or 0) > 0 then
+        elseif st.tab == 'sell' and st.pad_editing then
+            st.pad_where, st.pad_sell_part = 'sell_box', 'price'
+        elseif st.tab == 'sell' and (st.pad_price_hold or 0) > 0 then
+            st.pad_where, st.pad_sell_part = 'sell_box', st.pad_sell_part or 'price'
+            st.pad_price_hold = st.pad_price_hold - 1
+        elseif st.tab == 'sell' and st.pad_seat == 'list' then
+            st.pad_where, st.pad_sell_part = 'sell_box', 'list'
+        elseif st.tab == 'buy' and (st.pad_price_hold or 0) > 0 then
             st.pad_where, st.pad_card = 'price', 'price'
             st.pad_price_hold = st.pad_price_hold - 1
         elseif st.pad_card and not st.pad_first and not st.pad_close then
@@ -2887,6 +3010,7 @@ local function draw_main(t)
         end
         -- left and right scroll a page on a list; on the bid card the D-pad is the card's, not ImGui's
         if st.pad_where == 'filters' or st.pad_where == 'sort' then st.pad_hold = 'all'
+        elseif st.tab == 'sell' and st.pad_where == 'sell_box' and PAD.shown() then st.pad_hold = 'all'
         elseif st.pad_card and PAD.shown() then st.pad_hold = 'all'
         elseif PAD.shown() and (st.pad_where == 'cats' or st.pad_where == 'items') and not st.pad_editing then st.pad_hold = 'x' end
         st.pad_leave = nil
@@ -3101,6 +3225,12 @@ vana.events.on('command', function (e)
         st.query[1] = I.client_text(table.concat(words, ' ', 3))
         st.results, st.result_total = I.search(st.query[1], 80)
         fetch_result_lists()
+        -- open_window seated the categories before these results existed. A Confirm there would
+        -- open that category and throw the search away, so a hit moves the cursor onto the list.
+        if st.results and #st.results > 0 then
+            st.pad_first, st.pad_first_id, st.pad_cats, st.pad_close = 3, nil, false, nil
+            st.pad_where, st.pad_row, st.pad_card, st.pad_seat, st.pad_price_hold = 'items', nil, nil, nil, nil
+        end
     elseif what == 'server' then
         local arg = words[3] or ''
         if arg == '' then say('Search server: ' .. tostring(st.search_where))

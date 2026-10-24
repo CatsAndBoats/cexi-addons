@@ -16,13 +16,13 @@ the city Auction Counters and the outpost clerks of Jeuno, Rabao, Norg, Kazham, 
 rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default) opens it anywhere
 for browsing; bidding and selling need you at a clerk, which `/ah` knows once you've talked to one there (below).
 
-## Japanese client — 1.0.0Jb
+## Japanese client — 1.0.0Jc
 
 This work localizes **only** `addons/vanacore/auctionhouse-vanacore`. No other addon in cexi-addons is changed.
 
 Japanese text is used only when the game client is Japanese. An English client keeps the original English interface, item names, and help.
 
-Version **1.0.0Jb**. Later Japanese revisions are **1.0.0Jc**, and so on. Authors: Carver, Hando.
+Version **1.0.0Jc**. Later Japanese revisions are **1.0.0Jd**, and so on. Authors: Carver, Tsuyumi, Hando. Tsuyumi began the Japanese client text.
 
 ### English
 
@@ -38,6 +38,7 @@ Version **1.0.0Jb**. Later Japanese revisions are **1.0.0Jc**, and so on. Author
   - The search box is not a D-pad target. Scrolling the sale history does not jump to the categories.
   - The help along the bottom of the window matches these actions. On a Japanese client that help is Japanese. The button pictures follow the game’s pad settings.
 - **1.0.0Jb.** Confirm on Name, Level, or Stock flips that order once and leaves the cursor there. Confirm on Compare, In stock, or Usable turns that chip on or off once and leaves the cursor there.
+- **1.0.0Jc.** `/ah s` with at least one hit leaves the cursor on the result list. A bid reads 落札 or 落札失敗, and a sale of your own listing reads 売却. On Sell, Confirm stays on the asking price, then Confirm or the active-window button moves to List, and Cancel returns to the bag. The listing confirmation follows the system notice. The category list wraps upward as well as downward.
 
 ### 日本語
 
@@ -45,7 +46,7 @@ Version **1.0.0Jb**. Later Japanese revisions are **1.0.0Jc**, and so on. Author
 
 表示が日本語になるのは、日本語クライアントのときだけです。英語クライアントでは、画面もアイテム名もヘルプも、これまでどおり英語です。
 
-バージョンは **1.0.0Jb** です。このあとの日本語版は **1.0.0Jc** と続けます。作者は Carver、Hando です。
+バージョンは **1.0.0Jc** です。このあとの日本語版は **1.0.0Jd** と続けます。作者は Carver、Tsuyumi、Hando です。最初の日本語対応は Tsuyumi です。
 
 - 日本語クライアントのアイテム名を日本語で表示します（クライアントの文字コードを UTF-8 に変換）。画面の文言を翻訳し、Meiryo があればそれを使います。
 - 装備可能ジョブは、見慣れた一文字です（戦・モ・白・黒・赤・シ・ナ・暗・獣・詩・狩・侍・忍・竜・召・青・コ・か・踊・学・風・ル）。日本語クライアントでは、省略せず最大2段ですべて出します。全ジョブ対応は「全ジョブ」です。英語クライアントは、ジョブが多いときの省略を残しています。
@@ -59,6 +60,7 @@ Version **1.0.0Jb**. Later Japanese revisions are **1.0.0Jc**, and so on. Author
   - 検索欄は十字キーの移動先にしません。履歴のスクロールから区分へは飛びません。
   - 画面下のヘルプは、今の操作に合わせています。日本語クライアントでは日本語です。ボタンの絵は、ゲームのパッド設定に従います。
 - **1.0.0Jb.** 名前・レベル・在庫の上で決定すると、昇順と降順が一度だけ切り替わり、カーソルはそこに残ります。比較・在庫あり・装備可能の上で決定すると、オンとオフが一度だけ切り替わり、カーソルはそこに残ります。
+- **1.0.0Jc.** `/ah s` で1件以上当たると、カーソルは検索結果に移ります。落札は「落札」、失敗は「落札失敗」、自分の出品が売れると「売却」です。出品では、決定で価格欄に留まり、金額のあとの決定かアクティブウィンドウ切替で出品ボタンへ移り、キャンセルでバッグへ戻ります。出品確認の文は、システムの案内に合わせています。区分リストは、上端から下端へも続きます。
 
 ## Install
 
