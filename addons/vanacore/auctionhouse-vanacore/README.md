@@ -55,8 +55,11 @@ Watched items are checked every five minutes while you play, house open or not, 
 stock coming back shows as a notice. Clicking a row opens its card.
 
 **Sell.** Your bag, with the items the house doesn't take greyed (the **Sellable** chip above the bag hides them
-instead, and is remembered). Pick one, choose single or full stack, set a
-price (recent sales are shown), and **List for N gil**: the house quotes its listing fee, and a card spells out the
+instead, and is remembered). Pick one and choose single or full stack, and the **market** for it shows above the
+price: how many are up right now (singles and stacks), last, median and range with the trend, the price graph
+when there's room (each sale's difference from the median when there isn't), and the latest sales (price, when, who sold to whom).
+Clicking last, median or any sale puts that price in the box, and beside the label it says how yours compares to the
+median. Then **List for N gil**: the house quotes its listing fee, and a card spells out the
 whole transaction (the item, the price, the fee paid now, the payout to your delivery box when it sells) for you to
 say **List it** to.
 

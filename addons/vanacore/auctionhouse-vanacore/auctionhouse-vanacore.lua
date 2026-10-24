@@ -1880,6 +1880,95 @@ local function draw_detail(dl, x, y, w, h, t)
 end
 
 -- SELL: the bag, and the listing box
+-- SELL's market box: what's up now (singles and stacks), how it has sold (last, median, range, the trend), the
+-- price graph of the record, and the latest sales, as many as fit. Last, median and each sale fill the asking price
+-- when clicked. Returns nothing; draws in x..x+w, y..y+h
+local function draw_sell_market(dl, x, y, w, h, id, hs)
+    local stack = st.sell.stack
+    local head = LANG.t('MARKET') .. '  ·  ' .. (stack and LANG.t('stacks') or LANG.t('singles'))
+    text(dl, x, y, head, P.accent, F.disp, T.small)
+    if hs and hs.stats and hs.stats.trend then
+        local tr = hs.stats.trend
+        local flat = math.abs(tr) <= 0.02
+        local tl = flat and LANG.t('steady') or string.format('%s%.0f%%', tr > 0 and '+' or '', tr * 100)
+        text(dl, x + measure(head, F.disp, T.small) + S(10), y + S(1), tl, flat and P.dim or (tr > 0 and P.ok or P.warn), F.semi, T.tiny)
+    end
+    stock_pills(dl, x + w, y - S(3), id, 1, true)
+    local cy = y + S(22)
+    local bottom = y + h
+    local function ask(price)
+        st.sell.price[1] = tostring(price)
+        st.sell.fee, st.sell.asked = nil, nil
+    end
+    if hs == nil then
+        text(dl, x, cy, st.search_error and ('Search server: ' .. tostring(st.search_error)) or LANG.t('Asking the house…'), st.search_error and P.danger or P.dim, F.text, T.small)
+        return
+    end
+    if hs.stats == nil then
+        text(dl, x, cy, LANG.t(stack and 'No stacks sold lately' or 'No singles sold lately'), P.dim, F.text, T.small)
+        text(dl, x, cy + S(20), LANG.t('Nobody has bought one here lately: your price sets the market'), P.faint, F.text, T.tiny)
+        return
+    end
+    local s = hs.stats
+    -- last, median, range (last and median are prices to take)
+    local cw = w / 3
+    local cols = { { 'LAST', s.last, GOLD }, { 'MEDIAN', s.median, P.text }, { 'RANGE', nil, P.text } }
+    for i, c in ipairs(cols) do
+        local cx = x + (i - 1) * cw
+        if c[2] then
+            imgui.SetCursorScreenPos({ cx - S(6), cy - S(4) })
+            local pressed, hovered, hv = hit('##mkt' .. i, cw - S(4), S(44))
+            if hv > 0.01 then dl:AddRectFilled({ cx - S(6), cy - S(4) }, { cx + cw - S(10), cy + S(40) }, u32(GOLD, 0.09 * hv), S(8)) end
+            if hovered then with_font(F.text, T.small, imgui.SetTooltip, LANG.t('Ask this price')) end
+            if pressed then ask(c[2]) end
+        end
+        text(dl, cx, cy, LANG.t(c[1]), P.faint, F.disp, T.tiny)
+        if c[2] then
+            text(dl, cx, cy + S(14), fit(gil(c[2]), F.disp, T.h2, cw - S(12)), c[3], F.disp, T.h2)
+        else
+            text(dl, cx, cy + S(18), fit(gil(s.low) .. ' – ' .. gil(s.high), F.semi, T.small, cw - S(4)), c[3], F.semi, T.small)
+        end
+    end
+    cy = cy + S(40)
+    -- the graph, as the Buy card draws it (every sale on record, the median dashed), when there's room for it and
+    -- three sales under it; without the room, each sale says how far it was from the median instead
+    local series = PRICES.series(id, stack)
+    local rh = S(20)
+    local room = bottom - cy - S(8) - rh * math.min(3, #hs.sales)
+    local charted = settings.chart and #series >= 1 and room >= S(50)
+    if charted then
+        local gh = math.min(S(96), room)
+        panel(dl, x - S(4), cy, w + S(8), gh, P.well, 0.6, S(8))
+        PRICES.chart(dl, x, cy + S(4), w, gh - S(8), series, { color = P.cyan, median = s.median, key = '##sellchart' .. id })
+        cy = cy + gh + S(8)
+    else
+        dl:AddLine({ x, cy }, { x + w, cy }, u32(P.line, 0.7), 1)
+        cy = cy + S(6)
+    end
+    -- the latest sales, newest first, a flat list as on the Buy card: price, when, who sold to whom
+    local n = math.min(#hs.sales, 8, math.max(0, math.floor((bottom - cy) / rh)))
+    for i = 1, n do
+        local sale = hs.sales[i]
+        imgui.SetCursorScreenPos({ x - S(6), cy })
+        local pressed, hovered, hv = hit('##mks' .. i, w + S(12), rh)
+        if hv > 0.01 then dl:AddRectFilled({ x - S(6), cy }, { x + w + S(6), cy + rh }, u32(GOLD, 0.08 * hv), S(6)) end
+        if hovered then with_font(F.text, T.small, imgui.SetTooltip, LANG.t('Ask this price')) end
+        if pressed then ask(sale.price) end
+        text_mid(dl, x, cy + rh / 2, gil(sale.price), i == 1 and GOLD or P.text, F.semi, T.small)
+        text_mid(dl, x + S(96), cy + rh / 2, ago(sale.date), P.dim, F.text, T.tiny)
+        local whow = w - S(190)
+        if not charted and s.median > 0 then
+            local d = (sale.price - s.median) / s.median
+            local pct = math.abs(d) < 0.005 and '±0%' or string.format('%s%d%%', d > 0 and '+' or '−', math.floor(math.abs(d) * 100 + 0.5))
+            text_mid(dl, x + S(170), cy + rh / 2, pct, math.abs(d) < 0.03 and P.dim or (d > 0 and P.warn or P.ok), F.semi, T.tiny)
+            whow = w - S(230)
+        end
+        local who = fit((sale.seller or '?') .. ' → ' .. (sale.buyer or '?'), F.text, T.tiny, whow)
+        text_mid(dl, x + w - measure(who, F.text, T.tiny), cy + rh / 2, who, P.faint, F.text, T.tiny)
+        cy = cy + rh
+    end
+end
+
 local function draw_sell(dl, x, y, w, h, t)
     if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
     local bagw = w - S(340)
@@ -1970,32 +2059,41 @@ local function draw_sell(dl, x, y, w, h, t)
         if picked and not can_stack then picked = false end
         if picked ~= st.sell.stack then st.sell.stack = picked st.sell.price[1] = '' st.sell.fee, st.sell.asked = nil, nil end
         if not can_stack then text(dl, sx + S(200), sy + S(7), 'not a full stack', P.faint, F.text, T.tiny) end
-        sy = sy + S(34)
+        sy = sy + S(44)
     end
-    -- what it has been selling for
+    -- the market for it, filling the room between the item and the asking price (anchored at the bottom)
     local hs = history_of(id, st.sell.stack)
-    text(dl, sx, sy, 'RECENTLY SOLD FOR', P.accent, F.disp, T.small)
-    sy = sy + S(20)
-    if hs and hs.stats then
-        text(dl, sx, sy, 'last ' .. gil(hs.stats.last) .. '  ·  median ' .. gil(hs.stats.median) .. '  ·  range ' .. gil(hs.stats.low) .. ' – ' .. gil(hs.stats.high), P.text, F.text, T.small)
-    elseif hs then
-        text(dl, sx, sy, 'No ' .. (st.sell.stack and 'stacks' or 'singles') .. ' sold lately', P.dim, F.text, T.small)
-    else
-        text(dl, sx, sy, LANG.t('Asking the house…'), P.dim, F.text, T.small)
-    end
-    sy = sy + S(30)
+    if hs == nil then fetch_history(id, st.sell.stack) end
+    local cat = I.category_of(id)
+    if cat then fetch_list(cat) end -- the stock of both kinds (cached; asked again only when stale)
+    local by = y + h - S(138)
+    panel(dl, sx - S(8), sy - S(8), pw - S(16), by - sy - S(2), P.well, 0.35, S(10))
+    draw_sell_market(dl, sx, sy, pw - S(32), by - sy - S(18), id, hs)
+    sy = by
     text(dl, sx, sy, LANG.t('ASKING PRICE'), GOLD, F.disp, T.small)
+    local label_y = sy
     sy = sy + S(20)
     imgui.SetCursorScreenPos({ sx, sy })
     local edited, _, entered = field('##ask', hs and hs.stats and ('type a price · last sold ' .. tostring(hs.stats.last)) or LANG.t('type a price in gil'), st.sell.price, pw - S(32), T.body, true)
     if edited then st.sell.fee, st.sell.asked = nil, nil end
-    sy = sy + S(40)
+    sy = sy + S(38)
     local price = tonumber(st.sell.price[1]) or 0
+    -- where your price stands against the median, beside the label
+    if price > 0 and hs and hs.stats and hs.stats.median > 0 then
+        local d = (price - hs.stats.median) / hs.stats.median
+        local verdict, vcol
+        if math.abs(d) < 0.03 then verdict, vcol = LANG.t('at the median'), P.dim
+        elseif d > 0 then verdict, vcol = string.format(LANG.t('%d%% above the median'), math.floor(d * 100 + 0.5)), P.warn
+        else verdict, vcol = string.format(LANG.t('%d%% under the median'), math.floor(-d * 100 + 0.5)), P.ok end
+        text(dl, sx + pw - S(32) - measure(verdict, F.text, T.tiny), label_y + S(2), verdict, vcol, F.text, T.tiny)
+    end
     local can = may_trade() and price > 0 and not st.sell.pending
     -- one button, named for the price: the house is asked its fee, and its answer opens the card with the whole
     -- transaction (the price, the fee paid now, the payout) to say yes to; a fee already known opens it at once
     local known = st.sell.asked and st.sell.asked.price == price and st.sell.asked.stack == st.sell.stack
-    if known then
+    if not may_trade() then
+        text(dl, sx, sy, LANG.t('Talk to an auction clerk to sell'), P.warn, F.text, T.small)
+    elseif known then
         text(dl, sx, sy, 'Listing fee ' .. gil(st.sell.fee or 0) .. ' gil, paid now', st.sell.fee and st.sell.fee > st.gil and P.danger or P.dim, F.text, T.small)
     else
         text(dl, sx, sy, 'The house quotes its listing fee first; nothing is listed until you say so', P.faint, F.text, T.tiny)
@@ -2018,7 +2116,6 @@ local function draw_sell(dl, x, y, w, h, t)
             do_ask(st.sell.slot, id, price, st.sell.stack)
         end
     end
-    if not may_trade() then text(dl, sx, sy + S(44), 'Talk to an auction clerk to sell', P.warn, F.text, T.tiny) end
 end
 
 -- LISTINGS
