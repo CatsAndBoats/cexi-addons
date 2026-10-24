@@ -2146,7 +2146,10 @@ local function draw_sell(dl, x, y, w, h, t)
     local items, hidden = {}, 0
     for _, it in ipairs(st.inventory) do
         local r = I.get(it.id)
-        local sellable = (I.listed(it.id) or not I.has_index()) and bit.band(r.flags, 0x40) == 0 -- the house lists it, and it isn't NOAUCTION-flagged by the DAT
+        -- sellable as the game's own window judges it: not NOAUCTION-flagged in the client's item data. Not by the house's
+        -- category lists: only the categories you've opened are asked for, so an item missing from them may still be
+        -- one the house takes (the fee quote says so when it doesn't)
+        local sellable = bit.band(r.flags, 0x40) == 0
         if settings.sellable_only and not sellable then hidden = hidden + 1
         else items[#items + 1] = { it = it, r = r, sellable = sellable } end
     end

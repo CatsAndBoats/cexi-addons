@@ -175,7 +175,8 @@ activity record is `<name>-activity.lua` beside it (up to 2,000 entries); the pr
 own window, only the category you open is asked (again each time you open it); nothing about which items are sold
 is shipped with the addon, so a new auction item shows up as soon as the server lists it. Search covers the
 categories opened on that server so far; under the results, **Include the other categories** asks the rest once
-(one at a time) and keeps them too.
+(one at a time) and keeps them too. The Sell tab doesn't use it: what can be sold is judged as the game's own window
+judges it, by the no-auction flag in the client's item data.
 `prices-<search host>.lua`, one per server, up to 160 sales per item and kind, series with no sale in 120 days
 dropped.
 
