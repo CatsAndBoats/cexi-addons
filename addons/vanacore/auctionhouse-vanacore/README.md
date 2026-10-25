@@ -39,7 +39,7 @@ Version **1.0.0Jd**. Later Japanese revisions are **1.0.0Je**, and so on. Author
   - The help along the bottom of the window matches these actions. On a Japanese client that help is Japanese. The button pictures follow the game’s pad settings.
 - **1.0.0Jb.** Confirm on Name, Level, or Stock flips that order once and leaves the cursor there. Confirm on Compare, In stock, or Usable turns that chip on or off once and leaves the cursor there.
 - **1.0.0Jc.** `/ah s` with at least one hit leaves the cursor on the result list. A bid reads 落札 or 落札失敗, and a sale of your own listing reads 売却. On Sell, Confirm stays on the asking price, then Confirm or the active-window button moves to List, and Cancel returns to the bag. The listing confirmation follows the system notice. The category list wraps upward as well as downward.
-- **1.0.0Jd.** Moving through the categories no longer leaves the cursor in the sale history. The D-pad on Close no longer jumps elsewhere. While this window is open with the pad switched on, FancyChatJP leaves the L/R modifier alone.
+- **1.0.0Jd.** Moving through the categories no longer leaves the cursor in the sale history. The D-pad on Close no longer jumps elsewhere. While this window is open with the pad switched on, FancyChatJP does not take its modifier button, whichever button that is set to. Upstream FancyChat can still take that press when the two overlap.
 
 ### 日本語
 
@@ -62,7 +62,7 @@ Version **1.0.0Jd**. Later Japanese revisions are **1.0.0Je**, and so on. Author
   - 画面下のヘルプは、今の操作に合わせています。日本語クライアントでは日本語です。ボタンの絵は、ゲームのパッド設定に従います。
 - **1.0.0Jb.** 名前・レベル・在庫の上で決定すると、昇順と降順が一度だけ切り替わり、カーソルはそこに残ります。比較・在庫あり・装備可能の上で決定すると、オンとオフが一度だけ切り替わり、カーソルはそこに残ります。
 - **1.0.0Jc.** `/ah s` で1件以上当たると、カーソルは検索結果に移ります。落札は「落札」、失敗は「落札失敗」、自分の出品が売れると「売却」です。出品では、決定で価格欄に留まり、金額のあとの決定かアクティブウィンドウ切替で出品ボタンへ移り、キャンセルでバッグへ戻ります。出品確認の文は、システムの案内に合わせています。区分リストは、上端から下端へも続きます。
-- **1.0.0Jd.** 区分を動かしても、カーソルが落札履歴へ移らなくなりました。閉じるボタンの上で十字キーを押しても、別の場所へ飛びません。この画面を開いてパッドを有効にしているあいだ、FancyChatJP は L/R の修飾ボタンを取りません。
+- **1.0.0Jd.** 区分を動かしても、カーソルが落札履歴へ移らなくなりました。閉じるボタンの上で十字キーを押しても、別の場所へ飛びません。この画面を開いてパッドを有効にしているあいだ、FancyChatJP は修飾ボタンを取りません。修飾ボタンがどのボタンかは設定次第です。本家の FancyChat は、競売と重なったときにその操作を奪うことがあります。
 
 ## Install
 
