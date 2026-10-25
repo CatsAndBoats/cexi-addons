@@ -10,16 +10,17 @@
     server answers with the house's Open packet, and that is what lets you bid and sell (and where you stood is kept,
     so /ah there later can trade as well).
 
+    1.0.0Je (Hando): the pad help matches the buttons in use, and Confirm on the search box returns to the results the text already found.
     1.0.0Jd (Hando): the category cursor and Close stay where they are, and the pad is not handed to FancyChat while this window is open.
     1.0.0Jc (Hando): search results take the cursor, Japanese sale notices, the sell-tab pad, and category-list wrap.
     1.0.0Jb (Hando): a Confirm on the sort or filter strip toggles once and stays.
     1.0.0Ja (Tsuyumi, Hando): Japanese client text, begun by Tsuyumi, and the controller layout described in README.md.
-    An English client keeps the original English UI. Later Japanese revisions are 1.0.0Je, and so on.
+    An English client keeps the original English UI. Later Japanese revisions are 1.0.0Jf, and so on.
 ]]
 
 addon.name    = 'auctionhouse-vanacore'
 addon.author  = 'Carver, Tsuyumi, Hando'
-addon.version = '1.0.0Jd'
+addon.version = '1.0.0Je'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -962,8 +963,9 @@ end
 -- a pad in use only walks the widgets of the pane it is in; the mouse still clicks every button
 local function pad_nav_allows(key)
     local s = st.pad_scope
-    if key == '##ahsearch' then return false end -- the search box is typed into; the D-pad never moves there
+    if key == '##ahsearch' then return false end -- the mouse types here; the pad lands on ##ahsearch_pad instead
     if s == nil then return true end
+    if s == 'search' then return key == '##ahsearch_pad' end
     if s == 'close' then return key == '##close' end
     if s == 'cats' then
         -- one row at a time, so the D-pad cannot wrap downward on its own and stop at the top.
@@ -1181,6 +1183,7 @@ local function field(id, hint, buf, width, size, numeric, overlap)
     local active, hovered = im.IsItemActive(), im.IsItemHovered()
     local now = clock()
     fs.h, fs.focused = h, im.IsItemFocused() and not active -- for the controller's digit editor, should it take over
+    if id == '##ahsearch' and st.pad_where == 'search' then st.pad_hold = 'all' end
     -- a controller, with the box focused but not being typed in: up and down step the price (a tenth of its size,
     -- at least 10 gil); an empty box starts from the hint's last sale
     if numeric and im.IsItemFocused() and not active then
@@ -1383,10 +1386,21 @@ local function draw_header(dl, x, y, w, t)
     pill(dl, px, by + S(5), label, mix(GOLD, P.ink, 0.78), GOLD, F.disp, T.small, S(9), 'coins')
     -- the search box, on the buy tab: up here, where there's room (the tab row holds the tabs and the list's filters)
     if st.tab == 'buy' then
+        local hint = U.t('Search every item by name')
         local sw = S(300)
+        if U.lang() == 'ja' then sw = math.max(sw, measure(hint, F.text, T.small) + S(48)) end
         local sx = px - S(20) - sw
         imgui.SetCursorScreenPos({ sx, by })
-        local changed = field('##ahsearch', U.t('Search every item by name'), st.query, sw, T.small, false, true)
+        -- the pad stands on its own button, so Confirm returns to the results instead of opening the text box. The mouse still clicks the box.
+        if st.pad_where == 'search' then
+            if not imgui.IsAnyItemActive() and not st.pad_search_seated then U.focus_key('##ahsearch_pad') end
+            imgui.SetNextItemAllowOverlap()
+            hit('##ahsearch_pad', sw, T.small + S(14))
+            if imgui.IsItemFocused() then st.pad_search_seated = true
+            elseif not imgui.IsAnyItemActive() then st.pad_search_seated = nil end
+            imgui.SetCursorScreenPos({ sx, by })
+        end
+        local changed = field('##ahsearch', hint, st.query, sw, T.small, false, true)
         if changed then
             local q = st.query[1] or ''
             if #q >= 2 then st.results, st.result_total = I.search(q, 80) fetch_result_lists() else st.results = nil end
@@ -1667,7 +1681,7 @@ local function draw_item_row(dl, id, x, y, w, alpha, lines)
         local lbl = gil(hs.stats.last) .. ' gil'
         text(dl, x + w - S(14) - measure(lbl, F.semi, T.small), y + S(34), lbl, GOLD, F.semi, T.small, alpha)
     end
-    if pressed and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
+    if pressed and not st.pad_mute and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
         U.ripple_at(key)
         -- a controller: Confirm picks the item and goes on to its card's price box, ready for a bid
         if PAD.shown() then
@@ -2685,6 +2699,36 @@ local function seat_close()
     st.pad_where = 'close'
 end
 
+-- both clients can move onto the search box. Typing stays with the mouse; Confirm there returns to the results the text already found.
+local function search_pad() return true end
+
+local function enter_search()
+    st.pad_search_from = st.tab
+    st.pad_search_seated = nil
+    st.tab = 'buy'
+    st.settings_open = false
+    st.pad_where = 'search'
+    st.pad_strip_from, st.pad_strip_i = nil, nil
+    st.pad_card, st.pad_close, st.pad_seat, st.pad_price_hold, st.pad_sell_part = nil, nil, nil, nil, nil
+    st.pad_mute = 'held'
+    return true
+end
+
+local function leave_search()
+    -- back to where the search box was opened from. Confirm is what returns to the results.
+    local tab = st.pad_search_from or 'buy'
+    st.pad_search_from, st.pad_search_seated = nil, nil
+    st.tab = tab
+    if tab == 'buy' then seat_cats()
+    elseif tab == 'sell' then seat_bag()
+    else st.pad_where, st.pad_card, st.pad_first, st.pad_close = nil, nil, 3, nil end
+end
+
+local function cycle_act_filter()
+    local f = { all = 'bought', bought = 'sold', sold = 'all' }
+    st.act_filter, st.act_page, st.act_top = f[st.act_filter] or 'all', 1, true
+end
+
 local STRIP_SORT = { 'name', 'level', 'stock' }
 
 local function enter_strip(kind)
@@ -2748,13 +2792,34 @@ local function move_strip(dir)
     end
 end
 
+local function reopen_results()
+    local q = st.query[1] or ''
+    if #q >= 2 and not (st.results and #st.results > 0) then
+        st.results, st.result_total = I.search(q, 80)
+        fetch_result_lists()
+    end
+    if not (st.results and #st.results > 0) then return false end
+    st.pad_search_from, st.pad_search_seated = nil, nil
+    st.tab = 'buy'
+    st.pad_mute = 'held'
+    st.pad_first, st.pad_first_id, st.pad_cats, st.pad_close = 3, nil, false, nil
+    st.pad_where, st.pad_row, st.pad_card, st.pad_seat, st.pad_price_hold = 'items', nil, nil, nil, nil
+    return true
+end
+
 local function pad_buttons()
     if st.pad_leave then seat_results() end
+    if st.pad_where == 'search' and PAD.pressed('confirm') and not st.pad_mute then
+        reopen_results()
+        return
+    end
     -- a price being typed still answers Cancel here: it leaves the whole card, it does not stop on the history
-    if PAD.pressed('cancel') and (on_bid_card() or not imgui.IsAnyItemActive()) then
+    if PAD.pressed('cancel') and (on_bid_card() or st.pad_where == 'search' or not imgui.IsAnyItemActive()) then
         st.pad_cancels = (st.pad_cancels or 0) + 1
         local on_close = st.pad_where == 'close'
-        if st.confirm then
+        if st.pad_where == 'search' then
+            leave_search()
+        elseif st.confirm then
             st.confirm = nil
             if st.confirm_kind_buy then st.pad_seat = 'bid' end
         elseif st.settings_open then st.settings_open = false
@@ -2780,17 +2845,20 @@ local function pad_buttons()
         return
     end
     -- the active-window button, on the asking price, moves onto List. It does not press it.
-    if st.tab == 'sell' and not st.settings_open and not st.confirm and PAD.pressed('options') and (st.pad_editing or st.pad_where == 'sell_box') and st.pad_sell_part ~= 'list' then
-        local ask = field_state['##ask']
-        if ask then ask.pad_on = false end
-        st.pad_editing = false
-        st.pad_seat, st.pad_where, st.pad_sell_part, st.pad_price_hold, st.pad_mute = 'list', 'sell_box', 'list', nil, 'held'
+    -- from the bag or the List button, on an English client, it also reaches the search box.
+    if st.tab == 'sell' and not st.settings_open and not st.confirm and PAD.pressed('options') then
+        if (st.pad_editing or st.pad_where == 'sell_box') and st.pad_sell_part ~= 'list' then
+            local ask = field_state['##ask']
+            if ask then ask.pad_on = false end
+            st.pad_editing = false
+            st.pad_seat, st.pad_where, st.pad_sell_part, st.pad_price_hold, st.pad_mute = 'list', 'sell_box', 'list', nil, 'held'
+        else enter_search() end
     end
     if st.pad_editing then return end -- a price box has the pad (pad_price_box)
     st.confirm_kind_buy = st.confirm ~= nil and st.confirm.kind == 'buy'
     if st.confirm then return end
     local turn = (PAD.pressed('r1') and 1 or 0) - (PAD.pressed('l1') and 1 or 0)
-    if turn ~= 0 then
+    if turn ~= 0 and st.pad_where ~= 'search' then
         local i = 1
         for k, tab in ipairs(TAB_ORDER) do if tab == st.tab then i = k end end
         st.tab = TAB_ORDER[(i - 1 + turn) % #TAB_ORDER + 1]
@@ -2800,7 +2868,7 @@ local function pad_buttons()
     end
     if st.tab == 'buy' and not st.settings_open then
         local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
-        if step ~= 0 and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
+        if step ~= 0 and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' and st.pad_where ~= 'search' then
             local i = 1
             for k, e in ipairs(CAT_ORDER) do if e.cat == st.category then i = k end end
             local e = CAT_ORDER[(i - 1 + step) % #CAT_ORDER + 1]
@@ -2814,10 +2882,18 @@ local function pad_buttons()
         end
         -- the game's active-window button moves onto a strip. It does not press the focused row.
         if PAD.pressed('options') then
-            if st.pad_where == 'filters' or st.pad_where == 'sort' then leave_strip()
-            elseif st.pad_card or st.pad_where == 'price' or st.pad_where == 'bid' or st.pad_where == 'card' or st.pad_where == 'hist' then cycle_card()
+            local on_card = st.pad_card or st.pad_where == 'price' or st.pad_where == 'bid' or st.pad_where == 'card' or st.pad_where == 'hist'
+            local at_price = st.pad_where == 'price' or st.pad_where == 'bid' or st.pad_card == 'price' or st.pad_card == 'bid'
+            if st.pad_where == 'search' then leave_search()
+            elseif st.pad_where == 'sort' then leave_strip() -- the result list and its sort strip, and nothing past them
+            elseif st.pad_where == 'filters' then
+                if not enter_search() then leave_strip() end
+            elseif on_card and at_price and enter_search() then
+                -- English: the price stop of the bid card continues on to the search box
+            elseif on_card then cycle_card()
             elseif st.pad_where == 'items' then enter_strip('sort')
-            elseif st.pad_where == 'cats' then enter_strip('filters') end
+            elseif st.pad_where == 'cats' then enter_strip('filters')
+            elseif st.pad_where == 'close' then enter_search() end
         end
         if st.pad_where == 'filters' or st.pad_where == 'sort' then
             local dir = (PAD.pressed('right') and 1 or 0) - (PAD.pressed('left') and 1 or 0)
@@ -2832,8 +2908,8 @@ local function pad_buttons()
                 st.pad_mute = 'held'
             end
         end
-        if PAD.pressed('menu') and st.pad_where ~= 'filters' then settings.usable = not settings.usable save_settings() end
-        if PAD.pressed('back') and st.pad_where ~= 'filters' then settings.compare = not settings.compare save_settings() end
+        if PAD.pressed('menu') and st.pad_where ~= 'filters' and st.pad_where ~= 'search' then settings.usable = not settings.usable save_settings() end
+        if PAD.pressed('back') and st.pad_where ~= 'filters' and st.pad_where ~= 'search' then settings.compare = not settings.compare save_settings() end
         if st.pad_where == 'cats' or st.pad_where == 'items' then
             local page = (PAD.repeating('right', 0.28, 0.28) and 1 or 0) - (PAD.repeating('left', 0.28, 0.28) and 1 or 0)
             if page ~= 0 then st.pad_page_dir = page end
@@ -2853,65 +2929,138 @@ local function pad_buttons()
         local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
         if step ~= 0 then st.act_page, st.act_top, st.pad_first, st.pad_first_id = st.act_page + step, true, 3, nil end -- (clamped where it's drawn)
         if PAD.pressed('options') then
-            local f = { all = 'bought', bought = 'sold', sold = 'all' }
-            st.act_filter, st.act_page, st.act_top = f[st.act_filter] or 'all', 1, true
+            if search_pad() then enter_search() else cycle_act_filter() end
         end
+        if search_pad() and PAD.pressed('menu') then cycle_act_filter() end
+    end
+    if (st.tab == 'watch' or st.tab == 'sales') and not st.settings_open and not st.confirm and PAD.pressed('options') then
+        enter_search()
     end
     if PAD.pressed('start') then st.settings_open = not st.settings_open end
 end
 
-local function legend_row()
-    return {
-        buy = { { 'confirm', U.t('Select, then Bid') }, { 'cancel', U.t('Go back') }, { 'l1 r1', U.t('Tabs') }, { 'l2 r2', U.t('Category') },
-            { 'options', U.t('Switch') }, { 'menu', U.t('Usable') }, { 'back', U.t('Compare') }, { 'start', U.t('Settings') } },
-        sell = { { 'confirm', U.t('Select') }, { 'cancel', U.t('Go back') }, { 'l1 r1', U.t('Tabs') }, { 'updown', U.t('Price') }, { 'start', U.t('Settings') } },
-        activity = { { 'confirm', U.t('Select') }, { 'cancel', U.t('Go back') }, { 'l1 r1', U.t('Tabs') }, { 'l2 r2', U.t('Page') }, { 'options', U.t('Filter') }, { 'start', U.t('Settings') } },
-        other = { { 'confirm', U.t('Select') }, { 'cancel', U.t('Go back') }, { 'l1 r1', U.t('Tabs') }, { 'start', U.t('Settings') } },
-        edit = { { 'updown', U.t('Digit') }, { 'left right', U.t('Column') }, { 'confirm', U.t('Keep') }, { 'cancel', U.t('Undo') } },
-    }
-end
 local function draw_legend(dl, x, y, w)
     dl:AddLine({ x + S(16), y }, { x + w - S(16), y }, u32(P.line, 0.8), 1)
-    local LEGEND = legend_row()
-    local items = (st.pad_editing and st.tab == 'sell') and {
-            { 'updown', U.t('Digit') }, { 'left right', U.t('Column') }, { 'confirm', U.t('List it') }, { 'cancel', U.t('Bag') },
-        } or (st.pad_editing and LEGEND.edit or LEGEND[st.tab] or LEGEND.other)
-    if st.tab == 'sell' and not st.pad_editing then
-        if st.pad_where == 'sell_box' and st.pad_sell_part == 'list' then
-            items = { { 'confirm', U.t('List it') }, { 'cancel', U.t('Bag') }, { 'updown', U.t('Price') } }
-        elseif st.pad_where == 'sell_box' then
-            items = { { 'confirm', U.t('Amount') }, { 'cancel', U.t('Bag') }, { 'options', U.t('List it') } }
-        else
-            items = { { 'confirm', U.t('Price') }, { 'cancel', U.t('Go back') }, { 'l1 r1', U.t('Tabs') }, { 'start', U.t('Settings') } }
+    local function add(items, key, label) items[#items + 1] = { key, U.t(label) } end
+    local function buy_tail(items, where)
+        add(items, 'l1 r1', 'Tabs')
+        if where ~= 'filters' and where ~= 'sort' and where ~= 'search' then add(items, 'l2 r2', 'Category') end
+        if where ~= 'filters' and where ~= 'sort' and where ~= 'search' then
+            add(items, 'menu', 'Usable')
+            add(items, 'back', 'Compare')
         end
+        add(items, 'start', 'Settings')
     end
-    -- on Buy, Confirm and Cancel say what they do in the pane the focus is in
-    if st.tab == 'buy' and not st.pad_editing and (st.pad_where == 'filters' or st.pad_where == 'sort') then
-        items = {
-            { 'left right', U.t('Move') },
-            { 'confirm', st.pad_where == 'sort' and U.t('Direction') or U.t('On or off') },
-            { 'options', U.t('Return') }, { 'cancel', U.t('Return') },
-        }
-    elseif st.tab == 'buy' and not st.pad_editing then
-        local where = st.pad_where
-        local on_list = where == 'cats' or where == 'items'
-        local confirm = where == 'close' and U.t('Close') or where == 'cats' and U.t('Open category') or where == 'price' and U.t('Amount') or where == 'bid' and U.t('Bid') or where == 'card' and U.t('Price, then Bid') or U.t('Pick item')
-        local cancel = where == 'cats' and U.t('To close') or (on_bid_card() or where == 'price' or where == 'card' or where == 'bid' or where == 'hist') and U.t('Results') or U.t('Categories')
-        items = { { 'confirm', confirm }, { 'cancel', cancel } }
-        if where == 'price' then items[#items + 1] = { 'left right', U.t('Bid') }
-        elseif where == 'bid' then items[#items + 1] = { 'left right', U.t('Amount') }
-        elseif where == 'hist' then items[#items + 1] = { 'updown', U.t('Scroll') } end
-        if on_list then
-            items[#items + 1] = { 'updown', U.t('Move') }
-            items[#items + 1] = { 'left right', U.t('Page') }
+    local items
+    local where = st.pad_where
+    if where == 'search' then
+        items = {}
+        if (st.query[1] or '') ~= '' or (st.results and #st.results > 0) then add(items, 'confirm', 'Results') end
+        add(items, 'options', 'Return')
+        add(items, 'cancel', 'Return')
+        add(items, 'start', 'Settings')
+    elseif st.pad_editing and st.tab == 'sell' then
+        items = {}
+        add(items, 'updown', 'Digit')
+        add(items, 'left right', 'Column')
+        add(items, 'confirm', 'List it')
+        add(items, 'cancel', 'Bag')
+    elseif st.pad_editing then
+        items = {}
+        add(items, 'updown', 'Digit')
+        add(items, 'left right', 'Column')
+        add(items, 'confirm', 'Keep')
+        add(items, 'cancel', 'Results')
+    elseif st.tab == 'sell' then
+        items = {}
+        if where == 'sell_box' and st.pad_sell_part == 'list' then
+            add(items, 'confirm', 'List it')
+            add(items, 'cancel', 'Bag')
+            add(items, 'up', 'Price')
+            if search_pad() then add(items, 'options', 'Search') end
+        elseif where == 'sell_box' then
+            add(items, 'confirm', 'Amount')
+            add(items, 'cancel', 'Bag')
+            add(items, 'options', 'List it')
+        else
+            add(items, 'confirm', 'Price')
+            add(items, 'updown', 'Move')
+            add(items, 'cancel', 'To close')
+            if search_pad() then add(items, 'options', 'Search') end
         end
-        for i = 3, #LEGEND.buy do
-            local it = LEGEND.buy[i]
-            if it[1] == 'options' and where == 'items' then items[#items + 1] = { 'options', U.t('Sort') }
-            elseif it[1] == 'options' and where == 'cats' then items[#items + 1] = { 'options', U.t('Filter') }
-            elseif it[1] == 'options' then items[#items + 1] = { 'options', U.t('Switch') }
-            else items[#items + 1] = it end
+        add(items, 'l1 r1', 'Tabs')
+        add(items, 'start', 'Settings')
+    elseif st.tab == 'buy' and (where == 'filters' or where == 'sort') then
+        items = {}
+        add(items, 'left right', 'Move')
+        add(items, 'confirm', where == 'sort' and 'Direction' or 'On or off')
+        add(items, 'options', where == 'sort' and 'Results' or (search_pad() and 'Search' or 'Return'))
+        add(items, 'cancel', 'Return')
+        buy_tail(items, where)
+    elseif st.tab == 'buy' then
+        items = {}
+        if where == 'close' then
+            add(items, 'confirm', 'Close')
+            add(items, 'cancel', 'Categories')
+            if search_pad() then add(items, 'options', 'Search') end
+        elseif where == 'cats' then
+            add(items, 'confirm', 'Open category')
+            add(items, 'updown', 'Move')
+            add(items, 'left right', 'Page')
+            add(items, 'cancel', 'To close')
+            add(items, 'options', 'Filter')
+        elseif where == 'items' then
+            add(items, 'confirm', 'Pick item')
+            add(items, 'updown', 'Move')
+            add(items, 'left right', 'Page')
+            add(items, 'cancel', 'Categories')
+            add(items, 'options', 'Sort')
+        elseif where == 'price' then
+            add(items, 'confirm', 'Amount')
+            add(items, 'left right', 'Bid')
+            add(items, 'cancel', 'Results')
+            add(items, 'options', search_pad() and 'Search' or 'Switch')
+        elseif where == 'bid' then
+            add(items, 'confirm', 'Bid')
+            add(items, 'left right', 'Amount')
+            add(items, 'cancel', 'Results')
+            add(items, 'options', search_pad() and 'Search' or 'Switch')
+        elseif where == 'hist' then
+            add(items, 'updown', 'Scroll')
+            add(items, 'cancel', 'Results')
+            add(items, 'options', 'Switch')
+        elseif where == 'card' and st.pad_card == 'watch' then
+            add(items, 'confirm', 'Watch')
+            add(items, 'cancel', 'Results')
+            add(items, 'options', 'Switch')
+        elseif where == 'card' then
+            add(items, 'confirm', 'Select')
+            add(items, 'cancel', 'Results')
+            add(items, 'options', 'Switch')
+        else
+            add(items, 'confirm', 'Pick item')
+            add(items, 'cancel', 'Categories')
         end
+        buy_tail(items, where)
+    elseif st.tab == 'activity' then
+        items = {}
+        add(items, 'cancel', 'To close')
+        add(items, 'l1 r1', 'Tabs')
+        add(items, 'l2 r2', 'Page')
+        if search_pad() then
+            add(items, 'options', 'Search')
+            add(items, 'menu', 'Filter')
+        else
+            add(items, 'options', 'Filter')
+        end
+        add(items, 'start', 'Settings')
+    else
+        items = {}
+        add(items, 'confirm', 'Select')
+        add(items, 'cancel', 'To close')
+        add(items, 'l1 r1', 'Tabs')
+        if search_pad() then add(items, 'options', 'Search') end
+        add(items, 'start', 'Settings')
     end
     -- measured by drawing off screen once, then centred
     local lw = PAD.legend(dl, -10000, -10000, items, 0)
@@ -2959,6 +3108,7 @@ local function draw_main(t)
         st.pad_editing = false -- set again by a price box being edited, drawn below
         st.pad_where_now = nil -- which pane has the focus, found as it's drawn below
         if st.settings_open or st.confirm or not PAD.shown() then st.pad_scope = nil
+        elseif st.pad_where == 'search' then st.pad_scope = 'search'
         elseif st.tab == 'buy' and (st.pad_where == 'filters' or st.pad_where == 'sort') then st.pad_scope = st.pad_where
         elseif st.pad_close or st.pad_where == 'close' then st.pad_scope = 'close'
         elseif st.tab == 'buy' and (st.pad_card or st.pad_where == 'card' or st.pad_where == 'price' or st.pad_where == 'bid') then st.pad_scope = 'card'
@@ -3006,7 +3156,7 @@ local function draw_main(t)
         if st.tab ~= 'buy' then st.card_focus = false end
         local where = st.pad_where_now or (st.card_focus and 'card' or nil)
         -- a Cancel that just sent the focus somewhere keeps that pane until the move has landed
-        if st.pad_where == 'filters' or st.pad_where == 'sort' or st.pad_where == 'close' or st.pad_where == 'cats' then
+        if st.pad_where == 'filters' or st.pad_where == 'sort' or st.pad_where == 'close' or st.pad_where == 'cats' or st.pad_where == 'search' then
             -- held: Close and the category list keep the cursor. A D-pad press must not follow the history scroller
             -- or another button that happened to take the highlight
         elseif st.tab == 'sell' and st.pad_editing then
@@ -3028,7 +3178,7 @@ local function draw_main(t)
             elseif now_t - (st.pad_where_at or -1) > 0.25 then st.pad_where = nil end
         end
         -- left and right scroll a page on a list; on the bid card the D-pad is the card's, not ImGui's
-        if st.pad_where == 'filters' or st.pad_where == 'sort' or st.pad_where == 'close' then st.pad_hold = 'all'
+        if st.pad_where == 'filters' or st.pad_where == 'sort' or st.pad_where == 'close' or st.pad_where == 'search' then st.pad_hold = 'all'
         elseif st.tab == 'sell' and st.pad_where == 'sell_box' and PAD.shown() then st.pad_hold = 'all'
         elseif st.pad_card and PAD.shown() then st.pad_hold = 'all'
         elseif PAD.shown() and (st.pad_where == 'cats' or st.pad_where == 'items') and not st.pad_editing then st.pad_hold = 'x' end

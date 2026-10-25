@@ -141,7 +141,11 @@ local function fields(s)
 end
 
 local function read_bindings()
-    for i, n in pairs(DNUM) do st.dmap[i] = n end
+    st.dlabel = {} -- logical name -> the number the game's config shows (Button3 is "3")
+    for i, n in pairs(DNUM) do
+        st.dmap[i] = n
+        st.dlabel[n] = tostring(i + 1)
+    end
     local ok, mode = pcall(vana.config.game, 'padmode000')
     local m = ok and fields(mode) or {}
     if m[6] ~= nil then st.xinput_mode = m[6] ~= 0 end
@@ -153,10 +157,11 @@ local function read_bindings()
             if st.xinput_mode then
                 if XNUM[v] then st.map[what] = XNUM[v] end
             else
-                -- a DirectInput button: it is this function; the name it takes is its slot in the default order
+                -- a DirectInput button: the game calls it Button(v+1). The legend uses that number, not LB or A.
                 local name = DNUM[v] or ('b' .. v)
                 st.map[what] = name
                 st.dmap[v] = name
+                st.dlabel[name] = tostring(v + 1)
             end
         end
     end
@@ -175,9 +180,18 @@ local function read_bindings()
                         local name = DNUM[v] or ('b' .. v)
                         st.map[what] = name
                         st.dmap[v] = name
+                        st.dlabel[name] = tostring(v + 1)
                     end
                 end
             end
+        end
+    end
+    -- the four buttons the game's config names stay that config's numbers, whichever path filled the map
+    if not st.xinput_mode then
+        for what, slot in pairs(SLOT) do
+            local v = s[slot + 1]
+            local name = st.map[what]
+            if v and v >= 0 and name then st.dlabel[name] = tostring(v + 1) end
         end
     end
 end
@@ -431,12 +445,31 @@ function PAD.button_of(meaning) return st.map[meaning] or meaning end
 local FACE = { a = { 'A', '#6CC24A' }, b = { 'B', '#E8453C' }, x = { 'X', '#3B8BEB' }, y = { 'Y', '#F2C035' } }
 local PILL = { l1 = 'LB', r1 = 'RB', l2 = 'LT', r2 = 'RT', l3 = 'LS', r3 = 'RS', start = 'MENU', back = 'VIEW',
     up = '▲', down = '▼', left = '◀', right = '▶', updown = '▲▼', dpad = '✚', lstick = 'L', rstick = 'R' }
+-- these words are the XInput names. A DirectInput pad has button numbers instead, so they are not a fallback.
+local XNAME = { l1 = true, r1 = true, l2 = true, r2 = true, l3 = true, r3 = true, start = true, back = true,
+    a = true, b = true, x = true, y = true }
+
+local function pill(dl, x, cy, label, size, alpha)
+    local P, S, F, T = U.P, U.S, U.fonts(), U.sizes()
+    local tw = U.measure(label, F.semi, T.tiny - 1)
+    local w, h = tw + S(10), S((size or 9) * 2)
+    dl:AddRectFilled({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.12 * alpha), S(5))
+    dl:AddRect({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.5 * alpha), S(5), 15, 1)
+    U.text_center(dl, x, cy, w, label, P.text, F.semi, T.tiny - 1, alpha)
+    return w
+end
 
 -- one glyph; returns its width
 function PAD.glyph(dl, x, cy, name, size, alpha)
     local P, S, F, T = U.P, U.S, U.fonts(), U.sizes()
     alpha = alpha or 1
     name = st.map[name] or name
+    -- Enable XInput off: the game's own names, Button1 onward. The cross stays arrows.
+    if not st.xinput_mode then
+        local num = st.dlabel and st.dlabel[name]
+        if num then return pill(dl, x, cy, num, size, alpha) end
+        if XNAME[name] then return 0 end
+    end
     local face = FACE[name]
     if face then
         local r = S(size or 9)
@@ -445,13 +478,7 @@ function PAD.glyph(dl, x, cy, name, size, alpha)
         U.text_center(dl, x, cy, r * 2, face[1], face[2], F.bold, T.tiny - 1, alpha)
         return r * 2
     end
-    local label = PILL[name] or name:upper()
-    local tw = U.measure(label, F.semi, T.tiny - 1)
-    local w, h = tw + S(10), S((size or 9) * 2)
-    dl:AddRectFilled({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.12 * alpha), S(5))
-    dl:AddRect({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.5 * alpha), S(5), 15, 1)
-    U.text_center(dl, x, cy, w, label, P.text, F.semi, T.tiny - 1, alpha)
-    return w
+    return pill(dl, x, cy, PILL[name] or name:upper(), size, alpha)
 end
 
 -- a row of them: items = { { 'confirm', 'Select' }, { 'l1 r1', 'Tabs' }, ... }; returns the width used
