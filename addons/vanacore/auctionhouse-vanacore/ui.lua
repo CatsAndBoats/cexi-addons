@@ -783,9 +783,14 @@ end
 
 local function hit(key, w, h)
     -- 8: ImGuiButtonFlags_EnableNav, so a controller's focus can land on it (ImGui 1.90+ keeps invisible buttons out
-    -- of navigation unless told otherwise). 0 keeps the mouse click and leaves the D-pad out of it.
+    -- of navigation unless told otherwise). 0 keeps the mouse click and leaves the D-pad out of it. NoNav on the
+    -- item as well: a button flag alone still left the D-pad a way onto a row from Close or the category list.
     if A.want_focus == key then imgui.SetKeyboardFocusHere() A.want_focus = nil end
-    local pressed = imgui.InvisibleButton(key, { math.max(1, w), math.max(1, h) }, U.nav_allows(key) and 8 or 0)
+    local allow = U.nav_allows(key)
+    local nonav = false
+    if not allow and imgui.PushItemFlag then nonav = pcall(imgui.PushItemFlag, 2, true) == true end
+    local pressed = imgui.InvisibleButton(key, { math.max(1, w), math.max(1, h) }, allow and 8 or 0)
+    if nonav and imgui.PopItemFlag then pcall(imgui.PopItemFlag) end
     -- VanaCore feeds the active-window button to ImGui as an activation, so it would also press the focused row
     if A.suppress_press then pressed = false end
     local hovered = imgui.IsItemHovered()

@@ -10,15 +10,16 @@
     server answers with the house's Open packet, and that is what lets you bid and sell (and where you stood is kept,
     so /ah there later can trade as well).
 
+    1.0.0Jd (Hando): the category cursor and Close stay where they are, and the pad is not handed to FancyChat while this window is open.
     1.0.0Jc (Hando): search results take the cursor, Japanese sale notices, the sell-tab pad, and category-list wrap.
     1.0.0Jb (Hando): a Confirm on the sort or filter strip toggles once and stays.
     1.0.0Ja (Tsuyumi, Hando): Japanese client text, begun by Tsuyumi, and the controller layout described in README.md.
-    An English client keeps the original English UI. Later Japanese revisions are 1.0.0Jd, and so on.
+    An English client keeps the original English UI. Later Japanese revisions are 1.0.0Je, and so on.
 ]]
 
 addon.name    = 'auctionhouse-vanacore'
 addon.author  = 'Carver, Tsuyumi, Hando'
-addon.version = '1.0.0Jc'
+addon.version = '1.0.0Jd'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -965,12 +966,15 @@ local function pad_nav_allows(key)
     if s == nil then return true end
     if s == 'close' then return key == '##close' end
     if s == 'cats' then
-        -- one row at a time, so the D-pad cannot wrap downward on its own and stop at the top
+        -- one row at a time, so the D-pad cannot wrap downward on its own and stop at the top.
+        -- the row that still has the focus stays allowed until the next one has taken it: dropping it in the same
+        -- frame made ImGui throw the highlight at the history scroller, which then took no input
         if st.pad_cat_paging then return key:sub(1, 5) == '##grp' or key:sub(1, 5) == '##cat' end
-        if st.pad_cat_focus then return key == st.pad_cat_focus end
+        if st.pad_cat_focus and key == st.pad_cat_focus then return true end
+        if st.pad_cat_keep and key == st.pad_cat_keep then return true end
         local order = st.pad_cat_order
         if order and st.pad_cat_i and order[st.pad_cat_i] then return key == order[st.pad_cat_i] end
-        return key:sub(1, 5) == '##grp' or key:sub(1, 5) == '##cat'
+        return false
     end
     if s == 'items' then return key:sub(1, 6) == '##item' end
     if s == 'filters' then
@@ -1096,7 +1100,7 @@ local function pad_price_box(id, hint, buf, width, size, fs)
             buf[1] = nv > 0 and tostring(nv) or ''
             changed, v = true, nv
         end
-    elseif focused and id == '##bid' and (st.pad_card == nil or st.pad_card == 'price' or st.pad_card == 'bid') and st.pad_where ~= 'items' and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' and not st.pad_first then
+    elseif focused and id == '##bid' and (st.pad_card == nil or st.pad_card == 'price' or st.pad_card == 'bid') and st.pad_where ~= 'items' and st.pad_where ~= 'cats' and st.pad_where ~= 'close' and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' and not st.pad_first then
         -- not editing yet: left and right move between this box and Bid. Up and down do not leave the card.
         st.pad_where_now = 'price'
         if st.pad_card == nil or st.pad_card == 'price' or st.pad_card == 'bid' then st.pad_card = 'price' end
@@ -1343,7 +1347,11 @@ local function draw_header(dl, x, y, w, t)
     if st.pad_close == 2 or st.pad_close == 1 then imgui.SetWindowFocus() end
     if st.pad_close == 1 then imgui.SetKeyboardFocusHere() end
     if icon_button(dl, '##close', bx, by, size, 'xmark', P.dim, U.t('Close (Esc)')) then st.open = false end
-    if imgui.IsItemFocused() then st.pad_where_now = 'close' end
+    if imgui.IsItemFocused() then
+        st.pad_where_now = 'close'
+    elseif PAD.shown() and st.pad_where == 'close' and not st.pad_close then
+        st.pad_close = 2 -- the D-pad left Close: sit back on it. Confirm still closes once it has landed
+    end
     bx = bx - size - S(4)
     if icon_button(dl, '##settings', bx, by, size, 'gear', st.settings_open and P.accent or P.dim, U.t('Settings')) then st.settings_open = not st.settings_open end
     bx = bx - size - S(4)
@@ -1528,12 +1536,14 @@ local function draw_sidebar(dl, x, y, w, h)
         page_seat(S(30))
         local gkey = '##grp' .. g.id
         order[#order + 1] = gkey
-        if st.pad_cat_page_arm then st.pad_cat_i, st.pad_cat_focus, st.pad_cat_page_arm = #order, gkey, nil end
+        if st.pad_cat_page_arm then st.pad_cat_i, st.pad_cat_focus, st.pad_cat_keep, st.pad_cat_page_arm = #order, gkey, nil, nil end
         local pressed, _, hv = hit(gkey, w, S(30))
         if st.pad_cat_focus == gkey then imgui.SetScrollHereY(0.5) end
         if imgui.IsItemFocused() then
             st.pad_where_now, st.pad_cat_i = 'cats', #order
-            if st.pad_cat_focus == gkey then st.pad_cat_focus = nil end
+            if st.pad_cat_focus == gkey then st.pad_cat_focus, st.pad_cat_keep = nil, nil end
+        elseif st.pad_where == 'cats' and PAD.shown() and not st.pad_cat_focus and not st.pad_cat_paging and gkey == (st.pad_cat_order and st.pad_cat_order[st.pad_cat_i]) then
+            st.pad_cat_refocus = gkey
         end
         if pressed and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then st.group_open[g.id] = not open end
         local active = I.group_of(st.category).id == g.id
@@ -1552,13 +1562,15 @@ local function draw_sidebar(dl, x, y, w, h)
                     page_seat(S(24))
                     local ckey = '##cat' .. cat
                     order[#order + 1] = ckey
-                    if st.pad_cat_page_arm then st.pad_cat_i, st.pad_cat_focus, st.pad_cat_page_arm = #order, ckey, nil end
+                    if st.pad_cat_page_arm then st.pad_cat_i, st.pad_cat_focus, st.pad_cat_keep, st.pad_cat_page_arm = #order, ckey, nil, nil end
                     local cp, _, chv = hit(ckey, w, S(24))
                     if seat then imgui.SetItemDefaultFocus() end
                     if st.pad_cat_focus == ckey then imgui.SetScrollHereY(0.5) end
                     if imgui.IsItemFocused() then
                         st.pad_where_now, st.pad_cat_i = 'cats', #order
-                        if st.pad_cat_focus == ckey then st.pad_cat_focus = nil end
+                        if st.pad_cat_focus == ckey then st.pad_cat_focus, st.pad_cat_keep = nil, nil end
+                    elseif st.pad_where == 'cats' and PAD.shown() and not st.pad_cat_focus and not st.pad_cat_paging and ckey == (st.pad_cat_order and st.pad_cat_order[st.pad_cat_i]) then
+                        st.pad_cat_refocus = ckey
                     end
                     local on = st.category == cat and st.results == nil
                     if cp and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
@@ -1590,6 +1602,8 @@ local function draw_sidebar(dl, x, y, w, h)
     imgui.EndChild()
     st.pad_cat_order = order
     st.pad_cat_paging = nil
+    if st.pad_cat_refocus and not st.pad_cat_focus then st.pad_cat_focus = st.pad_cat_refocus end
+    st.pad_cat_refocus = nil
 end
 
 -- the subtitle under an item's name. Japanese job marks are one character, so a long list wraps onto a second
@@ -1965,7 +1979,9 @@ local function draw_detail(dl, x, y, w, h, t)
         local rows_h = bottom - cy
         if rows_h > S(18) then
             imgui.SetCursorScreenPos({ cx, cy })
-            imgui.BeginChild('##hist_rows', { w - S(24), rows_h }, 0, 196608) -- NoNav: cancel and the D-pad must not land on this scroller
+            -- NoNav (196608) and NoFocusOnAppearing (4096). The rows appear when a sale list arrives; without the
+            -- second flag that appearance took the pad, and NoNav then left the D-pad with nowhere to go.
+            imgui.BeginChild('##hist_rows', { w - S(24), rows_h }, 0, 200704)
             if st.pad_card == 'hist' and PAD.shown() and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
                 local dir = (PAD.repeating('down', 0.25, 0.1) and 1 or 0) - (PAD.repeating('up', 0.25, 0.1) and 1 or 0)
                 if dir ~= 0 then imgui.SetScrollY(math.max(0, math.min(imgui.GetScrollMaxY(), imgui.GetScrollY() + dir * S(19)))) end
@@ -2661,6 +2677,7 @@ for _, g in ipairs(I.GROUPS) do for _, c in ipairs(g.cats) do CAT_ORDER[#CAT_ORD
 local function seat_cats()
     st.pad_first, st.pad_first_id, st.pad_cats, st.pad_close, st.pad_bag = 3, nil, true, nil, nil
     st.pad_where, st.pad_card, st.pad_price_hold = 'cats', nil, nil
+    st.pad_cat_focus, st.pad_cat_keep = nil, nil
 end
 
 local function seat_close()
@@ -2826,6 +2843,7 @@ local function pad_buttons()
             local order = st.pad_cat_order
             if dir ~= 0 and order and #order > 0 then
                 local i = st.pad_cat_i or 1
+                if st.pad_cat_keep == nil then st.pad_cat_keep = order[i] end
                 st.pad_cat_i = (i - 1 + dir) % #order + 1
                 st.pad_cat_focus = order[st.pad_cat_i]
             end
@@ -2988,8 +3006,9 @@ local function draw_main(t)
         if st.tab ~= 'buy' then st.card_focus = false end
         local where = st.pad_where_now or (st.card_focus and 'card' or nil)
         -- a Cancel that just sent the focus somewhere keeps that pane until the move has landed
-        if st.pad_where == 'filters' or st.pad_where == 'sort' then
-            -- held: a chip's focus must not hand the pane back to the list
+        if st.pad_where == 'filters' or st.pad_where == 'sort' or st.pad_where == 'close' or st.pad_where == 'cats' then
+            -- held: Close and the category list keep the cursor. A D-pad press must not follow the history scroller
+            -- or another button that happened to take the highlight
         elseif st.tab == 'sell' and st.pad_editing then
             st.pad_where, st.pad_sell_part = 'sell_box', 'price'
         elseif st.tab == 'sell' and (st.pad_price_hold or 0) > 0 then
@@ -3009,7 +3028,7 @@ local function draw_main(t)
             elseif now_t - (st.pad_where_at or -1) > 0.25 then st.pad_where = nil end
         end
         -- left and right scroll a page on a list; on the bid card the D-pad is the card's, not ImGui's
-        if st.pad_where == 'filters' or st.pad_where == 'sort' then st.pad_hold = 'all'
+        if st.pad_where == 'filters' or st.pad_where == 'sort' or st.pad_where == 'close' then st.pad_hold = 'all'
         elseif st.tab == 'sell' and st.pad_where == 'sell_box' and PAD.shown() then st.pad_hold = 'all'
         elseif st.pad_card and PAD.shown() then st.pad_hold = 'all'
         elseif PAD.shown() and (st.pad_where == 'cats' or st.pad_where == 'items') and not st.pad_editing then st.pad_hold = 'x' end
@@ -3033,12 +3052,37 @@ end
 -- The frame
 -------------------------------------------------------------------------------
 
+-- FancyChatJP reads this on each button. The window being open with the pad switched on is enough:
+-- capturing() also wants a fresh poll, and a missed poll for two seconds used to publish "released",
+-- so the next press was FancyChat's. The number is fixed width and written over the old one, so a
+-- reader never sees an empty file in the middle of the update.
+local function note_pad_hold()
+    local hold = st.open and PAD.enabled()
+    local stamp = hold and os.time() or 0
+    if stamp == st.pad_hold_note then return end
+    local ok = pcall(function()
+        vana.fs.create_dir(settings_dir())
+        local path = settings_dir() .. '\\pad_hold'
+        local text = string.format('%010d\n', stamp)
+        local f = io.open(path, 'r+')
+        if f == nil then f = io.open(path, 'w') end
+        if f == nil then return end
+        f:seek('set', 0)
+        f:write(text)
+        f:flush()
+        f:close()
+        st.pad_hold_note = stamp
+    end)
+    if not ok then st.pad_hold_note = nil end
+end
+
 local function tick()
     local io = imgui.GetIO()
     dt = math.max(0.001, math.min(0.1, io.DeltaTime or 0.016))
     local scale = math.max(0.5, math.min(3, (settings.scale or 100) / 100))
     local t = imgui.GetTime()
     now_t = t
+    note_pad_hold()
     if not U.frame(dt, scale, t) then return end
     -- the controller: its reads since the last frame become ImGui's keys, while the window has it
     PAD.frame(t, { id = 'auctionhouse', capture = function () return st.open end, hold = st.pad_hold or false })
@@ -3061,20 +3105,6 @@ local function tick()
     if st.pad_close and st.open then
         st.pad_close = st.pad_close - 1
         if st.pad_close <= 0 then st.pad_close = nil end
-    end
-    -- while this window has the pad, FancyChatJP leaves its modifier button alone (it reads this stamp)
-    do
-        local hold = st.open and PAD.capturing()
-        local now = os.time()
-        local stamp = hold and now or 0
-        if stamp ~= st.pad_hold_note then
-            st.pad_hold_note = stamp
-            pcall(function()
-                vana.fs.create_dir(settings_dir())
-                local f = io.open(settings_dir() .. '\\pad_hold', 'w')
-                if f then f:write(tostring(stamp)) f:close() end
-            end)
-        end
     end
     SEARCH.poll()
     PRICES.save()
