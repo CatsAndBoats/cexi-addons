@@ -359,9 +359,12 @@ local function theme_colors()
     { COL.CheckMark, P.cyan }, { COL.SliderGrab, P.accent }, { COL.SliderGrabActive, P.cyan }, { COL.Button, P.card },
     { COL.ButtonHovered, P.card_hi }, { COL.ButtonActive, '#2A3150' }, { COL.Header, '#252D4A' },
     { COL.HeaderHovered, '#2F3A62' }, { COL.HeaderActive, '#394778' }, { COL.Separator, P.line },
+    -- ImGuiCol_NavCursor (56): ImGui's own ring round the focused item's hit rectangle, kept active for the
+    -- controller but never drawn; the window draws its own ring, in the shape of the thing
+    { 56, '#00000000' },
     }
 end
-local THEME_COUNT = 25
+local THEME_COUNT = 26
 -- NoTitleBar, NoResize, NoScrollbar, NoScrollWithMouse, NoCollapse, NoBackground
 local WINDOW_FLAGS = 1 + 2 + 8 + 16 + 32 + 128
 local NO_SAVE, NO_FOCUS = 256, 4096
@@ -3754,11 +3757,14 @@ local function draw_toasts(t)
         local fdl = imgui.GetForegroundDrawList()
         local r = fo.r or math.min(S(10), fo.h / 2) -- the thing's own corners, so the ring follows its shape
         local pulse = 0.75 + 0.25 * math.sin(t * 4)
-        for i = 3, 1, -1 do
+        -- the halo spreads with the size of the thing: three soft rings round a card, one tight ring round a small
+        -- row or a pill has the ring alone (the halo turned a 22 px row into a blob)
+        local steps = fo.h >= S(44) and 3 or 0
+        for i = steps, 1, -1 do
             fdl:AddRect({ fo.x - S(i) - 1, fo.y - S(i) - 1 }, { fo.x + fo.w + S(i) + 1, fo.y + fo.h + S(i) + 1 }, u32(P.accent, 0.07 * pulse * (4 - i)), r + S(i), 15, S(2))
         end
-        fdl:AddRect({ fo.x - 1, fo.y - 1 }, { fo.x + fo.w + 1, fo.y + fo.h + 1 }, u32(P.accent, 0.95), r, 15, math.max(1.5, S(1.5)))
-        fdl:AddRect({ fo.x, fo.y }, { fo.x + fo.w, fo.y + fo.h }, u32('#FFFFFF', 0.25 * pulse), r, 15, 1)
+        fdl:AddRect({ fo.x - 1, fo.y - 1 }, { fo.x + fo.w + 1, fo.y + fo.h + 1 }, u32(P.accent, 0.95), r + 1, 15, math.max(1.5, S(1.5)))
+        if steps > 1 then fdl:AddRect({ fo.x, fo.y }, { fo.x + fo.w, fo.y + fo.h }, u32('#FFFFFF', 0.25 * pulse), r, 15, 1) end
     end
     if st.glyph_preview then -- /pf glyphs: the role glyphs drawn large, to look at them
         local sw, sh = vana.ui.screen()

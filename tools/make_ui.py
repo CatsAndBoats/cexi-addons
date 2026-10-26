@@ -67,7 +67,7 @@ parts += fix(func('mix'))
 parts += block(r'^local COL = \{', r'^\}')
 parts += block(r'^local VAR = \{', r'^\}')
 parts += fix(func('theme_colors'))
-parts.append('''local THEME_COUNT = 25
+parts.append('''local THEME_COUNT = 26
 -- NoTitleBar, NoResize, NoScrollbar, NoScrollWithMouse, NoCollapse, NoBackground
 U.WINDOW_FLAGS = 1 + 2 + 8 + 16 + 32 + 128
 U.NO_SAVE, U.NO_FOCUS = 256, 4096
