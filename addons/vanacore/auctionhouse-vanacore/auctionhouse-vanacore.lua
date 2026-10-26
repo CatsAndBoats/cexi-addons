@@ -1081,31 +1081,26 @@ end
 -- A stick in the item list walks the ring through the rows, faster the further it's pushed, and the list follows
 -- it. (Scrolling the list under a ring that stayed put left the ring on a row past the list's edge, drawn there as
 -- a ghost, and nothing picked on the way.) Called inside the list's child; the row is seated once it's drawn.
-local function stick_walk(ids, lh, rh)
+local function stick_walk(n, key_of, scroll_to)
     if not PAD.capturing() then st.stick_acc = nil return end
     local _, ly, _, ry = PAD.stick()
     local v = ly ~= 0 and ly or ry
-    if v == 0 or #ids == 0 then st.stick_acc = nil return end
+    if v == 0 or n == 0 then st.stick_acc = nil return end
     local fo = U.anim.focus
     local cur
     if fo and fo.key and now_t - fo.at < 0.1 then
-        for i, id in ipairs(ids) do if fo.key == '##item' .. id then cur = i break end end
+        for i = 1, n do if key_of(i) == fo.key then cur = i break end end
     end
-    if cur == nil then cur = v > 0 and (#ids + 1) or 0 end -- the ring isn't in the list: it comes in from the near end
+    if cur == nil then cur = v > 0 and (n + 1) or 0 end -- the ring isn't in the list: it comes in from the near end
     if st.stick_acc == nil then st.stick_acc = 1 end -- the first row at once
     st.stick_acc = st.stick_acc + math.abs(v) * 14 * dt -- up to 14 rows a second
-    local n = math.floor(st.stick_acc)
-    if n < 1 then return end
-    st.stick_acc = st.stick_acc - n
-    local target = math.max(1, math.min(#ids, cur + (v > 0 and -n or n))) -- the stick up is up the list
+    local step = math.floor(st.stick_acc)
+    if step < 1 then return end
+    st.stick_acc = st.stick_acc - step
+    local target = math.max(1, math.min(n, cur + (v > 0 and -step or step))) -- the stick up is up the list
     if target == cur then return end
-    st.stick_seat = ids[target]
-    -- the list scrolled so the row is in view (it takes from the next frame, when the row is drawn and seated)
-    local pitch = rh + S(6)
-    local top = (target - 1) * pitch
-    local sy = imgui.GetScrollY()
-    if top < sy + S(6) then imgui.SetScrollY(math.max(0, top - S(6)))
-    elseif top + rh > sy + lh - S(6) then imgui.SetScrollY(top + rh - lh + S(6)) end
+    st.stick_seat_key = key_of(target) -- the row takes the focus when it's drawn
+    if scroll_to then scroll_to(target) end -- a list that only draws rows in view scrolls the row into it first
 end
 
 local function pad_scroll()
@@ -1599,10 +1594,18 @@ local function draw_sidebar(dl, x, y, w, h)
         if open == nil then open = g.id == st.group end
         if open then for _, cat in ipairs(g.cats) do if #I.category(cat) > 0 then last_key = '##cat' .. cat end end end
     end
+    -- a stick with the ring in the sidebar walks its rows (in last frame's order; the row scrolls into view itself)
+    if st.pad_where == 'cats' and st.cat_keys then
+        local ck = st.cat_keys
+        stick_walk(#ck, function (i) return ck[i] end)
+    end
+    local keys = {}
     for _, g in ipairs(I.GROUPS) do
         local open = st.group_open[g.id]
         if open == nil then open = (g.id == st.group) st.group_open[g.id] = open end
         imgui.SetCursorScreenPos({ x, cy })
+        keys[#keys + 1] = '##grp' .. g.id
+        if st.stick_seat_key == keys[#keys] then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end
         edge_seat('##grp' .. g.id, g == I.GROUPS[1], '##grp' .. g.id == last_key)
         local pressed, _, hv = hit('##grp' .. g.id, w, S(30), S(8), { x = x + S(6), y = cy + S(2), w = w - S(12), h = S(26) })
         if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
@@ -1620,6 +1623,8 @@ local function draw_sidebar(dl, x, y, w, h)
                     imgui.SetCursorScreenPos({ x, cy })
                     local seat = seating and cat == st.category
                     if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
+                    keys[#keys + 1] = '##cat' .. cat
+                    if st.stick_seat_key == keys[#keys] then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end
                     edge_seat('##cat' .. cat, false, '##cat' .. cat == last_key)
                     local cp, _, chv = hit('##cat' .. cat, w, S(24), S(7), { x = x + S(12), y = cy + S(1), w = w - S(18), h = S(22) })
                     if seat then imgui.SetItemDefaultFocus() end
@@ -1649,6 +1654,7 @@ local function draw_sidebar(dl, x, y, w, h)
             cy = cy + S(4)
         end
     end
+    st.cat_keys = keys
     imgui.SetCursorScreenPos({ x, cy + S(4) }) -- the content's end, so the child knows how far it scrolls
     imgui.Dummy({ 1, 1 })
     imgui.EndChild()
@@ -1870,7 +1876,17 @@ local function draw_list(dl, x, y, w, h, t)
     imgui.SetCursorScreenPos({ x, ly })
     imgui.BeginChild('##items', { w, lh }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
     local cdl = imgui.GetWindowDrawList()
-    stick_walk(ids, lh, S(56))
+    -- the stick walks the list while the ring is in it (or nowhere); in the sidebar it walks the categories
+    if st.pad_where == 'items' or st.pad_where == nil then
+        stick_walk(#ids, function (i) return '##item' .. ids[i] end, function (i)
+            -- (the row's place from its index: rows out of view aren't drawn, so it's scrolled into view first)
+            local rh = S(56)
+            local top = (i - 1) * (rh + S(6))
+            local sy = imgui.GetScrollY()
+            if top < sy + S(6) then imgui.SetScrollY(math.max(0, top - S(6)))
+            elseif top + rh > sy + lh - S(6) then imgui.SetScrollY(top + rh - lh + S(6)) end
+        end)
+    end
     local seating = st.pad_first and not st.pad_cats and PAD.capturing()
     -- a list the controller's focus (re)starts in shows its top
     if seating and st.pad_first_id == nil then imgui.SetScrollY(0) end
@@ -1903,7 +1919,7 @@ local function draw_list(dl, x, y, w, h, t)
             -- (or, back from the card, on the picked row: pad_first_id)
             local seat = seating and (st.pad_first_id and id == st.pad_first_id or (st.pad_first_id == nil and i == first_drawn))
             if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() st.pad_seats = (st.pad_seats or 0) + 1 st.seated = true end
-            if st.stick_seat == id then imgui.SetKeyboardFocusHere() st.stick_seat = nil end -- the stick's row, once drawn
+            if st.stick_seat_key and st.stick_seat_key == '##item' .. id then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end -- the stick's row, once drawn
             edge_seat('##item' .. id, i == 1, i == #ids)
             draw_item_row(cdl, id, x + S(4), cy, w - S(12), math.max(0.05, math.min(1, alpha)))
             if seat then imgui.SetItemDefaultFocus() end
@@ -1918,9 +1934,9 @@ local function draw_list(dl, x, y, w, h, t)
     -- a ring on a row scrolled out of the list (the mouse wheel) would show past the list's edge: not drawn
     local fo = U.anim.focus
     if fo and fo.at == now_t and fo.key:sub(1, 6) == '##item' and (fo.y + fo.h < ly or fo.y > ly + lh) then U.anim.focus = nil end
-    if st.stick_seat then -- a row that never came up (the list changed): let go
+    if st.stick_seat_key then -- a row that never came up (the list changed): let go
         st.stick_tries = (st.stick_tries or 0) + 1
-        if st.stick_tries > 6 then st.stick_seat, st.stick_tries = nil, nil end
+        if st.stick_tries > 6 then st.stick_seat_key, st.stick_tries = nil, nil end
     else st.stick_tries = nil end
     imgui.SetCursorScreenPos({ x, cy + S(2) })
     imgui.Dummy({ 1, 1 })
