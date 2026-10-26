@@ -46,7 +46,7 @@ local RESULT = { Ok = 1, Fail = 197, Wait = 246, Unable = 0xC5, Full = 0xE5 }
 
 -- how far from a spot the house was opened at it still serves you (yalms), how long fetched lists and histories stay fresh (s),
 -- how often the sales list may be asked for (the server says 5 s), how long to wait on the server before saying so
-local LIMITS = { counter = 8, list = 90, history = 45, sales = 5.5, reply = 6, scan = 0.5, inventory = 2, retry = 8 }
+local LIMITS = { counter = 5.5, list = 90, history = 45, sales = 5.5, reply = 6, scan = 0.5, inventory = 2, retry = 8 }
 
 -------------------------------------------------------------------------------
 -- State and settings
@@ -74,6 +74,7 @@ local settings = {
     chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false, compare = false,
     sellable_only = false, -- the Sell tab hides what the house won't take
     open_sound = true, open_sound_id = 'small_bell', -- a bell as the window opens (sounds\<id>.wav)
+    view_anywhere = false, -- the window opens away from a counter too (browsing; bids and sales still need one)
     language = 'auto', -- 'auto' (the client's), 'en' or 'ja'
     sell_view = 'grid', -- the Sell tab's bag: 'grid' (icons) or 'list' (rows with names)
     icon = 'cat', -- the header's badge: 'cat' (images\badge_cat.png) or 'coin' (the glass gil, drawn)
@@ -1019,12 +1020,18 @@ local function play_open_sound(force)
 end
 
 open_window = function ()
+    -- as the game's own, unless View anywhere is on: only at an auction counter (within 5.5 yalms of where a clerk
+    -- was talked to), and the window closes on walking away from it (tick)
+    scan_counter()
+    if not st.counter.near and not settings.view_anywhere then
+        if not st.open then U.toast('danger', LANG.t('Talk to an auction clerk'), LANG.t("The house opens at its counter, as the game's own does"), 5, 'gavel') end
+        return
+    end
     if not st.open then play_open_sound() end -- (not again for /ah buy and the like on a window already open)
     st.open = true
     -- the controller's focus starts on the category in the sidebar (on a search's first result when one is up)
     st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, st.results == nil
     st.opened_at = now_t -- ImGui's clock, the one the fade is measured against
-    scan_counter()
     refresh_inventory()
     if logged_in() then
         send_work_check()
@@ -1048,6 +1055,32 @@ local function ensure_bind()
         end
     end
     vana.chat.run('/bind ' .. settings.keybind .. ' /ah', 1)
+end
+
+-- the key that opens the house, changed or taken away (Settings, /ah bind): the old one unbound, the new one bound
+local function set_keybind(spec)
+    local old = settings.keybind or ''
+    if old ~= '' then pcall(vana.chat.run, '/unbind ' .. old, 1) end
+    settings.keybind = spec or ''
+    save_settings()
+    if settings.keybind ~= '' then pcall(vana.chat.run, '/bind ' .. settings.keybind .. ' /ah', 1) end
+    st.bind_capture = nil
+end
+-- the next key pressed becomes the bind, with its modifiers in VanaCore's spelling (^ Ctrl, ! Alt, + Shift): a
+-- digit, a letter or an F key; Esc keeps what there was
+local function capture_keybind()
+    if imgui.IsKeyPressed(U.KEY_ESCAPE) then st.bind_capture = nil return end
+    local io = imgui.GetIO()
+    for k = 536, 583 do
+        if imgui.IsKeyPressed(k) then
+            local name
+            if k <= 545 then name = tostring(k - 536)
+            elseif k <= 571 then name = string.char(65 + k - 546)
+            else name = 'F' .. (k - 571) end
+            set_keybind((io.KeyCtrl and '^' or '') .. (io.KeyAlt and '!' or '') .. (io.KeyShift and '+' or '') .. name)
+            return
+        end
+    end
 end
 
 -------------------------------------------------------------------------------
@@ -2919,6 +2952,14 @@ local function draw_settings(dl, x, y, w, h)
     cy = cy + S(36)
     local changed = false
     local v, ch
+    -- browsing away from a counter, with the warning it deserves
+    v, ch = U.toggle(dl, '##t_anywhere', cx, cy + S(10), LANG.t('View the Auction House anywhere'), settings.view_anywhere) settings.view_anywhere = v changed = changed or ch
+    cy = cy + S(30)
+    for _, l in ipairs(wrap(LANG.t('Using the Auction House outside of normal areas is generally against the rules on most servers and can be easily tracked. Use at your own risk, you have been warned.'), F.text, T.tiny, math.floor(w * 0.58) - S(40))) do
+        text(dl, cx, cy, l, settings.view_anywhere and P.warn or P.faint, F.text, T.tiny)
+        cy = cy + S(14)
+    end
+    cy = cy + S(10)
     v, ch = U.toggle(dl, '##t_takeover', cx, cy + S(10), LANG.t("Talking to a clerk opens this, not the game's menu"), settings.take_over) settings.take_over = v changed = changed or ch
     cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_confirm', cx, cy + S(10), LANG.t('Confirm before bidding'), settings.confirm_buy) settings.confirm_buy = v changed = changed or ch
@@ -2942,8 +2983,19 @@ local function draw_settings(dl, x, y, w, h)
     -- are there for anyone who needs to see or change it)
     text(dl, cx, cy, LANG.t('KEYS'), P.dim, F.disp, T.small)
     cy = cy + S(20)
-    local bind = (settings.keybind or ''):gsub('^%^', 'Ctrl+'):gsub('^!', 'Alt+'):gsub('^%+', 'Shift+')
-    text(dl, cx, cy, (bind ~= '' and (bind .. ' opens the house') or 'No key bound') .. '  ·  Esc closes it', P.text, F.text, T.small)
+    -- the bind in words: the modifiers, then the key (not a chain of gsubs: 'Ctrl+' would have its + read as Shift)
+    local spec = settings.keybind or ''
+    local bind = (spec:find('%^') and 'Ctrl+' or '') .. (spec:find('!') and 'Alt+' or '') .. (spec:find('%+') and 'Shift+' or '') .. spec:gsub('[%^!%+]', '')
+    local what = st.bind_capture and LANG.t('Press a key to open the house with  ·  Esc keeps it as it is')
+        or ((bind ~= '' and (bind .. ' ' .. LANG.t('opens the house')) or LANG.t('No key opens the house')) .. '  ·  ' .. LANG.t('Esc closes it'))
+    text_mid(dl, cx, cy + S(15), what, st.bind_capture and GOLD or P.text, F.text, T.small)
+    local bx = cx + math.floor(w * 0.58) - S(40) - S(96)
+    if bind ~= '' and not st.bind_capture then
+        bx = bx - S(80) - S(8)
+        if button(dl, '##bind_off', bx + S(96) + S(8), cy, S(80), S(30), LANG.t('Off'), P.dim, 'ghost', 'ban', F.semi, T.small) then set_keybind('') end
+    end
+    if button(dl, '##bind_change', bx, cy, S(96), S(30), LANG.t(st.bind_capture and 'Cancel' or 'Change'), P.accent, 'ghost', nil, F.semi, T.small) then st.bind_capture = not st.bind_capture or nil end
+    if st.bind_capture then capture_keybind() end
     text(dl, cx, cy + S(30), LANG.t('Japanese localization: thanks to Hando'), P.faint, F.text, T.tiny)
     if changed then save_settings() end
 end
@@ -3150,6 +3202,14 @@ local function pad_buttons()
         else
             if PAD.pressed('options') then settings.in_stock = not settings.in_stock save_settings() end
             if PAD.pressed('menu') then settings.usable = not settings.usable save_settings() end
+            -- the sort sits above the list, where the ring doesn't go: the stick buttons turn it and flip it
+            if PAD.pressed('l3') then
+                local next_sort = { name = 'level', level = 'stock', stock = 'name' }
+                settings.sort = next_sort[settings.sort or 'name'] or 'name'
+                settings.sort_desc = SORT_DESC[settings.sort]
+                save_settings()
+            end
+            if PAD.pressed('r3') then settings.sort_desc = not sort_desc() save_settings() end
         end
         if PAD.pressed('back') then settings.compare = not settings.compare save_settings() end
     end
@@ -3223,8 +3283,8 @@ end
 
 local LEGEND = {
     -- Buy: the list's pane and the card each have their own (built in draw_legend)
-    buy_list = { { 'left right', 'Panes' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Category' },
-        { 'options', 'In stock' }, { 'menu', 'Usable' }, { 'back', 'Compare' }, { 'start', 'Settings' } },
+    buy_list = { { 'left right', 'Panes' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Category' }, { 'l3', 'Sort' }, { 'r3', 'Flip' },
+        { 'options', 'In stock' }, { 'menu', 'Usable' }, { 'back', 'Compare' } },
     buy_card = { { 'left right', 'Panes' }, { 'l1 r1', 'Tabs' }, { 'updown', 'Price' },
         { 'options', 'Watch' }, { 'menu', 'Single / stack' }, { 'start', 'Settings' } },
     sell = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'left right', 'Panes' }, { 'l1 r1', 'Tabs' }, { 'updown', 'Price' },
@@ -3340,7 +3400,7 @@ local function draw_main(t)
         if where then st.pad_where, st.pad_where_at = where, now_t
         elseif now_t - (st.pad_where_at or -1) > 0.25 then st.pad_where = nil end
         -- RootAndChildWindows (3): the lists, the bag and the sidebar are child windows, and a click there focuses them
-        if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and imgui.GetFrameCount() - FIELD.active_frame > 1 then
+        if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and imgui.GetFrameCount() - FIELD.active_frame > 1 and not st.bind_capture then
             if st.confirm then st.confirm = nil elseif st.settings_open then st.settings_open = false else st.open = false end
         end
         end)
@@ -3446,6 +3506,11 @@ local function tick()
             end
         end
         if clock() - st.counter.at > LIMITS.scan then scan_counter() end
+        -- walked away from the counter: the house closes, as the game's menu would
+        if st.open and not settings.view_anywhere and not st.counter.near and st.counter.dist ~= nil then
+            st.open = false
+            say(LANG.t('You have left the auction counter'))
+        end
         -- the bag and the gil, kept current (a purchase or a fee changes the gil a moment after the house replies)
         if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
         if st.sweep and not st.sales_wait and clock() - st.sales_at >= SWEEP_GAP then
@@ -3652,6 +3717,12 @@ vana.events.on('command', function (e)
             for _, th in ipairs(U.THEMES) do names[#names + 1] = th.id end
             say('Themes: ' .. table.concat(names, ', '))
         end
+    elseif what == 'bind' then
+        -- /ah bind: the key; /ah bind <key> sets it (^ Ctrl, ! Alt, + Shift, then a letter, digit or F key); /ah bind off
+        local arg = words[3] or ''
+        if arg:lower() == 'off' then set_keybind('') say('No key opens the house')
+        elseif arg ~= '' then set_keybind(arg) say(arg .. ' opens the house')
+        else say(((settings.keybind or '') ~= '' and (settings.keybind .. ' opens the house') or 'No key opens the house') .. '. /ah bind <key> (^ Ctrl, ! Alt, + Shift), or /ah bind off') end
     elseif what == 'sound' then
         -- /ah sound: which bell; /ah sound off|on; /ah sound <name> picks one ('small bell', small_bell or small) and plays it
         local arg = table.concat(words, ' ', 3):lower():gsub('[%s_]+', ' '):gsub('^ ', ''):gsub(' $', '')

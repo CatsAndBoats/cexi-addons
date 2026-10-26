@@ -13,10 +13,7 @@ when asked (on a stock server that tab stays empty), and sold notices come from 
 
 Talking to any auction clerk opens it in place of the game's menu (a setting; off, the game's menu comes back):
 the city Auction Counters and the outpost clerks of Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Nashmau and the
-rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default) opens it anywhere
-for browsing; bidding, selling and taking down always need you at a clerk, which `/ah` knows once you've talked to
-one there (below). That isn't a setting: the server only checks that the zone has an auction house, so the addon
-keeps trading at the counter, as the game's own window does.
+rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default; change the key or turn it off in Settings, or `/ah bind`) opens it too, but only within 5.5 yalms of a counter you've talked to, as the game's own house only opens at its counter, and it closes when you walk away. Settings has **View the Auction House anywhere** for browsing from anywhere, with a warning: that's against the rules on most servers and easily tracked. Bidding, selling and taking down always need you at the counter: the server only checks that the zone has an auction house, so the addon keeps the rule itself.
 
 ## Install
 
@@ -115,7 +112,7 @@ addon's own bridge (`pad.lua`) does the same from the game's controller reads. `
 state, `/ah pad off` turns it off (a setting), and `/ah pad <button>` presses a button as a controller would, for
 trying it without one.
 
-**Settings** (the gear): the theme, talking to a clerk opens this window, confirm before
+**Settings** (the gear): the theme, View the Auction House anywhere (with its warning), talking to a clerk opens this window, confirm before
 bidding, the price graph, background checks of watched items, opacity and scale, and the sound as it opens: a small
 bell by default, or Counter bell, Door chime, Chapel bell, Crystal chime, Tiny bell, or Off (picking one plays it, and
 the speaker beside it plays it again; `/ah sound <name>` and `/ah sound off` do the same). The search server isn't shown
@@ -151,6 +148,7 @@ The Japanese localization is Hando's work (cexi-addons PR #11) — thank you.
 | `/ah pick <id or name>` | Open on an item's card |
 | `/ah server <host[:port]>` | Which search server to ask; `/ah server auto` finds it from your login again |
 | `/ah theme <name>` | Switch theme; `/ah theme` lists them |
+| `/ah bind <key>` / `off` | The key that opens the house (`^` Ctrl, `!` Alt, `+` Shift, then a letter, digit or F key) |
 | `/ah sound <name>` / `off` / `on` | The sound as the window opens; `/ah sound` lists them |
 | `/ah lang auto\|en\|ja` | The window's language: the client's own, English, or Japanese |
 | `/ah scale <percent>` | Window size, 50 to 300 |
@@ -175,8 +173,7 @@ dropped.
 - **The counter:** talking to any auction clerk makes the server send `0x04C` with command `Open`
   (`sendMenu(AUCTION)`), nothing more; the addon swallows that packet and opens its window, so the game never draws
   its menu and nothing is left waiting server-side. No NPC names are looked at. The Open is the server's word that
-  this is an auction house, and where you stood when it came is kept in your settings, per zone (`spots`): within 8
-  yalms of a kept spot counts as at the counter, so `/ah` there later can bid and sell too.
+  this is an auction house, and where you stood when it came is kept in your settings, per zone (`spots`): within 5.5 yalms of a kept spot counts as at the counter, so `/ah` there later can bid and sell too.
 - **Buying, selling, your sales:** packet `0x04E` out and `0x04C` in (`map/packets/c2s/0x04e_auc.h`): WorkCheck when
   the window opens, Bid, AskCommit then LotIn to sell (both carry an auction work slot 0–6 at 0x05; the server refuses
   −1 there without a word), Info for the sales list (the server's AH pagination module
