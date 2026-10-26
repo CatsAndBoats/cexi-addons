@@ -441,7 +441,7 @@ local function job_badge(dl, cx, cy, r, job, glow, alpha)
     end
 end
 
-local function hit(key, w, h)
+local function hit(key, w, h, r, ring)
     -- 8: ImGuiButtonFlags_EnableNav, so a controller's focus can land on it (ImGui 1.90+ keeps invisible buttons out
     -- of navigation unless told otherwise)
     local pressed = imgui.InvisibleButton(key, { math.max(1, w), math.max(1, h) }, 8)
@@ -452,7 +452,7 @@ local function hit(key, w, h)
     -- the controller's focus (ImGui's navigation), drawn as a ring by draw_toasts while the controller is in use
     if A.pad_shown and imgui.IsItemFocused() then
         local fx, fy = imgui.GetItemRectMin()
-        A.focus = { x = fx, y = fy, w = math.max(1, w), h = math.max(1, h), at = now_t, key = key }
+        A.focus = { x = ring and ring.x or fx, y = ring and ring.y or fy, w = math.max(1, ring and ring.w or w), h = math.max(1, ring and ring.h or h), r = r, at = now_t, key = key }
     end
     return pressed, hovered, v
 end
@@ -478,7 +478,7 @@ end
 
 local function button(dl, key, x, y, w, h, label, color, kind, icon_name, font, size)
     imgui.SetCursorScreenPos({ x, y })
-    local pressed, hovered, hv = hit(key, w, h)
+    local pressed, hovered, hv = hit(key, w, h, S(9))
     local down = hovered and imgui.IsMouseDown(0)
     font = font or F.semi
     size = size or T.body
@@ -512,7 +512,7 @@ end
 
 local function icon_button(dl, key, x, y, size, name, color, tip, bounce)
     imgui.SetCursorScreenPos({ x, y })
-    local pressed, hovered, hv = hit(key, size, size)
+    local pressed, hovered, hv = hit(key, size, size, size / 2) -- (a circle)
     local cx, cy = x + size / 2, y + size / 2
     dl:AddCircleFilled({ cx, cy }, size / 2, u32(color, 0.08 + 0.16 * hv), 32)
     if hv > 0 then dl:AddCircle({ cx, cy }, size / 2, u32(color, 0.55 * hv), 32, 1) end
@@ -598,7 +598,7 @@ end
 local function dropdown(dl, key, x, cy, w, options, value)
     local h = S(30)
     imgui.SetCursorScreenPos({ x, cy - h / 2 })
-    local pressed, _, hv = hit(key, w, h)
+    local pressed, _, hv = hit(key, w, h, S(9))
     local name = '?'
     for _, o in ipairs(options) do if o.id == value then name = o.name end end
     dl:AddRectFilled({ x, cy - h / 2 }, { x + w, cy + h / 2 }, u32(mix(P.well, P.card_hi, 0.4 * hv)), S(9))
@@ -669,7 +669,7 @@ local function segments(dl, key, x, y, h, options, value, color_of, font, size)
         local lw = label ~= '' and measure(label, font or F.semi, size or T.small) or 0
         local tw = bare and (gs + S(10)) or (S(22) + lw + gs + ((glyph and label ~= '') and S(6) or 0))
         imgui.SetCursorScreenPos({ cx, y })
-        local pressed, hovered, hv = hit(key .. i, tw, h)
+        local pressed, hovered, hv = hit(key .. i, tw, h, S(9))
         if pressed then value = opt[1] clicked = opt[1] end
         if hovered and tip then with_font(F.text, T.small, imgui.SetTooltip, tip) end
         local on = value == opt[1]
@@ -707,7 +707,7 @@ local function toggle(dl, key, x, cy, label, value)
     local tw, th = S(40), S(22)
     local lw = measure(label, F.text, T.small)
     imgui.SetCursorScreenPos({ x, cy - th / 2 })
-    local pressed, _, hv = hit(key, tw + S(10) + lw, th)
+    local pressed, _, hv = hit(key, tw + S(10) + lw, th, th / 2, { x = x, y = cy - th / 2, w = tw, h = th }) -- the ring round the pill
     if pressed then value = not value end
     local a = A.toggle_anim[key]
     if a == nil then a = value and 1 or 0 end
@@ -751,7 +751,7 @@ local function draw_toasts(t)
     local fo = A.focus
     if fo and A.pad_shown and fo.at == now_t then
         local fdl = imgui.GetForegroundDrawList()
-        local r = math.min(S(10), fo.h / 2)
+        local r = fo.r or math.min(S(10), fo.h / 2) -- the thing's own corners, so the ring follows its shape
         local pulse = 0.75 + 0.25 * math.sin(t * 4)
         for i = 3, 1, -1 do
             fdl:AddRect({ fo.x - S(i) - 1, fo.y - S(i) - 1 }, { fo.x + fo.w + S(i) + 1, fo.y + fo.h + S(i) + 1 }, u32(P.accent, 0.07 * pulse * (4 - i)), r + S(i), 15, S(2))

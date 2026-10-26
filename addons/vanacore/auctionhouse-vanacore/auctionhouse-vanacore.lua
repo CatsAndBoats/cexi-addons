@@ -1483,7 +1483,7 @@ local function draw_header(dl, x, y, w, t)
         end
         if (st.query[1] or '') ~= '' then
             imgui.SetCursorScreenPos({ sx + sw - S(30), by + S(1) })
-            local cleared, _, chv = hit('##clearq', S(26), S(26))
+            local cleared, _, chv = hit('##clearq', S(26), S(26), S(13))
             if chv > 0.01 then dl:AddCircleFilled({ sx + sw - S(16), by + size / 2 }, S(11), u32(P.text, 0.10 * chv), 20) end
             icon(dl, sx + sw - S(16), by + size / 2, 'xmark', mix(P.dim, P.text, chv), T.small)
             if imgui.IsItemHovered() then imgui.SetMouseCursor(7) with_font(F.text, T.small, imgui.SetTooltip, LANG.t('Clear the search')) end
@@ -1508,7 +1508,7 @@ local function filter_chip(dl, key, fx, fy, label, on, color, tip, icon_on, icon
     local lw = measure(label, F.disp, T.tiny)
     local cw = chip_width(label)
     imgui.SetCursorScreenPos({ fx, fy })
-    local pressed, hovered, hv = hit(key, cw, ch)
+    local pressed, hovered, hv = hit(key, cw, ch, S(9))
     if hovered and tip then with_font(F.text, T.small, imgui.SetTooltip, tip) end
     if on then
         dl:AddRectFilled({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.28), S(9))
@@ -1600,7 +1600,7 @@ local function draw_sidebar(dl, x, y, w, h)
         if open == nil then open = (g.id == st.group) st.group_open[g.id] = open end
         imgui.SetCursorScreenPos({ x, cy })
         edge_seat('##grp' .. g.id, g == I.GROUPS[1], '##grp' .. g.id == last_key)
-        local pressed, _, hv = hit('##grp' .. g.id, w, S(30))
+        local pressed, _, hv = hit('##grp' .. g.id, w, S(30), S(8), { x = x + S(6), y = cy + S(2), w = w - S(12), h = S(26) })
         if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
         if pressed then st.group_open[g.id] = not open end
         local active = I.group_of(st.category).id == g.id
@@ -1617,7 +1617,7 @@ local function draw_sidebar(dl, x, y, w, h)
                     local seat = seating and cat == st.category
                     if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
                     edge_seat('##cat' .. cat, false, '##cat' .. cat == last_key)
-                    local cp, _, chv = hit('##cat' .. cat, w, S(24))
+                    local cp, _, chv = hit('##cat' .. cat, w, S(24), S(7), { x = x + S(12), y = cy + S(1), w = w - S(18), h = S(22) })
                     if seat then imgui.SetItemDefaultFocus() end
                     if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
                     local on = st.category == cat and st.results == nil
@@ -2147,7 +2147,7 @@ local function draw_sell_market(dl, x, y, w, h, id, hs)
         local cx = x + (i - 1) * cw
         if c[2] then
             imgui.SetCursorScreenPos({ cx - S(6), cy - S(4) })
-            local pressed, hovered, hv = hit('##mkt' .. i, cw - S(4), S(44))
+            local pressed, hovered, hv = hit('##mkt' .. i, cw - S(4), S(44), S(8), { x = cx - S(6), y = cy - S(4), w = cw - S(4), h = S(44) })
             if hv > 0.01 then dl:AddRectFilled({ cx - S(6), cy - S(4) }, { cx + cw - S(10), cy + S(40) }, u32(GOLD, 0.09 * hv), S(8)) end
             if hovered then with_font(F.text, T.small, imgui.SetTooltip, LANG.t('Ask this price')) end
             if pressed then ask(c[2]) end
@@ -2180,7 +2180,7 @@ local function draw_sell_market(dl, x, y, w, h, id, hs)
     for i = 1, n do
         local sale = hs.sales[i]
         imgui.SetCursorScreenPos({ x - S(6), cy })
-        local pressed, hovered, hv = hit('##mks' .. i, w + S(12), rh)
+        local pressed, hovered, hv = hit('##mks' .. i, w + S(12), rh, S(6), { x = x - S(6), y = cy, w = w + S(12), h = rh })
         if hv > 0.01 then dl:AddRectFilled({ x - S(6), cy }, { x + w + S(6), cy + rh }, u32(GOLD, 0.08 * hv), S(6)) end
         if hovered then with_font(F.text, T.small, imgui.SetTooltip, LANG.t('Ask this price')) end
         if pressed then ask(sale.price) end
@@ -2258,7 +2258,7 @@ local function draw_sell(dl, x, y, w, h, t)
         if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
         local cw_, ch_ = cell, cell
         if listed_view then cw_, ch_ = bagw - S(16), rowh end
-        local pressed, hovered, hv = hit(key, cw_, ch_)
+        local pressed, hovered, hv = hit(key, cw_, ch_, S(8))
         if seat then imgui.SetItemDefaultFocus() end
         local on = st.sell.slot == it.slot
         if listed_view then
