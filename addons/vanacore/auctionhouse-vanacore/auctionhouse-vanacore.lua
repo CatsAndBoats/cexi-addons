@@ -1972,6 +1972,36 @@ local function draw_list(dl, x, y, w, h, t)
     imgui.SetCursorScreenPos({ x, cy + S(2) })
     imgui.Dummy({ 1, 1 })
     imgui.EndChild()
+    -- the scrubber: with the stick held in the list, where the ring is by the sort in use (the letter, the level or
+    -- the stock), large over the dimmed list as a phone's contact list shows it; it comes after a moment, so a flick
+    -- never shows it, and fades out when the stick is let go
+    local walking = st.stick_acc ~= nil and (st.pad_where == 'items' or st.pad_where == nil)
+    if walking and st.scrub_since == nil then st.scrub_since = now_t end
+    if not walking then st.scrub_since = nil end
+    local want = (walking and now_t - st.scrub_since > 0.3) and 1 or 0
+    st.scrub_a = lerp(st.scrub_a or 0, want, math.min(1, dt * (want > 0 and 10 or 6)))
+    if st.scrub_a > 0.01 and st.pad_row and I.rows[st.pad_row] then
+        local a = st.scrub_a
+        local fdl = imgui.GetForegroundDrawList()
+        fdl:AddRectFilled({ x, ly }, { x + w, ly + lh }, u32(P.bg, 0.5 * a), S(10))
+        local r = I.get(st.pad_row)
+        local sort = settings.sort or 'name'
+        local label, small
+        if sort == 'level' then label, small = tostring(r.level or 0), LANG.t('LEVEL')
+        elseif sort == 'stock' then
+            local s1, s2 = stock_of(st.pad_row)
+            label, small = tostring((s1 or 0) + (s2 or 0)), LANG.t('UP NOW')
+        else
+            local ch = (r.name or ''):sub(1, 1):upper()
+            label = ch:match('%a') and ch or '#'
+        end
+        local bw, bh = S(104), S(104)
+        local bx, by = x + (w - bw) / 2, ly + (lh - bh) / 2
+        shadow(fdl, bx, by, bw, bh, S(22), a)
+        panel(fdl, bx, by, bw, bh, P.glass, 0.96 * a, S(22), P.line)
+        text_center(fdl, bx, by + bh / 2 - (small and S(8) or 0), bw, label, P.text, F.disp, T.h1 * 2, a)
+        if small then text_center(fdl, bx, by + bh - S(20), bw, small, P.dim, F.disp, T.tiny, a) end
+    end
 end
 
 -- the selected item: everything about it, its history, and the buy box
