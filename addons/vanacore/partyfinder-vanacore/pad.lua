@@ -449,8 +449,8 @@ function PAD.glyph(dl, x, cy, name, size, alpha)
         local r = S(size or 9)
         dl:AddCircleFilled({ x + r, cy }, r, U.u32(face[2], 0.22 * alpha), 20)
         dl:AddCircle({ x + r, cy }, r, U.u32(face[2], 0.95 * alpha), 20, 1.2)
-        -- (a capital's ink sits above the middle of its line box, the descender's room below: nudged down to centre it)
-        U.text_center(dl, x, cy + S(1), r * 2, face[1], face[2], F.bold, T.tiny - 1, alpha)
+        -- (on whole pixels: a half-pixel position smears the letter and reads as off-centre)
+        U.text_center(dl, math.floor(x + 0.5), math.floor(cy + 0.5), r * 2, face[1], face[2], F.bold, T.tiny - 1, alpha)
         return r * 2
     end
     local label = PILL[name] or name:upper()
@@ -458,7 +458,7 @@ function PAD.glyph(dl, x, cy, name, size, alpha)
     local w, h = tw + S(10), S((size or 9) * 2)
     dl:AddRectFilled({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.12 * alpha), S(5))
     dl:AddRect({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.5 * alpha), S(5), 15, 1)
-    U.text_center(dl, x, cy + S(1), w, label, P.text, F.semi, T.tiny - 1, alpha)
+    U.text_center(dl, math.floor(x + 0.5), math.floor(cy + 0.5), w, label, P.text, F.semi, T.tiny - 1, alpha)
     return w
 end
 
