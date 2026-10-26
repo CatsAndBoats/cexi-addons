@@ -2952,14 +2952,6 @@ local function draw_settings(dl, x, y, w, h)
     cy = cy + S(36)
     local changed = false
     local v, ch
-    -- browsing away from a counter, with the warning it deserves
-    v, ch = U.toggle(dl, '##t_anywhere', cx, cy + S(10), LANG.t('View the Auction House anywhere'), settings.view_anywhere) settings.view_anywhere = v changed = changed or ch
-    cy = cy + S(30)
-    for _, l in ipairs(wrap(LANG.t('Using the Auction House outside of normal areas is generally against the rules on most servers and can be easily tracked. Use at your own risk, you have been warned.'), F.text, T.tiny, math.floor(w * 0.58) - S(40))) do
-        text(dl, cx, cy, l, settings.view_anywhere and P.warn or P.faint, F.text, T.tiny)
-        cy = cy + S(14)
-    end
-    cy = cy + S(10)
     v, ch = U.toggle(dl, '##t_takeover', cx, cy + S(10), LANG.t("Talking to a clerk opens this, not the game's menu"), settings.take_over) settings.take_over = v changed = changed or ch
     cy = cy + S(34)
     v, ch = U.toggle(dl, '##t_confirm', cx, cy + S(10), LANG.t('Confirm before bidding'), settings.confirm_buy) settings.confirm_buy = v changed = changed or ch
@@ -2996,6 +2988,19 @@ local function draw_settings(dl, x, y, w, h)
     end
     if button(dl, '##bind_change', bx, cy, S(96), S(30), LANG.t(st.bind_capture and 'Cancel' or 'Change'), P.accent, 'ghost', nil, F.semi, T.small) then st.bind_capture = not st.bind_capture or nil end
     if st.bind_capture then capture_keybind() end
+    -- browsing away from a counter: at the bottom, in a warning box that can't be missed
+    do
+        local bx, bw, bh = x + S(20), w - S(40), S(56)
+        local by_ = y + h - S(12) - bh
+        panel(dl, bx, by_, bw, bh, P.warn, settings.view_anywhere and 0.16 or 0.08, S(10), P.warn)
+        icon(dl, bx + S(18), by_ + S(14), 'triangle-exclamation', P.warn, T.body)
+        v, ch = U.toggle(dl, '##t_anywhere', bx + S(34), by_ + S(14), LANG.t('View the Auction House anywhere'), settings.view_anywhere) settings.view_anywhere = v changed = changed or ch
+        local ty = by_ + S(28)
+        for _, l in ipairs(wrap(LANG.t('Using the Auction House outside of normal areas is generally against the rules on most servers and can be easily tracked. Use at your own risk, you have been warned.'), F.text, T.tiny, bw - S(70))) do
+            text(dl, bx + S(34), ty, l, P.warn, F.text, T.tiny)
+            ty = ty + S(13)
+        end
+    end
     text(dl, cx, cy + S(30), LANG.t('Japanese localization: thanks to Hando'), P.faint, F.text, T.tiny)
     if changed then save_settings() end
 end
