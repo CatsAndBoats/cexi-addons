@@ -1075,7 +1075,11 @@ local function edge_seat(key, first, last)
     if not (first or last) or not PAD.shown() then return end
     local fo = U.anim.focus
     if fo == nil or fo.key ~= key or now_t - fo.at > 0.1 then return end
-    if (first and PAD.down('up')) or (last and PAD.down('down')) then imgui.SetKeyboardFocusHere() end
+    local want = (first and PAD.down('up')) or (last and PAD.down('down'))
+    if want then st.edge_hold = { key = key, at = now_t } end
+    -- (and a moment past the release: the pad's read says up a frame before ImGui's last repeat of the press has
+    -- landed, and that frame alone was enough to let the ring out)
+    if want or (st.edge_hold and st.edge_hold.key == key and now_t - st.edge_hold.at < 0.15) then imgui.SetKeyboardFocusHere() end
 end
 
 -- A stick in the item list walks the ring through the rows, faster the further it's pushed, and the list follows
