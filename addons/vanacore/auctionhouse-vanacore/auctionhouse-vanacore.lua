@@ -1162,6 +1162,10 @@ local function pad_price_box(id, hint, buf, width, size, fs)
         st.pad_hold = true
         if PAD.pressed('up') then st.pad_seat = 'stack' end
     end
+    -- and Left from it is the list, on the picked row (the pane to its left)
+    if focused and not fs.pad_on and id == '##bid' and PAD.pressed('left') then
+        st.pad_first, st.pad_first_id, st.pad_cats = 3, st.selected, false
+    end
     if fs.pad_on then
         st.pad_editing, st.pad_hold = true, 'all'
         local n = v > 0 and #tostring(v) or 0 -- digits the number has; columns past n are zeros in front
@@ -1685,7 +1689,7 @@ local function draw_item_row(dl, id, x, y, w, alpha, lines)
     -- (the controller first: ImGui counts the focused row as hovered while its cursor shows)
     if PAD.shown() and imgui.IsItemFocused() then st.hover_id = id st.hover_rect = { x = x, y = y, w = w, h = h }
     elseif hovered then st.hover_id = id st.hover_rect = nil end
-    if imgui.IsItemFocused() then st.pad_where_now = 'items' end
+    if imgui.IsItemFocused() then st.pad_where_now, st.pad_row = 'items', id end -- (the row Right from the sidebar comes back to)
     local selected = st.selected == id
     local r = I.get(id)
     panel(dl, x, y, w, h, selected and P.card_hi or P.card, (selected and 1 or 0.9 + 0.1 * hv) * alpha, S(10), selected and GOLD or (hv > 0.01 and mix(P.line, P.accent, hv) or nil), selected)
@@ -1898,7 +1902,7 @@ local function draw_list(dl, x, y, w, h, t)
             if first_drawn == nil then first_drawn = i end
             -- (or, back from the card, on the picked row: pad_first_id)
             local seat = seating and (st.pad_first_id and id == st.pad_first_id or (st.pad_first_id == nil and i == first_drawn))
-            if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() st.pad_seats = (st.pad_seats or 0) + 1 end
+            if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() st.pad_seats = (st.pad_seats or 0) + 1 st.seated = true end
             if st.stick_seat == id then imgui.SetKeyboardFocusHere() st.stick_seat = nil end -- the stick's row, once drawn
             edge_seat('##item' .. id, i == 1, i == #ids)
             draw_item_row(cdl, id, x + S(4), cy, w - S(12), math.max(0.05, math.min(1, alpha)))
@@ -1908,6 +1912,9 @@ local function draw_list(dl, x, y, w, h, t)
         shown = shown + 1
     end
     if st.results and #ids > 0 then cy = cy + draw_search_reach(cdl, x, cy + S(4), w - S(12)) end
+    -- a remembered row that isn't in this list (another category, a filter): the first row instead
+    if seating and st.pad_first == 1 and st.pad_first_id and not st.seated then st.pad_first, st.pad_first_id = 2, nil end
+    st.seated = nil
     -- a ring on a row scrolled out of the list (the mouse wheel) would show past the list's edge: not drawn
     local fo = U.anim.focus
     if fo and fo.at == now_t and fo.key:sub(1, 6) == '##item' and (fo.y + fo.h < ly or fo.y > ly + lh) then U.anim.focus = nil end
@@ -2995,6 +3002,20 @@ local function pad_buttons()
         st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, st.tab == 'buy' and st.results == nil -- Buy starts in the sidebar
     end
     if st.tab == 'buy' and not st.settings_open then
+        -- Left and Right walk the three panes: the sidebar, the list (its last row) and the card (its price box);
+        -- Confirm goes deeper and Cancel comes back the same way. (ImGui moves on the same press, by geometry; the
+        -- seat asked for here lands a frame or two later and is what stays.)
+        if st.pad_where == 'cats' and PAD.pressed('right') then
+            st.pad_first, st.pad_first_id, st.pad_cats = 3, st.pad_row, false
+        elseif st.pad_where == 'items' and PAD.pressed('left') then
+            st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, true
+        elseif st.pad_where == 'items' and PAD.pressed('right') then
+            local id = st.selected or st.pad_row -- no card yet: the highlighted item's
+            if id then
+                if id ~= st.selected then select_item(id) end
+                st.pad_seat = 'price'
+            end
+        end
         local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
         if step ~= 0 then
             local i = 1
@@ -3035,7 +3056,7 @@ local function pad_buttons()
 end
 
 local LEGEND = {
-    buy = { { 'confirm', 'Select, then Bid' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Category' }, { 'updown', 'Price' },
+    buy = { { 'confirm', 'Select, then Bid' }, { 'cancel', 'Back' }, { 'left right', 'Panes' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Category' }, { 'updown', 'Price' },
         { 'options', 'In stock' }, { 'menu', 'Single / stack' }, { 'back', 'Compare' }, { 'start', 'Settings' } },
     sell = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'updown', 'Price' }, { 'start', LANG.t('Settings') } },
     activity = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Page' }, { 'options', 'Filter' }, { 'start', LANG.t('Settings') } },

@@ -108,7 +108,8 @@ things, Confirm presses, Cancel backs out, the bumpers turn the tabs, the trigge
 scrolls the list, X is the In stock chip, Y swaps single and stack on the picked item, View the Compare chip, Menu the settings. **To buy**, the
 Buy tab goes left to right, one pane at a time: the ring starts on the category in use in the sidebar; Confirm on a
 category moves it to that list's first item; Confirm on an item opens its card with the ring on the price box;
-Confirm there edits the price (below), Confirm again keeps it and moves to **Bid**, Confirm on Bid opens the
+Left and Right walk the same three panes (the list remembers its row, and Right from the list opens the highlighted
+item's card). Confirm there edits the price (below), Confirm again keeps it and moves to **Bid**, Confirm on Bid opens the
 confirmation, where Bid is already under the ring, so Confirm once more bids. For an item that stacks, Up from the
 price box is the **Single / Stack** switch: Left and Right pick one, Down goes back to the price box. Cancel walks back the same way (the
 confirmation, the card to its item, the list to its category, then the window), and the legend says what Confirm and
