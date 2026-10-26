@@ -1136,10 +1136,19 @@ local function stick_walk(n, key_of, scroll_to, stride, cur_of)
     if not PAD.capturing() then st.stick_acc, st.walk_i = nil, nil return end
     local _, ly, _, ry = PAD.stick()
     local v = ly ~= 0 and ly or ry
-    if v == 0 or n == 0 then st.stick_acc, st.walk_i = nil, nil return end
+    if v == 0 or n == 0 then
+        -- let go: the place is kept a moment, for a walk that turns round (the stick crosses the centre for a
+        -- frame, and the ring is still a few rows behind the walk when it does)
+        if st.walk_i then st.walk_last_key, st.walk_last_at = key_of(math.min(n, st.walk_i)), now_t end
+        st.stick_acc, st.walk_i = nil, nil
+        return
+    end
     -- the walk keeps its own place while the stick is held: the focus lands a frame after each seat, and steering
     -- by where the ring was would chase it (and lose it when the ring's row is out of view)
     local cur = st.walk_i
+    if cur == nil and st.walk_last_key and now_t - (st.walk_last_at or -1) < 0.4 then
+        for i = 1, n do if key_of(i) == st.walk_last_key then cur = i break end end
+    end
     if cur == nil then
         local fo = U.anim.focus
         local fkey = fo and fo.key and now_t - fo.at < 0.1 and fo.key or nil
