@@ -1144,8 +1144,10 @@ local function stick_walk(n, key_of, scroll_to, stride, cur_of)
         else for i = 1, n do if key_of(i) == fo.key then cur = i break end end end
     end
     if cur == nil then cur = v > 0 and (n + 1) or 0 end -- the ring isn't in the list: it comes in from the near end
-    if st.stick_acc == nil then st.stick_acc = 1 end -- the first row at once
-    st.stick_acc = st.stick_acc + math.abs(v) * 14 * dt -- up to 14 rows a second
+    if st.stick_acc == nil then st.stick_acc, st.stick_since = 1, now_t end -- the first row at once
+    -- up to 14 rows a second, and three times that once the stick has been held a second and a half
+    local rate = 14 * (1 + 2 * math.min(1, (now_t - (st.stick_since or now_t)) / 1.5))
+    st.stick_acc = st.stick_acc + math.abs(v) * rate * dt
     local step = math.floor(st.stick_acc)
     if step < 1 then return end
     st.stick_acc = st.stick_acc - step
@@ -1946,9 +1948,8 @@ local function draw_list(dl, x, y, w, h, t)
             -- (the row's place from its index: rows out of view aren't drawn, so it's scrolled into view first)
             local rh = S(56)
             local top = (i - 1) * (rh + S(6))
-            local sy = imgui.GetScrollY()
-            if top < sy + S(6) then imgui.SetScrollY(math.max(0, top - S(6)))
-            elseif top + rh > sy + lh - S(6) then imgui.SetScrollY(top + rh - lh + S(6)) end
+            -- the ring kept at the middle of the view, as a scrubber reads best (not nudged along an edge)
+            imgui.SetScrollY(math.max(0, math.min(imgui.GetScrollMaxY(), top - (lh - rh) / 2)))
         end)
     end
     local seating = st.pad_first and not st.pad_cats and PAD.capturing()
@@ -2029,7 +2030,7 @@ local function draw_list(dl, x, y, w, h, t)
             label = ch:match('%a') and ch or '#'
         end
         local bw, bh = S(104), S(104)
-        local bx, by = x + (w - bw) / 2, ly + (lh - bh) / 2
+        local bx, by = x + w - bw - S(28), ly + (lh - bh) / 2 -- at the right, over the stock pills, not the name it names
         shadow(fdl, bx, by, bw, bh, S(22), a)
         panel(fdl, bx, by, bw, bh, P.glass, 0.96 * a, S(22), P.line)
         text_center(fdl, bx, by + bh / 2 - (small and S(8) or 0), bw, label, P.text, F.disp, T.h1 * 2, a)
