@@ -1133,17 +1133,21 @@ local function watch_row_key(k)
 end
 
 local function stick_walk(n, key_of, scroll_to, stride, cur_of)
-    if not PAD.capturing() then st.stick_acc = nil return end
+    if not PAD.capturing() then st.stick_acc, st.walk_i = nil, nil return end
     local _, ly, _, ry = PAD.stick()
     local v = ly ~= 0 and ly or ry
-    if v == 0 or n == 0 then st.stick_acc = nil return end
-    local fo = U.anim.focus
-    local cur
-    if fo and fo.key and now_t - fo.at < 0.1 then
-        if cur_of then cur = cur_of(fo.key) -- (a row with several buttons: any of them is the row)
-        else for i = 1, n do if key_of(i) == fo.key then cur = i break end end end
+    if v == 0 or n == 0 then st.stick_acc, st.walk_i = nil, nil return end
+    -- the walk keeps its own place while the stick is held: the focus lands a frame after each seat, and steering
+    -- by where the ring was would chase it (and lose it when the ring's row is out of view)
+    local cur = st.walk_i
+    if cur == nil then
+        local fo = U.anim.focus
+        local fkey = fo and fo.key and now_t - fo.at < 0.1 and fo.key or nil
+        if cur_of then cur = cur_of(fkey) -- (a row with several buttons: any of them is the row)
+        elseif fkey then for i = 1, n do if key_of(i) == fkey then cur = i break end end end
     end
     if cur == nil then cur = v > 0 and (n + 1) or 0 end -- the ring isn't in the list: it comes in from the near end
+    if cur > n + 1 then cur = n + 1 end
     if st.stick_acc == nil then st.stick_acc, st.stick_since = 1, now_t end -- the first row at once
     -- up to 14 rows a second, and three times that once the stick has been held a second and a half
     local rate = 14 * (1 + 2 * math.min(1, (now_t - (st.stick_since or now_t)) / 1.5))
@@ -1154,6 +1158,7 @@ local function stick_walk(n, key_of, scroll_to, stride, cur_of)
     step = step * (stride or 1) -- (a grid: a row of it at a time)
     local target = math.max(1, math.min(n, cur + (v > 0 and -step or step))) -- the stick up is up the list
     if target == cur then return end
+    st.walk_i = target
     st.stick_seat_key = key_of(target) -- the row takes the focus when it's drawn
     if scroll_to then scroll_to(target) end -- a list that only draws rows in view scrolls the row into it first
 end
@@ -1945,12 +1950,13 @@ local function draw_list(dl, x, y, w, h, t)
     -- the stick walks the list while the ring is in it (or nowhere); in the sidebar it walks the categories
     if st.pad_where == 'items' or st.pad_where == nil then
         stick_walk(#ids, function (i) return '##item' .. ids[i] end, function (i)
+            -- (the walk starts from the focused row, in view or not)
             -- (the row's place from its index: rows out of view aren't drawn, so it's scrolled into view first)
             local rh = S(56)
             local top = (i - 1) * (rh + S(6))
             -- the ring kept at the middle of the view, as a scrubber reads best (not nudged along an edge)
             imgui.SetScrollY(math.max(0, math.min(imgui.GetScrollMaxY(), top - (lh - rh) / 2)))
-        end)
+        end, 1, function () for i, id in ipairs(ids) do if id == st.pad_row then return i end end end)
     end
     local seating = st.pad_first and not st.pad_cats and PAD.capturing()
     -- a list the controller's focus (re)starts in shows its top
@@ -2014,16 +2020,17 @@ local function draw_list(dl, x, y, w, h, t)
     if not walking then st.scrub_since = nil end
     local want = (walking and now_t - st.scrub_since > 0.3) and 1 or 0
     st.scrub_a = lerp(st.scrub_a or 0, want, math.min(1, dt * (want > 0 and 10 or 6)))
-    if st.scrub_a > 0.01 and st.pad_row and I.rows[st.pad_row] then
+    local row_id = (st.walk_i and ids[st.walk_i]) or st.pad_row -- the walk's row, before the ring has landed on it
+    if st.scrub_a > 0.01 and row_id and I.rows[row_id] then
         local a = st.scrub_a
         local fdl = imgui.GetForegroundDrawList()
         fdl:AddRectFilled({ x, ly }, { x + w, ly + lh }, u32(P.bg, 0.5 * a), S(10))
-        local r = I.get(st.pad_row)
+        local r = I.get(row_id)
         local sort = settings.sort or 'name'
         local label, small
         if sort == 'level' then label, small = tostring(r.level or 0), LANG.t('LEVEL')
         elseif sort == 'stock' then
-            local s1, s2 = stock_of(st.pad_row)
+            local s1, s2 = stock_of(row_id)
             label, small = tostring((s1 or 0) + (s2 or 0)), LANG.t('UP NOW')
         else
             local ch = (r.name or ''):sub(1, 1):upper()
