@@ -1965,6 +1965,15 @@ local function draw_list(dl, x, y, w, h, t)
     -- the child is made the focused window first, and the row seated in it the frame after
     if seating and st.pad_first == 2 then imgui.SetWindowFocus() end
     local scroll_y = imgui.GetScrollY()
+    -- while the stick walks, the rows are laid out from the scroll the walk wants (ImGui's own takes a frame to
+    -- follow), with the walk's row at the middle of the view, and that row wears the ring at once: the ring stays
+    -- put at the centre and the list flows under it, rather than hopping after the scroll
+    local walk_row = st.walk_i and ids[st.walk_i] or nil
+    if walk_row then
+        local rh = S(56)
+        scroll_y = math.max(0, math.min(imgui.GetScrollMaxY(), (st.walk_i - 1) * (rh + S(6)) - (lh - rh) / 2))
+        imgui.SetScrollY(scroll_y)
+    end
     local cy = ly - scroll_y
     local since = clock() - st.list_at
     local shown = 0
@@ -1979,6 +1988,7 @@ local function draw_list(dl, x, y, w, h, t)
         if st.results then draw_search_reach(cdl, x, ly + S(120), w) end
     end
     local vis_top, vis_bot = ly - S(60), ly + lh + S(60)
+    st.list_ids = ids -- (for /ah pad: which row the ring is on)
     for i, id in ipairs(ids) do
         local rh = S(56)
         if cy + rh >= vis_top and cy <= vis_bot then
@@ -1993,6 +2003,10 @@ local function draw_list(dl, x, y, w, h, t)
             if st.stick_seat_key and st.stick_seat_key == '##item' .. id then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end -- the stick's row, once drawn
             edge_seat('##item' .. id, i == 1, i == #ids)
             draw_item_row(cdl, id, x + S(4), cy, w - S(12), math.max(0.05, math.min(1, alpha)))
+            if walk_row == id then
+                U.anim.focus = { x = x + S(4), y = cy, w = w - S(12), h = rh, at = now_t, key = '##item' .. id, r = S(10) }
+                st.hover_id, st.hover_rect = id, { x = x + S(4), y = cy, w = w - S(12), h = rh }
+            end
             if seat then imgui.SetItemDefaultFocus() end
         end
         cy = cy + rh + S(6)
@@ -3458,7 +3472,11 @@ local function tick()
     local fo = U.anim.focus
     local boxes = {}
     for id, f in pairs(field_state) do if f.focused or f.pad_on then boxes[#boxes + 1] = id .. (f.pad_on and '*' or '') end end
-    st.pad_dbg = string.format('boxes [%s] ', table.concat(boxes, ' ')) .. string.format('text box active %s, focus on %s (%.1fs ago), card focus %s, seat %s, window focused %s, cancels %d',
+    local rowdbg = ''
+    if st.pad_row and st.list_ids then
+        for i, id in ipairs(st.list_ids) do if id == st.pad_row then rowdbg = string.format('row %d/%d %s, walk %s; ', i, #st.list_ids, I.name(id), tostring(st.walk_i)) break end end
+    end
+    st.pad_dbg = rowdbg .. string.format('boxes [%s] ', table.concat(boxes, ' ')) .. string.format('text box active %s, focus on %s (%.1fs ago), card focus %s, seat %s, window focused %s, cancels %d',
         tostring(imgui.IsAnyItemActive()), tostring(fo and fo.key), fo and (t - fo.at) or -1, tostring(st.card_focus), tostring(st.pad_seat),
         tostring(st.pad_focused), st.pad_cancels or 0) .. string.format(', seats %d, first %s/%s%s, pane %s', st.pad_seats or 0, tostring(st.pad_first), tostring(st.pad_first_id), st.pad_cats and ' (cats)' or '', tostring(st.pad_where))
     if st.pad_first and st.open then st.pad_first = st.pad_first - 1 if st.pad_first <= 0 then st.pad_first, st.pad_first_id, st.pad_cats = nil, nil, nil end end
