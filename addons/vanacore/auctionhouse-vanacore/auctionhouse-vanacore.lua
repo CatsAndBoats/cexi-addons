@@ -1067,6 +1067,17 @@ local GOLD, PALE = '#FFD166', '#FFF3C4'
 -- ImGui 1.92's numbers (its input flags were renumbered in 1.91: AutoSelectAll is 1 << 12 now)
 -- inside a list's child window: a stick scrolls it (ImGui's own stick scrolling is of the window with the focus, the
 -- root, which doesn't scroll)
+-- A list's edge under a controller: its first row holds Up and its last holds Down, so the ring stops there instead
+-- of leaving for whatever ImGui finds past the list (it found the header's close button past the bottom). Called
+-- just before the row is drawn, for the row that had the ring last frame; the focus is asked for again, which
+-- replaces ImGui's move for this frame.
+local function edge_seat(key, first, last)
+    if not (first or last) or not PAD.shown() then return end
+    local fo = U.anim.focus
+    if fo == nil or fo.key ~= key or now_t - fo.at > 0.1 then return end
+    if (first and PAD.down('up')) or (last and PAD.down('down')) then imgui.SetKeyboardFocusHere() end
+end
+
 local function pad_scroll()
     if not PAD.capturing() then return end
     local lx, ly, rx, ry = PAD.stick()
@@ -1546,10 +1557,19 @@ local function draw_sidebar(dl, x, y, w, h)
         if st.pad_first == 2 then imgui.SetWindowFocus() end
     end
     local cy = y + S(8) - imgui.GetScrollY() -- drawn where the scroll puts it
+    -- the sidebar's last row, for the ring to stop at: the last group, or its last listed category when it's open
+    local last_key
+    for _, g in ipairs(I.GROUPS) do
+        last_key = '##grp' .. g.id
+        local open = st.group_open[g.id]
+        if open == nil then open = g.id == st.group end
+        if open then for _, cat in ipairs(g.cats) do if #I.category(cat) > 0 then last_key = '##cat' .. cat end end end
+    end
     for _, g in ipairs(I.GROUPS) do
         local open = st.group_open[g.id]
         if open == nil then open = (g.id == st.group) st.group_open[g.id] = open end
         imgui.SetCursorScreenPos({ x, cy })
+        edge_seat('##grp' .. g.id, g == I.GROUPS[1], '##grp' .. g.id == last_key)
         local pressed, _, hv = hit('##grp' .. g.id, w, S(30))
         if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
         if pressed then st.group_open[g.id] = not open end
@@ -1566,6 +1586,7 @@ local function draw_sidebar(dl, x, y, w, h)
                     imgui.SetCursorScreenPos({ x, cy })
                     local seat = seating and cat == st.category
                     if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
+                    edge_seat('##cat' .. cat, false, '##cat' .. cat == last_key)
                     local cp, _, chv = hit('##cat' .. cat, w, S(24))
                     if seat then imgui.SetItemDefaultFocus() end
                     if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
@@ -1848,6 +1869,7 @@ local function draw_list(dl, x, y, w, h, t)
             -- (or, back from the card, on the picked row: pad_first_id)
             local seat = seating and (st.pad_first_id and id == st.pad_first_id or (st.pad_first_id == nil and i == first_drawn))
             if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() st.pad_seats = (st.pad_seats or 0) + 1 end
+            edge_seat('##item' .. id, i == 1, i == #ids)
             draw_item_row(cdl, id, x + S(4), cy, w - S(12), math.max(0.05, math.min(1, alpha)))
             if seat then imgui.SetItemDefaultFocus() end
         end
@@ -3034,9 +3056,15 @@ local function draw_main(t)
         if PAD.shown() and st.pad_focused and imgui.SetNavCursorVisible then imgui.SetNavCursorVisible(true) end
         st.pad_editing = false -- set again by a price box being edited, drawn below
         st.pad_where_now = nil -- which Buy pane has the focus ('cats', 'items'), found as it's drawn below
+        if PAD.capturing() then PAD.claim() end -- X and Y are the window's, never ImGui's activate or window switcher
+        -- the header (search box, buttons) and the tab row are out of the pad's reach: the bumpers and buttons do
+        -- their jobs, and the ring never wanders up there from a list's top (ImGuiItemFlags_NoNav)
+        local pad_nav = PAD.shown() and imgui.PushItemFlag ~= nil
+        if pad_nav then imgui.PushItemFlag(2, true) end
         local hy = draw_header(dl, x, y, w, t)
         local ty = y + hy + S(10)
         draw_tabs(dl, x, ty, w)
+        if pad_nav then imgui.PopItemFlag() end
         local by = ty + S(50)
         local bh = y + h - by - S(16) - legend_h
         if legend_h > 0 then draw_legend(dl, x, y + h - legend_h, w) end

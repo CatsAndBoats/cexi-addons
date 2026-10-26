@@ -406,6 +406,16 @@ function PAD.down(name)
     name = st.map[name] or name
     return st.now[name] == true
 end
+-- Called each frame inside the window while it has the pad: X and Y are the window's, not ImGui's. With VanaCore
+-- feeding every button, ImGui read Y (FaceUp) as its "input" key, which activates the focused item like Confirm,
+-- and X (FaceLeft) held as its window switcher. A global route makes the window the keys' owner at the next frame,
+-- and ImGui's navigation only reads keys nobody owns.
+local ROUTE_GLOBAL = 4096 -- ImGuiInputFlags_RouteGlobal
+function PAD.claim()
+    if not imgui.Shortcut then return end
+    pcall(imgui.Shortcut, KEY.x, ROUTE_GLOBAL)
+    pcall(imgui.Shortcut, KEY.y, ROUTE_GLOBAL)
+end
 -- pressed, or held past `delay` and repeating every `every`
 function PAD.repeating(name, delay, every)
     name = st.map[name] or name
