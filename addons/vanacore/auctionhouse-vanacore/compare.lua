@@ -6,6 +6,7 @@ local imgui = vana.imgui
 local bit = require('bit')
 local U = require('ui')
 local I = require('items')
+local LANG = require('lang')
 local P, S = U.P, U.S
 local T, F = U.sizes(), U.fonts()
 local u32, text, measure, mix, fit, wrap, icon = U.u32, U.text, U.measure, U.mix, U.fit, U.wrap, U.icon
@@ -25,7 +26,7 @@ local SLOT = { [0] = 'Main', 'Sub', 'Ranged', 'Ammo', 'Head', 'Body', 'Hands', '
 local SLOT_JA = { [0] = 'メイン', 'サブ', '遠隔', '弾', '頭', '胴', '両手', '両脚', '両足', '首', '腰',
     '耳1', '耳2', '指1', '指2', '背' }
 C.SLOT = SLOT
-local function ja() return U.lang() == 'ja' end
+local function ja() return LANG.ja() end
 local function slot_label(s, upper)
     local name = ja() and (SLOT_JA[s] or '') or (SLOT[s] or '')
     if upper and not ja() then name = name:upper() end
@@ -269,7 +270,7 @@ end
 -- why you can't wear it as you are, or nil
 local function cannot(r, w)
     if w == nil or (w.job or 0) == 0 then return nil end
-    local who = (U.job_label(w.job) or '?') .. w.level
+    local who = (LANG.job_label(w.job, U.JOBS[w.job]) or '?') .. w.level
     if bit.band(r.jobs or 0, bit.lshift(1, w.job)) == 0 then
         return ja() and (who .. 'では装備できません') or ('Your ' .. who .. " can't wear this")
     end

@@ -359,9 +359,12 @@ local function theme_colors()
     { COL.CheckMark, P.cyan }, { COL.SliderGrab, P.accent }, { COL.SliderGrabActive, P.cyan }, { COL.Button, P.card },
     { COL.ButtonHovered, P.card_hi }, { COL.ButtonActive, '#2A3150' }, { COL.Header, '#252D4A' },
     { COL.HeaderHovered, '#2F3A62' }, { COL.HeaderActive, '#394778' }, { COL.Separator, P.line },
+    -- ImGuiCol_NavCursor (56): ImGui's own ring round the focused item's hit rectangle, kept active for the
+    -- controller but never drawn; the window draws its own ring, in the shape of the thing
+    { 56, '#00000000' },
     }
 end
-local THEME_COUNT = 25
+local THEME_COUNT = 26
 -- NoTitleBar, NoResize, NoScrollbar, NoScrollWithMouse, NoCollapse, NoBackground
 local WINDOW_FLAGS = 1 + 2 + 8 + 16 + 32 + 128
 local NO_SAVE, NO_FOCUS = 256, 4096
@@ -391,11 +394,25 @@ local function load_fonts()
         local ok, font = pcall(imgui.AddFontFromFileTTF, dir .. file, size)
         return ok and font or nil
     end
-    F.text = try('Inter-Regular.ttf', 18) or F.icons
-    F.semi = try('Inter-SemiBold.ttf', 18) or F.text
-    F.bold = try('Inter-Bold.ttf', 18) or F.semi
-    F.disp = try('Rajdhani-SemiBold.ttf', 24) or F.semi
-    F.dispb = try('Rajdhani-Bold.ttf', 24) or F.disp
+    -- a Japanese client (the host says so: F.want_japanese): a Windows font with the kana and kanji for every face,
+    -- Meiryo first; ImGui 1.92 loads the glyphs as they're used, so no ranges are given
+    local jp = nil
+    if F.want_japanese then
+        -- (Noto Sans JP, under its OFL, for a Windows without Microsoft's fonts: Wine, a Mac)
+        for _, file in ipairs({ 'meiryo.ttc', 'YuGothM.ttc', 'msgothic.ttc', 'NotoSansJP-Regular.otf', 'NotoSansCJKjp-Regular.otf' }) do
+            local path = 'C:\\Windows\\Fonts\\' .. file
+            if vana.fs.exists(path) then
+                local ok, font = pcall(imgui.AddFontFromFileTTF, path, 18)
+                if ok and font then jp = font break end
+            end
+        end
+    end
+    F.japanese_font = jp ~= nil -- (for the host: none found, and Japanese text would be boxes)
+    F.text = jp or try('Inter-Regular.ttf', 18) or F.icons
+    F.semi = jp or try('Inter-SemiBold.ttf', 18) or F.text
+    F.bold = jp or try('Inter-Bold.ttf', 18) or F.semi
+    F.disp = jp or try('Rajdhani-SemiBold.ttf', 24) or F.semi
+    F.dispb = jp or try('Rajdhani-Bold.ttf', 24) or F.disp
     F.loaded = true
 end
 
@@ -1566,7 +1583,9 @@ local function mode_gem(dl, cx, cy, mode, size, alpha)
 end
 
 -- an invisible button with a hover value that eases in and out
-local function hit(key, w, h)
+-- r and ring: the shape the controller's ring takes, when the thing drawn isn't the hit rectangle with S(10) corners
+-- (r its corner radius, half the height for a pill or a circle; ring = { x, y, w, h } the rectangle it's drawn in)
+local function hit(key, w, h, r, ring)
     -- 8: ImGuiButtonFlags_EnableNav, so a controller's focus can land on it (ImGui 1.90+ keeps invisible buttons out
     -- of navigation unless told otherwise)
     local pressed = imgui.InvisibleButton(key, { math.max(1, w), math.max(1, h) }, 8)
@@ -1577,7 +1596,7 @@ local function hit(key, w, h)
     -- the controller's focus (ImGui's navigation), drawn as a ring by draw_toasts while the controller is in use
     if st.pad_shown and imgui.IsItemFocused() then
         local fx, fy = imgui.GetItemRectMin()
-        st.focus = { x = fx, y = fy, w = math.max(1, w), h = math.max(1, h), at = now_t, key = key }
+        st.focus = { x = ring and ring.x or fx, y = ring and ring.y or fy, w = math.max(1, ring and ring.w or w), h = math.max(1, ring and ring.h or h), r = r, at = now_t, key = key }
     end
     return pressed, hovered, v
 end
@@ -1604,7 +1623,7 @@ end
 
 local function button(dl, key, x, y, w, h, label, color, kind, icon_name, font, size)
     imgui.SetCursorScreenPos({ x, y })
-    local pressed, hovered, hv = hit(key, w, h)
+    local pressed, hovered, hv = hit(key, w, h, S(9))
     local down = hovered and imgui.IsMouseDown(0)
     font = font or F.semi
     size = size or T.body
@@ -1638,7 +1657,7 @@ end
 
 local function icon_button(dl, key, x, y, size, name, color, tip, bounce)
     imgui.SetCursorScreenPos({ x, y })
-    local pressed, hovered, hv = hit(key, size, size)
+    local pressed, hovered, hv = hit(key, size, size, size / 2) -- (a circle)
     local cx, cy = x + size / 2, y + size / 2
     dl:AddCircleFilled({ cx, cy }, size / 2, u32(color, 0.08 + 0.16 * hv), 32)
     if hv > 0 then dl:AddCircle({ cx, cy }, size / 2, u32(color, 0.55 * hv), 32, 1) end
@@ -1753,14 +1772,15 @@ local function aurora(dl, x, y, w, h, t, radius)
         dl:AddRectFilledMultiColor({ x + ins, y + dy }, { x + w - ins, y + dy + 1 }, lc(f0), rc(f0), rc(f1), lc(f1))
     end
     dl:AddRectFilledMultiColor({ x, y + r }, { x + w, y + h }, lc(r / h), rc(r / h), u32(P.glass, 0), u32(P.glass, 0))
+    -- the grid fades out with the colour: cut off at the bottom it drew a hard edge across the glass under it
     local gx = x + S(24)
     while gx < x + w do
-        dl:AddLine({ gx, y }, { gx, y + h }, u32('#FFFFFF', 0.025), 1)
+        dl:AddRectFilledMultiColor({ gx, y }, { gx + 1, y + h }, u32('#FFFFFF', 0.025), u32('#FFFFFF', 0.025), u32('#FFFFFF', 0), u32('#FFFFFF', 0))
         gx = gx + S(28)
     end
     local gy = y + S(14)
     while gy < y + h do
-        dl:AddLine({ x, gy }, { x + w, gy }, u32('#FFFFFF', 0.02), 1)
+        dl:AddLine({ x, gy }, { x + w, gy }, u32('#FFFFFF', 0.02 * (1 - (gy - y) / h)), 1)
         gy = gy + S(28)
     end
     for i = 1, 3 do
@@ -1768,7 +1788,10 @@ local function aurora(dl, x, y, w, h, t, radius)
         local oy = y + h * 0.4 + math.cos(t * 0.5 + i) * h * 0.25
         local col = i == 1 and P.cyan or (i == 2 and P.accent2 or P.accent)
         for k = 5, 1, -1 do
-            dl:AddCircleFilled({ ox, oy }, S(22) * k, u32(col, 0.022), 24)
+            -- a ring that would cross the bottom edge is dimmed by how far it crosses: clipped whole, it drew a step
+            local rk = S(22) * k
+            local cut = math.max(0, math.min(1, (y + h - oy) / rk))
+            dl:AddCircleFilled({ ox, oy }, rk, u32(col, 0.022 * cut), 24)
         end
     end
     dl:PopClipRect()
@@ -2139,7 +2162,7 @@ end
 local function dropdown(dl, key, x, cy, w, options, value)
     local h = S(30)
     imgui.SetCursorScreenPos({ x, cy - h / 2 })
-    local pressed, _, hv = hit(key, w, h)
+    local pressed, _, hv = hit(key, w, h, S(9))
     local name = '?'
     for _, o in ipairs(options) do if o.id == value then name = o.name end end
     dl:AddRectFilled({ x, cy - h / 2 }, { x + w, cy + h / 2 }, u32(mix(P.well, P.card_hi, 0.4 * hv)), S(9))
@@ -3067,7 +3090,7 @@ local function segments(dl, key, x, y, h, options, value, color_of, font, size)
         local lw = label ~= '' and measure(label, font or F.semi, size or T.small) or 0
         local tw = bare and (gs + S(10)) or (S(22) + lw + gs + ((glyph and label ~= '') and S(6) or 0))
         imgui.SetCursorScreenPos({ cx, y })
-        local pressed, hovered, hv = hit(key .. i, tw, h)
+        local pressed, hovered, hv = hit(key .. i, tw, h, S(9))
         if pressed then value = opt[1] clicked = opt[1] end
         if hovered and tip then with_font(F.text, T.small, imgui.SetTooltip, tip) end
         local on = value == opt[1]
@@ -3198,7 +3221,7 @@ local function toggle(dl, key, x, cy, label, value)
     local tw, th = S(40), S(22)
     local lw = measure(label, F.text, T.small)
     imgui.SetCursorScreenPos({ x, cy - th / 2 })
-    local pressed, _, hv = hit(key, tw + S(10) + lw, th)
+    local pressed, _, hv = hit(key, tw + S(10) + lw, th, th / 2, { x = x, y = cy - th / 2, w = tw, h = th }) -- the ring round the pill
     if pressed then value = not value end
     local a = st.toggle_anim[key]
     if a == nil then a = value and 1 or 0 end
@@ -3732,13 +3755,16 @@ local function draw_toasts(t)
     local fo = st.focus
     if fo and st.pad_shown and fo.at == now_t then
         local fdl = imgui.GetForegroundDrawList()
-        local r = math.min(S(10), fo.h / 2)
+        local r = fo.r or math.min(S(10), fo.h / 2) -- the thing's own corners, so the ring follows its shape
         local pulse = 0.75 + 0.25 * math.sin(t * 4)
-        for i = 3, 1, -1 do
+        -- the halo spreads with the size of the thing: three soft rings round a card, one tight ring round a small
+        -- row or a pill has the ring alone (the halo turned a 22 px row into a blob)
+        local steps = fo.h >= S(44) and 3 or 0
+        for i = steps, 1, -1 do
             fdl:AddRect({ fo.x - S(i) - 1, fo.y - S(i) - 1 }, { fo.x + fo.w + S(i) + 1, fo.y + fo.h + S(i) + 1 }, u32(P.accent, 0.07 * pulse * (4 - i)), r + S(i), 15, S(2))
         end
-        fdl:AddRect({ fo.x - 1, fo.y - 1 }, { fo.x + fo.w + 1, fo.y + fo.h + 1 }, u32(P.accent, 0.95), r, 15, math.max(1.5, S(1.5)))
-        fdl:AddRect({ fo.x, fo.y }, { fo.x + fo.w, fo.y + fo.h }, u32('#FFFFFF', 0.25 * pulse), r, 15, 1)
+        fdl:AddRect({ fo.x - 1, fo.y - 1 }, { fo.x + fo.w + 1, fo.y + fo.h + 1 }, u32(P.accent, 0.95), r + 1, 15, math.max(1.5, S(1.5)))
+        if steps > 1 then fdl:AddRect({ fo.x, fo.y }, { fo.x + fo.w, fo.y + fo.h }, u32('#FFFFFF', 0.25 * pulse), r, 15, 1) end
     end
     if st.glyph_preview then -- /pf glyphs: the role glyphs drawn large, to look at them
         local sw, sh = vana.ui.screen()

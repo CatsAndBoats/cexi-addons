@@ -146,9 +146,12 @@ local function theme_colors()
     { COL.CheckMark, P.cyan }, { COL.SliderGrab, P.accent }, { COL.SliderGrabActive, P.cyan }, { COL.Button, P.card },
     { COL.ButtonHovered, P.card_hi }, { COL.ButtonActive, '#2A3150' }, { COL.Header, '#252D4A' },
     { COL.HeaderHovered, '#2F3A62' }, { COL.HeaderActive, '#394778' }, { COL.Separator, P.line },
+    -- ImGuiCol_NavCursor (56): ImGui's own ring round the focused item's hit rectangle, kept active for the
+    -- controller but never drawn; the window draws its own ring, in the shape of the thing
+    { 56, '#00000000' },
     }
 end
-local THEME_COUNT = 25
+local THEME_COUNT = 26
 -- NoTitleBar, NoResize, NoScrollbar, NoScrollWithMouse, NoCollapse, NoBackground
 U.WINDOW_FLAGS = 1 + 2 + 8 + 16 + 32 + 128
 U.NO_SAVE, U.NO_FOCUS = 256, 4096
@@ -167,368 +170,34 @@ local function S(n) return n * scale end
 local T = { title = 30, h1 = 22, h2 = 17, body = 15, small = 13, tiny = 11 }
 local F = { loaded = false, text = nil, semi = nil, bold = nil, disp = nil, dispb = nil, icons = nil }
 local function fail(where, err) vana.log('auctionhouse-vanacore ' .. where .. ': ' .. tostring(err)) end
-
--------------------------------------------------------------------------------
--- Language detection and translation (added for JP/EN client support)
--------------------------------------------------------------------------------
-local LANG = 'en'
-local function detect_language()
-    local ok, rec = pcall(function()
-        local I = require('items')
-        return I.get(4096)  -- Potion or similar common item
-    end)
-    local is_ja = false
-    if ok and rec and rec.name and rec.name ~= '' then
-        for i = 1, #rec.name do
-            if rec.name:byte(i) > 127 then
-                is_ja = true
-                break
-            end
-        end
-    end
-    LANG = is_ja and 'ja' or 'en' 
-    vana.log('auctionhouse-vanacore language: ' .. LANG)
-end
-
-local TR = {
-    en = {
-        ['Auction House'] = 'Auction House',
-        ['Buy'] = 'Buy',
-        ['Sell'] = 'Sell',
-        ['Listings'] = 'Listings',
-        ['Activity'] = 'Activity',
-        ['Watch'] = 'Watch',
-        ['Settings'] = 'Settings',
-        ['In stock'] = 'In stock',
-        ['Usable'] = 'Usable',
-        ['Compare'] = 'Compare',
-        ['Sellable'] = 'Sellable',
-        ['Search'] = 'Search',
-        ['Recent sales'] = 'Recent sales',
-        ['Bid'] = 'Bid',
-        ['List for'] = 'List for',
-        ['Take down'] = 'Take down',
-        ['Refresh'] = 'Refresh',
-        ['No sales recorded yet'] = 'No sales recorded yet',
-        ['The house did not answer'] = 'The house did not answer',
-        ['Your sales'] = 'Your sales',
-        ['Reading your listings'] = 'Reading your listings',
-        ['List it'] = 'List it',
-        ['Confirm'] = 'Confirm',
-        ['Cancel'] = 'Cancel',
-        ['BUY'] = 'BUY',
-        ['SELL'] = 'SELL',
-        ['LISTINGS'] = 'LISTINGS',
-        ['ACTIVITY'] = 'ACTIVITY',
-        ['WATCH'] = 'WATCH',
-        ['COMPARE'] = 'COMPARE',
-        ['IN STOCK'] = 'IN STOCK',
-        ['USABLE'] = 'USABLE',
-        ['NAME'] = 'NAME',
-        ['LEVEL'] = 'LEVEL',
-        ['STOCK'] = 'STOCK',
-        ['Pick an item'] = 'Pick an item',
-        ['Search every item by name'] = 'Search every item by name',
-        ['At the counter'] = 'At the counter',
-        ['Weapons'] = 'Weapons',
-        ['Armor'] = 'Armor',
-        ['Scrolls'] = 'Scrolls',
-        ['Items'] = 'Items',
-        ['Materials'] = 'Materials',
-        ['Food'] = 'Food',
-        ['Others'] = 'Others',
-        ['Its stock, sale history and a buy box show here'] = 'Its stock, sale history and a buy box show here',
-        ['Head'] = 'Head', ['Body'] = 'Body', ['Hands'] = 'Hands', ['Legs'] = 'Legs', ['Feet'] = 'Feet',
-        ['Neck'] = 'Neck', ['Waist'] = 'Waist', ['Earrings'] = 'Earrings', ['Rings'] = 'Rings', ['Back'] = 'Back',
-        ['Shields'] = 'Shields', ['Hand-to-Hand'] = 'Hand-to-Hand', ['Daggers'] = 'Daggers', ['Swords'] = 'Swords',
-        ['Great Swords'] = 'Great Swords', ['Axes'] = 'Axes', ['Great Axes'] = 'Great Axes', ['Scythes'] = 'Scythes',
-        ['Polearms'] = 'Polearms', ['Katana'] = 'Katana', ['Great Katana'] = 'Great Katana', ['Clubs'] = 'Clubs',
-        ['Staves'] = 'Staves', ['Ranged'] = 'Ranged', ['Instruments'] = 'Instruments', ['Ammo & Misc'] = 'Ammo & Misc',
-        ['White Magic'] = 'White Magic', ['Black Magic'] = 'Black Magic', ['Summoning'] = 'Summoning',
-        ['Ninjutsu'] = 'Ninjutsu', ['Songs'] = 'Songs', ['Medicines'] = 'Medicines', ['Furnishings'] = 'Furnishings',
-        ['Crystals'] = 'Crystals', ['Cards'] = 'Cards', ['Cursed Items'] = 'Cursed Items',
-        ['Smithing'] = 'Smithing', ['Goldsmithing'] = 'Goldsmithing', ['Clothcraft'] = 'Clothcraft',
-        ['Leathercraft'] = 'Leathercraft', ['Bonecraft'] = 'Bonecraft', ['Woodworking'] = 'Woodworking',
-        ['Alchemy'] = 'Alchemy', ['Geomancy'] = 'Geomancy', ['Misc.'] = 'Misc.', ['Fishing Gear'] = 'Fishing Gear',
-        ['Pet Items'] = 'Pet Items', ['Ninja Tools'] = 'Ninja Tools', ['Beast-made'] = 'Beast-made',
-        ['Fish'] = 'Fish', ['Meat & Eggs'] = 'Meat & Eggs', ['Seafood'] = 'Seafood', ['Vegetables'] = 'Vegetables',
-        ['Soups'] = 'Soups', ['Breads & Rice'] = 'Breads & Rice', ['Sweets'] = 'Sweets', ['Drinks'] = 'Drinks',
-        ['Ingredients'] = 'Ingredients', ['Dice'] = 'Dice', ['Automaton'] = 'Automaton', ['Grips'] = 'Grips',
-    },
-    ja = {
-        ['Auction House'] = 'オークションハウス',
-        ['Buy'] = '入札',
-        ['Sell'] = '出品',
-        ['Listings'] = '出品中',
-        ['Activity'] = '履歴',
-        ['Watch'] = 'ウォッチ',
-        ['Settings'] = '設定',
-        ['In stock'] = '在庫あり',
-        ['Usable'] = '装備可能',
-        ['Compare'] = '比較',
-        ['Sellable'] = '出品可能',
-        ['Search'] = '検索',
-        ['Recent sales'] = '最近の取引',
-        ['Bid'] = '入札',
-        ['List for'] = '出品する',
-        ['Take down'] = '取り消し',
-        ['Refresh'] = '更新',
-        ['No sales recorded yet'] = 'まだ取引履歴がありません',
-        ['The house did not answer'] = 'オークションハウスから応答がありません',
-        ['Your sales'] = 'あなたの出品',
-        ['Reading your listings'] = '出品一覧を読み込み中',
-        ['List it'] = '出品する',
-        ['Confirm'] = '確認',
-        ['Cancel'] = 'キャンセル',
-        ['BUY'] = '入札',
-        ['SELL'] = '出品',
-        ['LISTINGS'] = '出品中',
-        ['ACTIVITY'] = '履歴',
-        ['WATCH'] = 'ウォッチ',
-        ['COMPARE'] = '比較',
-        ['IN STOCK'] = '在庫あり',
-        ['USABLE'] = '装備可能',
-        ['NAME'] = '名前',
-        ['LEVEL'] = 'レベル',
-        ['STOCK'] = '在庫',
-        ['Pick an item'] = 'アイテムを選択',
-        ['Search every item by name'] = '/ah s 商品名で検索できます',
-        ['At the counter'] = 'カウンター前',
-        ['Weapons'] = '武器',
-        ['Armor'] = '防具',
-        ['Scrolls'] = 'スクロール',
-        ['Items'] = 'アイテム',
-        ['Materials'] = '素材',
-        ['Food'] = '食品',
-        ['Others'] = 'その他',
-        ['Its stock, sale history and a buy box show here'] = '在庫・取引履歴・入札欄がここに表示されます',
-        ['Head'] = '頭', ['Body'] = '胴', ['Hands'] = '両手', ['Legs'] = '両脚', ['Feet'] = '両足',
-        ['Neck'] = '首', ['Waist'] = '腰', ['Earrings'] = '耳', ['Rings'] = '指', ['Back'] = '背',
-        ['Shields'] = '盾', ['Hand-to-Hand'] = '格闘', ['Daggers'] = '短剣', ['Swords'] = '片手剣',
-        ['Great Swords'] = '両手剣', ['Axes'] = '片手斧', ['Great Axes'] = '両手斧', ['Scythes'] = '両手鎌',
-        ['Polearms'] = '両手槍', ['Katana'] = '片手刀', ['Great Katana'] = '両手刀', ['Clubs'] = '片手棍',
-        ['Staves'] = '両手杖', ['Ranged'] = '射撃', ['Instruments'] = '楽器', ['Ammo & Misc'] = '矢・弾',
-        ['White Magic'] = '白魔法', ['Black Magic'] = '黒魔法', ['Summoning'] = '召喚',
-        ['Ninjutsu'] = '忍術', ['Songs'] = '歌', ['Medicines'] = '薬品', ['Furnishings'] = '調度品',
-        ['Crystals'] = 'クリスタル', ['Cards'] = 'カード', ['Cursed Items'] = '呪物',
-        ['Smithing'] = '鍛冶', ['Goldsmithing'] = '彫金', ['Clothcraft'] = '裁縫',
-        ['Leathercraft'] = '革細工', ['Bonecraft'] = '骨細工', ['Woodworking'] = '木工',
-        ['Alchemy'] = '錬金術材', ['Alchemy 2'] = '錬金術材2', ['Geomancy'] = '風水',
-        ['Misc.'] = '雑貨', ['Misc. 2'] = '雑貨2', ['Misc. 3'] = '雑貨3',
-        ['Fishing Gear'] = '釣り具',
-        ['Pet Items'] = 'ペット用品', ['Ninja Tools'] = '忍具', ['Beast-made'] = '獣人製品',
-        ['Fish'] = '魚', ['Meat & Eggs'] = '肉・卵', ['Seafood'] = '魚介', ['Vegetables'] = '野菜',
-        ['Soups'] = 'スープ', ['Breads & Rice'] = 'パン・米', ['Sweets'] = '菓子', ['Drinks'] = '飲料',
-        ['Ingredients'] = '食材', ['Dice'] = 'ダイス', ['Automaton'] = 'からくり部品', ['Grips'] = 'グリップ',
-        ['Special'] = '特殊', ['Other'] = 'その他',
-        ['ACTIVITY'] = '履歴',
-        ['entries'] = '件',
-        ['entry'] = '件',
-        ['ALL'] = 'すべて',
-        ['BOUGHT'] = '購入',
-        ['SOLD'] = '売却',
-        ['LISTED'] = '出品',
-        ['TAKEN DOWN'] = '取下げ',
-        ['SPENT'] = '支出',
-        ['EARNED'] = '収入',
-        ['FEES'] = '手数料',
-        ['NET'] = '収支',
-        ['purchase'] = '購入',
-        ['purchases'] = '購入',
-        ['sale'] = '売却',
-        ['sales'] = '売却',
-        ['listing'] = '出品',
-        ['listings'] = '出品',
-        ['sales less purchases and fees'] = '売却 − 購入 − 手数料',
-        ['Nothing yet'] = 'まだありません',
-        ['What you buy, list, take down and sell here is kept, per character, across restarts'] = '購入・出品・取下げ・売却の記録はキャラクターごとに保存されます',
-        ['YOUR BAG'] = 'バッグ',
-        ['items'] = '個',
-        ['item'] = '個',
-        ['the house won\'t take, hidden'] = '出品不可（非表示）',
-        ['SELLABLE'] = '出品可能',
-        ['Pick something from your bag'] = 'バッグから選択',
-        ['Greyed items are ones the house does not take'] = 'グレーのアイテムは出品できません',
-        ['UP FOR SALE'] = '出品中',
-        ['History'] = '履歴',
-        ['Hide'] = '隠す',
-        ['stack of'] = 'スタック',
-        ['WATCHING'] = 'ウォッチ中',
-        ['checks every'] = '確認間隔',
-        ['min'] = '分',
-        ['Check now'] = '今すぐ確認',
-        ['Nothing watched yet'] = 'まだウォッチしていません',
-        ['in stock of'] = '在庫',
-        ['singles'] = '個',
-        ['single'] = '個',
-        ['jobs'] = 'ジョブ',
-        ['of'] = '/',
-        ['in stock'] = '在庫あり',
-        ['usable'] = '装備可能',
-        ['usable, in stock'] = '装備可能・在庫あり',
-        ['SINGLE'] = '単品',
-        ['FULL STACK'] = 'フルスタック',
-        ['STACK of'] = 'スタック',
-        ['RECENTLY SOLD FOR'] = '最近の取引価格',
-        ['RECENT SALES'] = '最近の取引',
-        ['ASKING PRICE'] = '出品価格',
-        ['You have'] = '所持',
-        ['stacks of'] = 'スタック',
-        ['List it'] = '出品する',
-        ['List for'] = '出品する',
-        ['type a price'] = '価格を入力',
-        ['last sold'] = '最終取引',
-        ['The house quotes its listing fee first; nothing is listed until you say so'] = '出品手数料が先に表示されます。確認するまで出品されません',
-        ['TELL ME UNDER'] = 'この価格以下で通知',
-        ['any price'] = '価格指定なし',
-        ['last'] = '最終',
-        ['median'] = '中央値',
-        ['range'] = '範囲',
-        ['SETTINGS'] = '設定',
-        ['Bid and sell only at an auction clerk'] = 'オークション係員の前でのみ売買',
-        ['Talking to a clerk opens this, not the game\'s menu'] = '係員に話しかけるとこの画面を開く（ゲームメニューではなく）',
-        ['Confirm before bidding'] = '入札前に確認',
-        ['Price graph on an item\'s card'] = 'アイテムカードに価格グラフを表示',
-        ['Check watched items every'] = 'ウォッチ確認間隔',
-        ['min, even with this closed'] = '分（画面を閉じていても）',
-        ['WINDOW'] = 'ウィンドウ',
-        ['Opacity'] = '不透明度',
-        ['Scale'] = '拡大率',
-        ['KEYS'] = 'キー',
-        ['Sort button'] = '並びのボタン',
-        ['None'] = 'なし',
-        ['Sort'] = '並び',
-        ['Filter'] = 'フィルター',
-        ['Move'] = '移動',
-        ['Page'] = 'ページ',
-        ['Categories'] = '区分',
-        ['To close'] = '閉じるへ',
-        ['Results'] = '検索結果',
-        ['Amount'] = '金額',
-        ['Single or stack'] = '単品 / スタック',
-        ['Switch'] = '切替',
-        ['On or off'] = '有効 / 無効',
-        ['Direction'] = '昇順 / 降順',
-        ['Return'] = '戻る',
-        ['Open category'] = '区分を開く',
-        ['Pick item'] = '項目を選ぶ',
-        ['Price, then Bid'] = '金額から入札',
-        ['Select'] = '選択',
-        ['Go back'] = '戻る',
-        ['Tabs'] = 'タブ',
-        ['Category'] = '区分',
-        ['Price'] = '金額',
-        ['Bag'] = 'バッグ',
-        ['Digit'] = '桁',
-        ['Column'] = '列',
-        ['Keep'] = '確定',
-        ['Undo'] = '取り消し',
-        ['Select, then Bid'] = '選択して入札',
-        ['Scroll'] = 'スクロール',
-        ['Search'] = '検索',
-        ['Watch'] = 'ウォッチ',
-        ['History'] = '履歴',
-        ['opens the house'] = 'で開く',
-        ['Esc closes it'] = 'Escで閉じる',
-        ['THEME'] = 'テーマ',
-        ['The same themes as Party Finder  ·  /ah theme <name>'] = 'Party Finderと同じテーマ  ·  /ah theme <name>',
-        ['SOUND AS IT OPENS'] = '開くときの音',
-        ['Off'] = 'オフ',
-        ['/ah sound <name>  ·  /ah sound off'] = '/ah sound <name>  ·  /ah sound off',
-        ['Clear the search'] = '検索を消す',
-        ['Close (Esc)'] = '閉じる（Esc）',
-        ['Close'] = '閉じる',
-        ['Refresh the list and the item'] = '一覧と選択中のアイテムを更新',
-        ['Stop watching'] = 'ウォッチをやめる',
-        ['Watch this item'] = 'このアイテムをウォッチ',
-        [' (stacks)'] = '（スタック）',
-        [' (singles)'] = '（単品）',
-        ['Hide the price graph'] = '価格グラフを隠す',
-        ['Show the price graph'] = '価格グラフを表示',
-        ['The house does not take this'] = 'このアイテムは出品できません',
-        ['Open its card'] = 'カードを開く',
-        ['Play it'] = '再生する',
-        ['Showing only what is up for sale'] = '出品中のものだけを表示しています',
-        ['Show only what is up for sale'] = '出品中のものだけを表示する',
-        ['Hovering gear sets it against what you wear'] = '装備に合わせると、今着ているものと比べます',
-        ['Hover gear to set it against what you wear in that slot'] = '装備に合わせると、その部位に着ているものと比べます',
-        ["Hiding what the house won't take"] = '出品できないものを隠しています',
-        ["Hide what the house won't take"] = '出品できないものを隠す',
-    }
-}
-
-function U.t(key)
-    local tbl = TR[LANG] or TR.en
-    return tbl[key] or key
-end
-function U.lang() return LANG end
-
--- the client's own one-character job marks; JOBS stays the English code so JOB_COLOR still keys off it
-local JOBS_JA = {
-    [1] = '戦', [2] = 'モ', [3] = '白', [4] = '黒', [5] = '赤', [6] = 'シ', [7] = 'ナ', [8] = '暗',
-    [9] = '獣', [10] = '詩', [11] = '狩', [12] = '侍', [13] = '忍', [14] = '竜', [15] = '召', [16] = '青',
-    [17] = 'コ', [18] = 'か', [19] = '踊', [20] = '学', [21] = '風', [22] = 'ル',
-}
-function U.job_label(job)
-    if LANG == 'ja' then return JOBS_JA[job] or JOBS[job] or '?' end
-    return JOBS[job] or '?'
-end
-
 local function load_fonts()
-    local ok_det, err_det = pcall(detect_language)
-    if not ok_det then
-        vana.log('auctionhouse-vanacore language detect failed: ' .. tostring(err_det))
-        LANG = 'en'
-    end
     local dir = vana.paths.addon .. '\\fonts\\'
-    F.icons = imgui.GetFont() or imgui.GetIO().Fonts:Fonts()[1]
+    F.icons = imgui.GetFont()
     local function try(file, size)
         if not vana.fs.exists(dir .. file) then return nil end
         local ok, font = pcall(imgui.AddFontFromFileTTF, dir .. file, size)
-        if ok and font then return font end
-        vana.log('auctionhouse-vanacore font fail: ' .. file)
-        return nil
+        return ok and font or nil
     end
-    local function try_system(path, size)
-        if not vana.fs.exists(path) then
-            vana.log('auctionhouse-vanacore meiryo not found: ' .. path)
-            return nil
+    -- a Japanese client (the host says so: F.want_japanese): a Windows font with the kana and kanji for every face,
+    -- Meiryo first; ImGui 1.92 loads the glyphs as they're used, so no ranges are given
+    local jp = nil
+    if F.want_japanese then
+        -- (Noto Sans JP, under its OFL, for a Windows without Microsoft's fonts: Wine, a Mac)
+        for _, file in ipairs({ 'meiryo.ttc', 'YuGothM.ttc', 'msgothic.ttc', 'NotoSansJP-Regular.otf', 'NotoSansCJKjp-Regular.otf' }) do
+            local path = 'C:\\Windows\\Fonts\\' .. file
+            if vana.fs.exists(path) then
+                local ok, font = pcall(imgui.AddFontFromFileTTF, path, 18)
+                if ok and font then jp = font break end
+            end
         end
-        local ranges = nil
-        if imgui.GetGlyphRangesJapanese then
-            local ok_r, r = pcall(imgui.GetGlyphRangesJapanese)
-            if ok_r then ranges = r end
-        end
-        local ok, font = pcall(imgui.AddFontFromFileTTF, path, size, nil, ranges)
-        if ok and font then
-            vana.log('auctionhouse-vanacore loaded meiryo')
-            return font
-        end
-        vana.log('auctionhouse-vanacore meiryo load failed')
-        return nil
     end
-    if LANG == 'ja' then
-        local meiryo = 'C:\\Windows\\Fonts\\meiryo.ttc'
-        F.text  = try_system(meiryo, 18) or try('Inter-Regular.ttf', 18) or F.icons
-        F.semi  = try_system(meiryo, 18) or try('Inter-SemiBold.ttf', 18) or F.text
-        F.bold  = try_system(meiryo, 18) or try('Inter-Bold.ttf', 18) or F.semi
-        F.disp  = try_system(meiryo, 24) or try('Rajdhani-SemiBold.ttf', 24) or F.semi
-        F.dispb = try_system(meiryo, 24) or try('Rajdhani-Bold.ttf', 24) or F.disp
-    else
-        F.text  = try('Inter-Regular.ttf', 18) or F.icons
-        F.semi  = try('Inter-SemiBold.ttf', 18) or F.text
-        F.bold  = try('Inter-Bold.ttf', 18) or F.semi
-        F.disp  = try('Rajdhani-SemiBold.ttf', 24) or F.semi
-        F.dispb = try('Rajdhani-Bold.ttf', 24) or F.disp
-    end
-    -- never leave fonts nil
-    F.text  = F.text  or F.icons
-    F.semi  = F.semi  or F.text
-    F.bold  = F.bold  or F.semi
-    F.disp  = F.disp  or F.semi
-    F.dispb = F.dispb or F.disp
+    F.japanese_font = jp ~= nil -- (for the host: none found, and Japanese text would be boxes)
+    F.text = jp or try('Inter-Regular.ttf', 18) or F.icons
+    F.semi = jp or try('Inter-SemiBold.ttf', 18) or F.text
+    F.bold = jp or try('Inter-Bold.ttf', 18) or F.semi
+    F.disp = jp or try('Rajdhani-SemiBold.ttf', 24) or F.semi
+    F.dispb = jp or try('Rajdhani-Bold.ttf', 24) or F.disp
     F.loaded = true
-    vana.log('auctionhouse-vanacore fonts ready, lang=' .. LANG)
 end
 local FA = {
     ['rotate-right'] = 0xF2F9, gear = 0xF013, bell = 0xF0A2, ['bell-slash'] = 0xF1F6, xmark = 0xF00D,
@@ -548,7 +217,7 @@ local FA = {
     ['circle-minus'] = 0xF056, ['circle-plus'] = 0xF055, ['hand-holding-dollar'] = 0xF4C0, ['money-bill'] = 0xF0D6, ['arrows-rotate'] = 0xF021,
     ['box-open'] = 0xF49E, ['wand-magic-sparkles'] = 0xE2CA, ['circle-dot'] = 0xF192, ['square-check'] = 0xF14A, ['list-ul'] = 0xF0CA,
     ['chart-line'] = 0xF201, ['chart-simple'] = 0xE473, ['star-half-stroke'] = 0xF5C0, binoculars = 0xF1E5, ['bell-on'] = 0xF8FA,
-    ['scale-balanced'] = 0xF24E, shirt = 0xF553, ['caret-up'] = 0xF0D8, ['caret-down'] = 0xF0D7, plus = 0xF067, minus = 0xF068,
+    ['scale-balanced'] = 0xF24E, shirt = 0xF553, ['caret-up'] = 0xF0D8, ['caret-down'] = 0xF0D7, plus = 0xF067, minus = 0xF068, ['table-cells'] = 0xF00A, ['trash-can'] = 0xF2ED,
 }
 local fa_cache = {}
 local function fa(name)
@@ -771,38 +440,22 @@ local function job_badge(dl, cx, cy, r, job, glow, alpha)
     local size = r * 1.7
     local cell = (job and job >= 1 and job <= 22) and (job - 1) or nil
     if not sprite(dl, TEX.jobs, 22, cell, cx - size / 2, cy - size / 2 - r * 0.1, size, size, alpha) then
-        text_center(dl, cx - r, cy, r * 2, U.job_label(job), color, F.dispb, r * 0.8, alpha)
+        text_center(dl, cx - r, cy, r * 2, jname, color, F.dispb, r * 0.8, alpha)
     end
 end
 
--- while the pad is in use, the host can limit which widgets the D-pad may land on (nil: every button)
-function U.set_nav_filter(fn) A.nav_filter = fn end
-function U.focus_key(key) A.want_focus = key A.ring_key = key end
-function U.nav_allows(key)
-    if not A.pad_shown or A.nav_filter == nil then return true end
-    return A.nav_filter(key) == true
-end
-
-local function hit(key, w, h)
+local function hit(key, w, h, r, ring)
     -- 8: ImGuiButtonFlags_EnableNav, so a controller's focus can land on it (ImGui 1.90+ keeps invisible buttons out
-    -- of navigation unless told otherwise). 0 keeps the mouse click and leaves the D-pad out of it. NoNav on the
-    -- item as well: a button flag alone still left the D-pad a way onto a row from Close or the category list.
-    if A.want_focus == key then imgui.SetKeyboardFocusHere() A.want_focus = nil end
-    local allow = U.nav_allows(key)
-    local nonav = false
-    if not allow and imgui.PushItemFlag then nonav = pcall(imgui.PushItemFlag, 2, true) == true end
-    local pressed = imgui.InvisibleButton(key, { math.max(1, w), math.max(1, h) }, allow and 8 or 0)
-    if nonav and imgui.PopItemFlag then pcall(imgui.PopItemFlag) end
-    -- VanaCore feeds the active-window button to ImGui as an activation, so it would also press the focused row
-    if A.suppress_press then pressed = false end
+    -- of navigation unless told otherwise)
+    local pressed = imgui.InvisibleButton(key, { math.max(1, w), math.max(1, h) }, 8)
     local hovered = imgui.IsItemHovered()
     local v = A.hover[key] or 0
     v = lerp(v, hovered and 1 or 0, math.min(1, dt * 14))
     A.hover[key] = v
     -- the controller's focus (ImGui's navigation), drawn as a ring by draw_toasts while the controller is in use
-    if A.pad_shown and (A.ring_key == key or (A.ring_key == nil and imgui.IsItemFocused())) then
+    if A.pad_shown and imgui.IsItemFocused() then
         local fx, fy = imgui.GetItemRectMin()
-        A.focus = { x = fx, y = fy, w = math.max(1, w), h = math.max(1, h), at = now_t, key = key }
+        A.focus = { x = ring and ring.x or fx, y = ring and ring.y or fy, w = math.max(1, ring and ring.w or w), h = math.max(1, ring and ring.h or h), r = r, at = now_t, key = key }
     end
     return pressed, hovered, v
 end
@@ -828,7 +481,7 @@ end
 
 local function button(dl, key, x, y, w, h, label, color, kind, icon_name, font, size)
     imgui.SetCursorScreenPos({ x, y })
-    local pressed, hovered, hv = hit(key, w, h)
+    local pressed, hovered, hv = hit(key, w, h, S(9))
     local down = hovered and imgui.IsMouseDown(0)
     font = font or F.semi
     size = size or T.body
@@ -862,7 +515,7 @@ end
 
 local function icon_button(dl, key, x, y, size, name, color, tip, bounce)
     imgui.SetCursorScreenPos({ x, y })
-    local pressed, hovered, hv = hit(key, size, size)
+    local pressed, hovered, hv = hit(key, size, size, size / 2) -- (a circle)
     local cx, cy = x + size / 2, y + size / 2
     dl:AddCircleFilled({ cx, cy }, size / 2, u32(color, 0.08 + 0.16 * hv), 32)
     if hv > 0 then dl:AddCircle({ cx, cy }, size / 2, u32(color, 0.55 * hv), 32, 1) end
@@ -920,14 +573,15 @@ local function aurora(dl, x, y, w, h, t, radius)
         dl:AddRectFilledMultiColor({ x + ins, y + dy }, { x + w - ins, y + dy + 1 }, lc(f0), rc(f0), rc(f1), lc(f1))
     end
     dl:AddRectFilledMultiColor({ x, y + r }, { x + w, y + h }, lc(r / h), rc(r / h), u32(P.glass, 0), u32(P.glass, 0))
+    -- the grid fades out with the colour: cut off at the bottom it drew a hard edge across the glass under it
     local gx = x + S(24)
     while gx < x + w do
-        dl:AddLine({ gx, y }, { gx, y + h }, u32('#FFFFFF', 0.025), 1)
+        dl:AddRectFilledMultiColor({ gx, y }, { gx + 1, y + h }, u32('#FFFFFF', 0.025), u32('#FFFFFF', 0.025), u32('#FFFFFF', 0), u32('#FFFFFF', 0))
         gx = gx + S(28)
     end
     local gy = y + S(14)
     while gy < y + h do
-        dl:AddLine({ x, gy }, { x + w, gy }, u32('#FFFFFF', 0.02), 1)
+        dl:AddLine({ x, gy }, { x + w, gy }, u32('#FFFFFF', 0.02 * (1 - (gy - y) / h)), 1)
         gy = gy + S(28)
     end
     for i = 1, 3 do
@@ -935,7 +589,10 @@ local function aurora(dl, x, y, w, h, t, radius)
         local oy = y + h * 0.4 + math.cos(t * 0.5 + i) * h * 0.25
         local col = i == 1 and P.cyan or (i == 2 and P.accent2 or P.accent)
         for k = 5, 1, -1 do
-            dl:AddCircleFilled({ ox, oy }, S(22) * k, u32(col, 0.022), 24)
+            -- a ring that would cross the bottom edge is dimmed by how far it crosses: clipped whole, it drew a step
+            local rk = S(22) * k
+            local cut = math.max(0, math.min(1, (y + h - oy) / rk))
+            dl:AddCircleFilled({ ox, oy }, rk, u32(col, 0.022 * cut), 24)
         end
     end
     dl:PopClipRect()
@@ -944,7 +601,7 @@ end
 local function dropdown(dl, key, x, cy, w, options, value)
     local h = S(30)
     imgui.SetCursorScreenPos({ x, cy - h / 2 })
-    local pressed, _, hv = hit(key, w, h)
+    local pressed, _, hv = hit(key, w, h, S(9))
     local name = '?'
     for _, o in ipairs(options) do if o.id == value then name = o.name end end
     dl:AddRectFilled({ x, cy - h / 2 }, { x + w, cy + h / 2 }, u32(mix(P.well, P.card_hi, 0.4 * hv)), S(9))
@@ -1015,7 +672,7 @@ local function segments(dl, key, x, y, h, options, value, color_of, font, size)
         local lw = label ~= '' and measure(label, font or F.semi, size or T.small) or 0
         local tw = bare and (gs + S(10)) or (S(22) + lw + gs + ((glyph and label ~= '') and S(6) or 0))
         imgui.SetCursorScreenPos({ cx, y })
-        local pressed, hovered, hv = hit(key .. i, tw, h)
+        local pressed, hovered, hv = hit(key .. i, tw, h, S(9))
         if pressed then value = opt[1] clicked = opt[1] end
         if hovered and tip then with_font(F.text, T.small, imgui.SetTooltip, tip) end
         local on = value == opt[1]
@@ -1053,7 +710,7 @@ local function toggle(dl, key, x, cy, label, value)
     local tw, th = S(40), S(22)
     local lw = measure(label, F.text, T.small)
     imgui.SetCursorScreenPos({ x, cy - th / 2 })
-    local pressed, _, hv = hit(key, tw + S(10) + lw, th)
+    local pressed, _, hv = hit(key, tw + S(10) + lw, th, th / 2, { x = x, y = cy - th / 2, w = tw, h = th }) -- the ring round the pill
     if pressed then value = not value end
     local a = A.toggle_anim[key]
     if a == nil then a = value and 1 or 0 end
@@ -1097,13 +754,16 @@ local function draw_toasts(t)
     local fo = A.focus
     if fo and A.pad_shown and fo.at == now_t then
         local fdl = imgui.GetForegroundDrawList()
-        local r = math.min(S(10), fo.h / 2)
+        local r = fo.r or math.min(S(10), fo.h / 2) -- the thing's own corners, so the ring follows its shape
         local pulse = 0.75 + 0.25 * math.sin(t * 4)
-        for i = 3, 1, -1 do
+        -- the halo spreads with the size of the thing: three soft rings round a card, one tight ring round a small
+        -- row or a pill has the ring alone (the halo turned a 22 px row into a blob)
+        local steps = fo.h >= S(44) and 3 or 0
+        for i = steps, 1, -1 do
             fdl:AddRect({ fo.x - S(i) - 1, fo.y - S(i) - 1 }, { fo.x + fo.w + S(i) + 1, fo.y + fo.h + S(i) + 1 }, u32(P.accent, 0.07 * pulse * (4 - i)), r + S(i), 15, S(2))
         end
-        fdl:AddRect({ fo.x - 1, fo.y - 1 }, { fo.x + fo.w + 1, fo.y + fo.h + 1 }, u32(P.accent, 0.95), r, 15, math.max(1.5, S(1.5)))
-        fdl:AddRect({ fo.x, fo.y }, { fo.x + fo.w, fo.y + fo.h }, u32('#FFFFFF', 0.25 * pulse), r, 15, 1)
+        fdl:AddRect({ fo.x - 1, fo.y - 1 }, { fo.x + fo.w + 1, fo.y + fo.h + 1 }, u32(P.accent, 0.95), r + 1, 15, math.max(1.5, S(1.5)))
+        if steps > 1 then fdl:AddRect({ fo.x, fo.y }, { fo.x + fo.w, fo.y + fo.h }, u32('#FFFFFF', 0.25 * pulse), r, 15, 1) end
     end
     local sw = vana.ui.screen()
     local y = S(96)
@@ -1145,6 +805,8 @@ function U.frame(frame_dt, frame_scale, t)
     return true
 end
 function U.set_window_alpha(a) WINDOW_ALPHA = a end
+function U.reload_fonts() F.loaded = false end -- the language changed: the faces are chosen again next frame
+function U.load_image(key, path) return load_texture(key, path) end -- a texture of the host's own (released by key)
 function U.fonts() return F end
 function U.sizes() return T end
 function U.scale() return scale end

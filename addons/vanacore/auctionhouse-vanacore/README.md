@@ -13,58 +13,7 @@ when asked (on a stock server that tab stays empty), and sold notices come from 
 
 Talking to any auction clerk opens it in place of the game's menu (a setting; off, the game's menu comes back):
 the city Auction Counters and the outpost clerks of Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Nashmau and the
-rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default) opens it anywhere
-for browsing; bidding and selling need you at a clerk, which `/ah` knows once you've talked to one there (below).
-
-## Japanese client — 1.0.0Je
-
-This work localizes **only** `addons/vanacore/auctionhouse-vanacore`. No other addon in cexi-addons is changed.
-
-Japanese text is used only when the game client is Japanese. An English client keeps the original English interface, item names, and help.
-
-Version **1.0.0Je**. Later Japanese revisions are **1.0.0Jf**, and so on. Authors: Carver, Tsuyumi, Hando. Tsuyumi began the Japanese client text.
-
-### English
-
-- Item names from a Japanese client are shown in Japanese (the client encoding is converted to UTF-8). Window text is translated. Meiryo is used when Windows has it.
-- Jobs that can equip an item use the familiar one-character marks (戦, モ, 白, 黒, 赤, シ, ナ, 暗, 獣, 詩, 狩, 侍, 忍, 竜, 召, 青, コ, か, 踊, 学, 風, ル). On a Japanese client every mark is listed, on up to two lines. An item for every job reads 全ジョブ. An English client still shortens a long job list.
-- `/ah s` is the same as `/ah search`. A Japanese name typed in chat is passed through without being garbled.
-- Help text and the compare card’s labels are Japanese on a Japanese client. The Buy tab is 入札. Category names follow the official Japanese auction-house menu (食品, 錬金術材, 雑貨, 獣人製品, カード, 忍具, 呪物, からくり部品, 釣り具, and the rest). The groups themselves are unchanged.
-- A controller uses the button roles from the game’s own settings (Confirm, Cancel, Main menu, Active window). While this window is open, the pad stays with it.
-  - L1 and R1 change tabs. In the categories and in the results, up and down move, and left and right scroll one page.
-  - Cancel steps back. It does not close the window. Confirm on the Close button closes it.
-  - Confirm on a result moves to the price field and stays there. Left and right move between the price field and Bid. Confirm enters the amount, and the next Confirm moves to Bid. Cancel from the price field, the history, single or stack, the watch star, or Bid returns to the result list.
-  - The active-window button, from the categories, moves among Compare, In stock, and Usable. Left and right move between them, Confirm turns one on or off, and the active-window button or Cancel returns. From the results it moves among Name, Level, and Stock. Left and right move between them, Confirm flips the order, and the active-window button or Cancel returns. On an item’s bid card it cycles single, stack, watch, history, and the price field. An item that does not stack skips single and stack.
-  - The search box is not a D-pad target. Scrolling the sale history does not jump to the categories.
-  - The help along the bottom of the window matches these actions. On a Japanese client that help is Japanese. The button pictures follow the game’s pad settings.
-- **1.0.0Jb.** Confirm on Name, Level, or Stock flips that order once and leaves the cursor there. Confirm on Compare, In stock, or Usable turns that chip on or off once and leaves the cursor there.
-- **1.0.0Jc.** `/ah s` with at least one hit leaves the cursor on the result list. A bid reads 落札 or 落札失敗, and a sale of your own listing reads 売却. On Sell, Confirm stays on the asking price, then Confirm or the active-window button moves to List, and Cancel returns to the bag. The listing confirmation follows the system notice. The category list wraps upward as well as downward.
-- **1.0.0Jd.** Moving through the categories no longer leaves the cursor in the sale history. The D-pad on Close no longer jumps elsewhere. While this window is open with the pad switched on, FancyChatJP does not take its modifier button, whichever button that is set to. Upstream FancyChat can still take that press when the two overlap.
-- **1.0.0Je.** The help along the bottom lists only the buttons that do something where the cursor is. Button names follow the game's Enable XInput setting: XInput keeps A, B, LB, and LT, and DirectInput shows the same button numbers as the game's pad config. The active-window button can move onto the search box. Confirm there returns to the results the text already found. The active-window button and Cancel return to the categories. On the result list, the active-window button only moves between that list and Name, Level, and Stock. On a Japanese client an empty search box reads 「/ah s 商品名で検索できます」. The mouse can still click the box.
-
-### 日本語
-
-この作業で日本語にしているのは、競売アドオン `addons/vanacore/auctionhouse-vanacore` だけです。cexi-addons の他のアドオンは変更していません。
-
-表示が日本語になるのは、日本語クライアントのときだけです。英語クライアントでは、画面もアイテム名もヘルプも、これまでどおり英語です。
-
-バージョンは **1.0.0Je** です。このあとの日本語版は **1.0.0Jf** と続けます。作者は Carver、Tsuyumi、Hando です。最初の日本語対応は Tsuyumi です。
-
-- 日本語クライアントのアイテム名を日本語で表示します（クライアントの文字コードを UTF-8 に変換）。画面の文言を翻訳し、Meiryo があればそれを使います。
-- 装備可能ジョブは、見慣れた一文字です（戦・モ・白・黒・赤・シ・ナ・暗・獣・詩・狩・侍・忍・竜・召・青・コ・か・踊・学・風・ル）。日本語クライアントでは、省略せず最大2段ですべて出します。全ジョブ対応は「全ジョブ」です。英語クライアントは、ジョブが多いときの省略を残しています。
-- `/ah s` は `/ah search` と同じです。チャットに日本語の商品名を書いても文字化けしません。
-- ヘルプと比較カードの表示は、日本語クライアントでは日本語です。購入タブは「入札」です。区分名は公式の競売メニューに合わせています（食品、錬金術材、雑貨、獣人製品、カード、忍具、呪物、からくり部品、釣り具など）。区分のまとめ方自体は変えていません。
-- コントローラーは、ゲームの設定にあるボタンの役割を使います（決定、キャンセル、メインメニュー、アクティブウィンドウ切替）。この画面を開いているあいだ、パッドはこの画面が受け取ります。
-  - L1 / R1 でタブを切り替えます。区分と検索結果では、上下が移動、左右が1ページ分のスクロールです。
-  - キャンセルは一段戻るだけで、画面は閉じません。閉じるボタンの上で決定すると閉じます。
-  - 検索結果で決定すると、金額欄に留まります。左右で金額欄と入札ボタンを移動します。決定で金額を入力し、もう一度決定すると入札ボタンへ移ります。金額欄、履歴、単品・スタック、ウォッチ、入札ボタンのどこでキャンセルしても、検索結果へ戻ります。
-  - アクティブウィンドウ切替は、区分にいるときは比較・在庫あり・装備可能へ移ります。左右で移動し、決定でオンとオフを切り替え、アクティブウィンドウ切替かキャンセルで戻ります。検索結果にいるときは名前・レベル・在庫へ移ります。左右で移動し、決定で昇順と降順を入れ替え、アクティブウィンドウ切替かキャンセルで戻ります。入札欄では、単品、スタック、ウォッチ、履歴、金額欄の順に移ります。スタックできないアイテムでは、単品とスタックは飛ばします。
-  - 検索欄は十字キーの移動先にしません。履歴のスクロールから区分へは飛びません。
-  - 画面下のヘルプは、今の操作に合わせています。日本語クライアントでは日本語です。ボタンの絵は、ゲームのパッド設定に従います。
-- **1.0.0Jb.** 名前・レベル・在庫の上で決定すると、昇順と降順が一度だけ切り替わり、カーソルはそこに残ります。比較・在庫あり・装備可能の上で決定すると、オンとオフが一度だけ切り替わり、カーソルはそこに残ります。
-- **1.0.0Jc.** `/ah s` で1件以上当たると、カーソルは検索結果に移ります。落札は「落札」、失敗は「落札失敗」、自分の出品が売れると「売却」です。出品では、決定で価格欄に留まり、金額のあとの決定かアクティブウィンドウ切替で出品ボタンへ移り、キャンセルでバッグへ戻ります。出品確認の文は、システムの案内に合わせています。区分リストは、上端から下端へも続きます。
-- **1.0.0Jd.** 区分を動かしても、カーソルが落札履歴へ移らなくなりました。閉じるボタンの上で十字キーを押しても、別の場所へ飛びません。この画面を開いてパッドを有効にしているあいだ、FancyChatJP は修飾ボタンを取りません。修飾ボタンがどのボタンかは設定次第です。本家の FancyChat は、競売と重なったときにその操作を奪うことがあります。
-- **1.0.0Je.** 画面下のヘルプは、今いる場所で実際に効くボタンだけを出します。ボタン名はゲームの Enable XInput に従います。オンなら A や B、LB、LT、オフなら設定画面と同じボタン番号です。アクティブウィンドウ切替で検索欄へ移れます。検索欄で決定すると、残っている文字の検索結果へ戻り、アクティブウィンドウ切替とキャンセルは区分へ戻ります。検索結果にいるときは、アクティブウィンドウ切替はリストと名前・レベル・在庫の間だけです。日本語クライアントで検索欄が空のときは「/ah s 商品名で検索できます」と出ます。マウスでは欄をクリックできます。
+rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default; change the key or turn it off in Settings, or `/ah bind`) opens it too, but only within 5.5 yalms of a counter you've talked to, as the game's own house only opens at its counter, and it closes when you walk away. Settings has **View the Auction House anywhere** for browsing from anywhere, with a warning: that's against the rules on most servers and easily tracked. Bidding, selling and taking down always need you at the counter: the server only checks that the zone has an auction house, so the addon keeps the rule itself.
 
 ## Install
 
@@ -78,9 +27,10 @@ beside each category is how many of its items are up right now. The list shows e
 how many singles and stacks are up, and the last sale once it's known; sort it by name, level or stock (names A to Z, level and stock highest first; click the sort in use again
 to turn it round, and its arrow shows which way it runs), and the
 **In stock** chip hides everything with nothing up, and the **Usable** chip hides gear your current main job,
-at its level, and your race can't wear; anything that isn't gear (food, medicines, materials) stays listed (both
-chips at the right of the tab row, both remembered). Gear you can wear has a yellow
-name in the list and gear you can't is dimmed. The search box in the header finds any listed item by
+at its level, and your race can't wear, and spell scrolls neither your main job nor your sub job can learn at
+their current levels (the server's own rule when a scroll is used); anything else (food, medicines, materials) stays
+listed (both chips at the right of the tab row, both remembered). Gear you can wear and scrolls you can learn have a
+yellow name in the list, and the rest of those are dimmed. The search box in the header finds any listed item by
 name, across every category. Click an item for its card: description, the jobs that can use it, stock, the last
 ten sales for singles or stacks with **last · median · range** and the trend, a price graph, and the bid box. The
 house fills the cheapest listing at or under your bid and you pay what you bid, as always; the box starts at the
@@ -105,8 +55,13 @@ Watched items are checked every five minutes while you play, house open or not, 
 stock coming back shows as a notice. Clicking a row opens its card.
 
 **Sell.** Your bag, with the items the house doesn't take greyed (the **Sellable** chip above the bag hides them
-instead, and is remembered). Pick one, choose single or full stack, set a
-price (recent sales are shown), and **List for N gil**: the house quotes its listing fee, and a card spells out the
+instead, and is remembered). The two buttons beside it show the bag as icons or as a list with each item's name,
+how many you have, its category and the last price it sold for once you've looked at it (also remembered). Pick one
+and choose single or full stack (a stack's prices show even when you hold fewer; listing one waits for a full stack), and the **market** for it shows above the
+price: how many are up right now (singles and stacks), last, median and range with the trend, the price graph
+when there's room (each sale's difference from the median when there isn't), and the latest sales (price, when, who sold to whom).
+Clicking last, median or any sale puts that price in the box, and beside the label it says how yours compares to the
+median. Then **List for N gil**: the house quotes its listing fee, and a card spells out the
 whole transaction (the item, the price, the fee paid now, the payout to your delivery box when it sells) for you to
 say **List it** to.
 
@@ -120,6 +75,12 @@ taking down a listing the house isn't currently showing takes a moment (the conf
 brings the house round to it. **History**
 on a row asks the search server for that item's recent sales (only when you ask: nothing is fetched for rows nobody
 looks at) and shows last, median, range and trend under the row, with where your price stands against the median.
+**Relist** takes a listing down and puts it back up at a new price. Its dialog shows the price it's up for, the
+median and the last sale, and offers cuts of 1, 5, 10 and 20 % with the price each gives, plus the median and the last
+sale when they're lower; one is starred (the median when your price is above it, else a small cut), or type any price.
+The listing comes down (the house's pages are turned to it first when needed), and once it's back in your bag the
+house quotes the new fee, which you confirm as any listing: the fee is charged again and the old one isn't returned.
+Cancel there, or anything the house refuses, leaves the item in your bag, and the window says so.
 When one of your listings sells while you're on, CatsEyeXI's server says so (its `ah_announcement` module, a system
 line naming the item, the buyer and the price): the window shows it as a notice, drops the listing, puts the sale on
 the Activity tab, and keeps the price on the item's record. The chat line stays too.
@@ -128,7 +89,8 @@ the Activity tab, and keeps the price on the item's record. The chat line stays 
 listing (with its fee), take-down and sale, newest first, twenty to a page (**Newer** / **Older**), with **All**,
 **Bought** and **Sold** filters. The strip above it totals the gil over the whole record: spent on purchases, earned
 from sales, paid in listing fees, and the net of the three. A sale is known only when the server announces it to you,
-so one that happens while you're logged out shows in your delivery box, not here.
+so one that happens while you're logged out shows in your delivery box, not here. **Clear** (beside the filters) empties the
+whole record and its totals after asking; it doesn't touch anything you have up at the house.
 
 **Typing a price.** The box you're typing in glows gold with a blinking caret; clicking a price box selects the
 number so typing replaces it. Enter in the asking price is the List button, Enter in the bid box opens the bid's
@@ -138,16 +100,7 @@ confirmation (never a bid straight away), and Esc leaves the box, then a second 
 gamepad support in VanaCore addons**, one for every addon (`vanacore.ini`'s `[addons] gamepad=1`; `/ah pad on` sets
 it too). With two windows open, the one with the focus answers the pad. Tested with XInput
 pads in mind; a DirectInput pad (a PlayStation controller without a wrapper) is read through the game's own button
-map and may not line up. With it on, the window takes the pad while it's open, so your character stays put and the game's menus stay closed: the D-pad moves a ring between
-things, Confirm presses, Cancel backs out, the bumpers turn the tabs, the triggers walk the categories, a stick
-scrolls the list, X and Y are the In stock and Usable chips, View the Compare chip, Menu the settings. **To buy**, the
-Buy tab goes left to right, one pane at a time: the ring starts on the category in use in the sidebar; Confirm on a
-category moves it to that list's first item; Confirm on an item opens its card with the ring on the price box;
-Confirm there edits the price (below), Confirm again keeps it and moves to **Bid**, Confirm on Bid opens the
-confirmation, where Bid is already under the ring, so Confirm once more bids. Cancel walks back the same way (the
-confirmation, the card to its item, the list to its category, then the window), and the legend says what Confirm and
-Cancel do in the pane you're in. A Confirm only ever does one thing: the press that keeps a price doesn't also press
-Bid. **A price:** the price box (Left from Bid, or Up from List on the Sell tab, gets back to it) takes Confirm as a digit editor, since a pad can't
+map and may not line up. With it on, the window takes the pad while it's open, so your character stays put and the game's menus stay closed. The D-pad moves a ring between things and a stick walks it through whatever list it's in, faster the further the stick is pushed; a list stops at its ends. Confirm presses, Cancel backs out, the bumpers turn the tabs, Menu opens the settings, and **X and Y do what fits the pane the ring is in**, as the legend along the bottom says. **Buy** goes left to right, one pane at a time: the ring starts on the category in use in the sidebar; Confirm on a category moves it to that list's first item; Confirm on an item opens its card with the ring on the price box; Confirm there edits the price (below), Confirm again keeps it and moves to **Bid**, Confirm on Bid opens the confirmation, where Bid is already under the ring, so Confirm once more bids. Left and Right walk the same three panes (the list remembers its row, and Right from the list opens the highlighted item's card); Cancel walks back the same way (the confirmation, the card to its item, the list to its category, then the window). In the sidebar and the list, Y is the **In stock** filter, X the **Usable** filter, View the **Compare** chip and the triggers walk the categories; on the card, Y **watches** the item (or stops) and X swaps **single and stack**, which Up from the price box reaches too (Left and Right pick, Down goes back). **Sell:** the stick walks the bag a row at a time, Right from the bag is the price box and Left from it the picked item, Y is the **Sellable only** chip, X single or stack. **Listings:** the ring moves between each row's buttons; Y opens the row's **History**, X **relists** it. **Watch:** Y stops watching the row, X edits its **Tell me under** price. **Activity:** the triggers turn the pages, Y the filter, X the newest page. **Settings:** Y the next theme, X the next bell. A Confirm only ever does one thing: the press that keeps a price doesn't also press Bid. **A price:** the price box (Left from Bid, or Up from List on the Sell tab, gets back to it) takes Confirm as a digit editor, since a pad can't
 type, worked as the game's own bid box is: the number starts at 0, right-aligned, with the ones digit lit; Left
 moves the light up the columns (past the top digit it adds a zero in front, up to nine digits), Right brings it back
 down and, at the ones, clears the number; Up and Down change the lit digit (carrying over, never below 0); Confirm
@@ -159,7 +112,7 @@ addon's own bridge (`pad.lua`) does the same from the game's controller reads. `
 state, `/ah pad off` turns it off (a setting), and `/ah pad <button>` presses a button as a controller would, for
 trying it without one.
 
-**Settings** (the gear): the theme, bid and sell only at an auction clerk, talking to a clerk opens this window, confirm before
+**Settings** (the gear): the theme, View the Auction House anywhere (with its warning), talking to a clerk opens this window, confirm before
 bidding, the price graph, background checks of watched items, opacity and scale, and the sound as it opens: a small
 bell by default, or Counter bell, Door chime, Chapel bell, Crystal chime, Tiny bell, or Off (picking one plays it, and
 the speaker beside it plays it again; `/ah sound <name>` and `/ah sound off` do the same). The search server isn't shown
@@ -170,6 +123,19 @@ Ninja, Harvest, Gunslinger, Rose, Bard, Jade): their colours only, the art stays
 Settings or with `/ah theme <name>`. A `themes\<id>.lua` in the addon's folder adds one of your own or replaces a
 built-in one, in Party Finder's format (`return { name = '…', palette = { bg = '#…', glass, card, card_hi, line,
 well, accent, accent2, cyan } }`).
+
+## Languages
+
+On a Japanese client the window is in Japanese: item names and descriptions as the client has them (Shift-JIS, read
+through Windows into UTF-8), the official auction-house category names, one-character job marks (戦 モ 白 …), the
+window's own text, the compare card and the controller's help, drawn with Meiryo (or Yu Gothic, or MS Gothic) from
+Windows; without those (Wine, a Mac), a `NotoSansJP-Regular.otf` dropped into `C:\Windows\Fonts` (Noto Sans JP, OFL,
+from github.com/notofonts/noto-cjk) is used, and with no Japanese font at all the window says so once and stays
+English. An English client stays English. Which one is decided from VanaCore's `[language] playonline` setting, then
+from what the client's item names look like; **Settings → Language** (or `/ah lang auto|en|ja`) overrides it, with
+a flag beside it for the language in use. The Japanese strings are in `lang.lua`.
+
+The Japanese localization is Hando's work (cexi-addons PR #11) — thank you.
 
 ## Commands
 
@@ -182,7 +148,9 @@ well, accent, accent2, cyan } }`).
 | `/ah pick <id or name>` | Open on an item's card |
 | `/ah server <host[:port]>` | Which search server to ask; `/ah server auto` finds it from your login again |
 | `/ah theme <name>` | Switch theme; `/ah theme` lists them |
+| `/ah bind <key>` / `off` | The key that opens the house (`^` Ctrl, `!` Alt, `+` Shift, then a letter, digit or F key) |
 | `/ah sound <name>` / `off` / `on` | The sound as the window opens; `/ah sound` lists them |
+| `/ah lang auto\|en\|ja` | The window's language: the client's own, English, or Japanese |
 | `/ah scale <percent>` | Window size, 50 to 300 |
 | `/ah opacity <percent>` | Window opacity, 40 to 100 |
 | `/ah refresh` | Forget fetched lists and histories |
@@ -191,6 +159,12 @@ well, accent, accent2, cyan } }`).
 
 Settings and the watch list are kept per character in `Vanacore\config\addons\auctionhouse-vanacore\<name>.lua`; the
 activity record is `<name>-activity.lua` beside it (up to 2,000 entries); the price record is
+`index-<search host>.lua` is what the house lists in each category, as its search server last said. Like the game's
+own window, only the category you open is asked (again each time you open it); nothing about which items are sold
+is shipped with the addon, so a new auction item shows up as soon as the server lists it. Search covers the
+categories opened on that server so far; under the results, **Include the other categories** asks the rest once
+(one at a time) and keeps them too. The Sell tab doesn't use it: what can be sold is judged as the game's own window
+judges it, by the no-auction flag in the client's item data.
 `prices-<search host>.lua`, one per server, up to 160 sales per item and kind, series with no sale in 120 days
 dropped.
 
@@ -199,8 +173,7 @@ dropped.
 - **The counter:** talking to any auction clerk makes the server send `0x04C` with command `Open`
   (`sendMenu(AUCTION)`), nothing more; the addon swallows that packet and opens its window, so the game never draws
   its menu and nothing is left waiting server-side. No NPC names are looked at. The Open is the server's word that
-  this is an auction house, and where you stood when it came is kept in your settings, per zone (`spots`): within 8
-  yalms of a kept spot counts as at the counter, so `/ah` there later can bid and sell too.
+  this is an auction house, and where you stood when it came is kept in your settings, per zone (`spots`): within 5.5 yalms of a kept spot counts as at the counter, so `/ah` there later can bid and sell too.
 - **Buying, selling, your sales:** packet `0x04E` out and `0x04C` in (`map/packets/c2s/0x04e_auc.h`): WorkCheck when
   the window opens, Bid, AskCommit then LotIn to sell (both carry an auction work slot 0–6 at 0x05; the server refuses
   −1 there without a word), Info for the sales list (the server's AH pagination module
@@ -222,18 +195,18 @@ dropped.
 
 - `auctionhouse-vanacore.lua` — the addon: state, the game packets, the window
 - `search.lua`, `bf_tables.lua` — the search-server client and LandSandBoat's Blowfish boxes
-- `items.lua` — the game's item data through the resource manager, icon textures, the catalogue and name search
+- `items.lua` — the game's item data through the resource manager, icon textures, what the house lists (from its
+  own answers, kept per server) and the name search
 - `prices.lua` — the price record (every sale seen, per server) and the graphs drawn from it
+- `lang.lua` — the Japanese strings and which language is in use (the setting, VanaCore's, or the client's item names)
 - `ledger.lua` — the activity record (bought, listed, taken down, sold; per character), its pages and totals
 - `compare.lua` — gear stats read from the game's item descriptions, what you wear, and the Compare card
 - `pad.lua` — the controller: VanaCore's XInput and DirectInput reads as ImGui's gamepad keys, the game kept from them
   while the window has the pad, the legend; shared source in `tools/pad.lua`, copied here by `tools/make_ui.py`
-- `catalogue.lua` — every item the house lists (`item_basic.aH > 0`), with its category, stack size, level, jobs
-  and slot. Regenerate from the server database when items change:
-  `SELECT b.itemid, b.aH, b.stackSize, b.flags, COALESCE(e.level,0), COALESCE(e.jobs,0), COALESCE(e.slot,0) FROM item_basic b LEFT JOIN item_equipment e ON e.itemId = b.itemid WHERE b.aH > 0 ORDER BY b.itemid`
-  into `{id,cat,stack,flags,level,jobs,slot},` rows.
 - `ui.lua` — the drawing kit and the themes, generated from the Party Finder addon's helpers by this repo's `tools/make_ui.py`
   so the two look the same; edit there, not here
 - `fonts/` — Inter and Rajdhani (SIL Open Font License, licenses included); `images/jobs.png` — the job sprites
 - `sounds/` — the bells the window opens with: `small_bell.wav` is BigSoundBank's "Small Bell #1" (CC0), the rest are
   synthesized for this addon; `sounds/README.txt` has the sources
+- `fonts/` — Inter and Rajdhani (SIL Open Font License, licenses included); `images/jobs.png` — the job sprites;
+  `images/badge_cat.png` — the header's badge (Settings → Icon: the cat and its coin, or the drawn glass gil)

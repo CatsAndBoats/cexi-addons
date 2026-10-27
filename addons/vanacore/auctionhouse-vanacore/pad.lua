@@ -116,18 +116,15 @@ local function capturing_now()
     return false
 end
 local function any_enabled() return PAD.enabled() end
--- what a window keeps from ImGui's navigation: true blocks up and down (a price box stepping); 'x' blocks left and
--- right (a list whose sideways press scrolls a page); 'all' blocks the whole D-pad (a price edited digit by digit)
-local function hold_axes()
-    local vert, horiz = false, false
+-- what a window keeps from ImGui's navigation: true, up and down (a price box stepping); 'all', the whole D-pad
+-- (a price box being edited digit by digit)
+local function hold_vertical()
+    local r = false
     for _, h in pairs(st.hosts) do
-        local hold = h.hold
-        if h.hold_vertical then vert = true end
-        if hold == 'all' then return true, true end
-        if hold == 'x' then horiz = true
-        elseif hold then vert = true end
+        if h.hold == 'all' then return 'all' end
+        if h.hold or h.hold_vertical then r = true end
     end
-    return vert, horiz
+    return r
 end
 
 -------------------------------------------------------------------------------
@@ -141,11 +138,7 @@ local function fields(s)
 end
 
 local function read_bindings()
-    st.dlabel = {} -- logical name -> the number the game's config shows (Button3 is "3")
-    for i, n in pairs(DNUM) do
-        st.dmap[i] = n
-        st.dlabel[n] = tostring(i + 1)
-    end
+    for i, n in pairs(DNUM) do st.dmap[i] = n end
     local ok, mode = pcall(vana.config.game, 'padmode000')
     local m = ok and fields(mode) or {}
     if m[6] ~= nil then st.xinput_mode = m[6] ~= 0 end
@@ -157,11 +150,10 @@ local function read_bindings()
             if st.xinput_mode then
                 if XNUM[v] then st.map[what] = XNUM[v] end
             else
-                -- a DirectInput button: the game calls it Button(v+1). The legend uses that number, not LB or A.
+                -- a DirectInput button: it is this function; the name it takes is its slot in the default order
                 local name = DNUM[v] or ('b' .. v)
                 st.map[what] = name
                 st.dmap[v] = name
-                st.dlabel[name] = tostring(v + 1)
             end
         end
     end
@@ -180,18 +172,9 @@ local function read_bindings()
                         local name = DNUM[v] or ('b' .. v)
                         st.map[what] = name
                         st.dmap[v] = name
-                        st.dlabel[name] = tostring(v + 1)
                     end
                 end
             end
-        end
-    end
-    -- the four buttons the game's config names stay that config's numbers, whichever path filled the map
-    if not st.xinput_mode then
-        for what, slot in pairs(SLOT) do
-            local v = s[slot + 1]
-            local name = st.map[what]
-            if v and v >= 0 and name then st.dlabel[name] = tostring(v + 1) end
         end
     end
 end
@@ -346,8 +329,8 @@ function PAD.frame(t, host)
     if frame_no == st.frame_no then return end
     st.frame_no = frame_no
     local now = clock()
-    -- the game's button map (padsin / VanaCore's bindings) can change while this stays loaded
-    if now - (st.bound_at or 0) > 2 then st.bound_at = now read_bindings() end
+    -- the game's button map (padsin000, or VanaCore's bindings) can change while this stays loaded
+    if now - (st.bound_at or -1e9) > 2 then st.bound_at = now read_bindings() end
     -- a synthetic read stands in for the controller's
     if st.fake then
         take(st.fake.raw)
@@ -380,11 +363,11 @@ function PAD.frame(t, host)
         if capturing and st.fake then
             feed(KEY.a, st.now[st.map.confirm] == true)
             feed(KEY.b, st.now[st.map.cancel] == true and imgui.IsAnyItemActive())
-            local vert, horiz = hold_axes()
-            feed(KEY.left, st.now.left == true and not horiz)
-            feed(KEY.right, st.now.right == true and not horiz)
-            feed(KEY.up, st.now.up == true and not vert)
-            feed(KEY.down, st.now.down == true and not vert)
+            local hold = hold_vertical()
+            feed(KEY.left, st.now.left == true and hold ~= 'all')
+            feed(KEY.right, st.now.right == true and hold ~= 'all')
+            feed(KEY.up, st.now.up == true and not hold)
+            feed(KEY.down, st.now.down == true and not hold)
         elseif next(st.fed) then
             release_all()
             st.fed = {}
@@ -406,11 +389,11 @@ function PAD.frame(t, host)
     -- is being typed in (ImGui leaves it), the window handling it otherwise. The rest is the window's.
     feed(KEY.a, st.now[st.map.confirm] == true)
     feed(KEY.b, st.now[st.map.cancel] == true and imgui.IsAnyItemActive())
-    local vert, horiz = hold_axes()
-    feed(KEY.left, st.now.left == true and not horiz)
-    feed(KEY.right, st.now.right == true and not horiz)
-    feed(KEY.up, st.now.up == true and not vert)
-    feed(KEY.down, st.now.down == true and not vert)
+    local hold = hold_vertical()
+    feed(KEY.left, st.now.left == true and hold ~= 'all')
+    feed(KEY.right, st.now.right == true and hold ~= 'all')
+    feed(KEY.up, st.now.up == true and not hold)
+    feed(KEY.down, st.now.down == true and not hold)
     -- the sticks stay the window's (PAD.stick): ImGui would scroll the window with the focus, the root, which has none
 end
 
@@ -422,6 +405,16 @@ end
 function PAD.down(name)
     name = st.map[name] or name
     return st.now[name] == true
+end
+-- Called each frame inside the window while it has the pad: X and Y are the window's, not ImGui's. With VanaCore
+-- feeding every button, ImGui read Y (FaceUp) as its "input" key, which activates the focused item like Confirm,
+-- and X (FaceLeft) held as its window switcher. A global route makes the window the keys' owner at the next frame,
+-- and ImGui's navigation only reads keys nobody owns.
+local ROUTE_GLOBAL = 4096 -- ImGuiInputFlags_RouteGlobal
+function PAD.claim()
+    if not imgui.Shortcut then return end
+    pcall(imgui.Shortcut, KEY.x, ROUTE_GLOBAL)
+    pcall(imgui.Shortcut, KEY.y, ROUTE_GLOBAL)
 end
 -- pressed, or held past `delay` and repeating every `every`
 function PAD.repeating(name, delay, every)
@@ -445,40 +438,28 @@ function PAD.button_of(meaning) return st.map[meaning] or meaning end
 local FACE = { a = { 'A', '#6CC24A' }, b = { 'B', '#E8453C' }, x = { 'X', '#3B8BEB' }, y = { 'Y', '#F2C035' } }
 local PILL = { l1 = 'LB', r1 = 'RB', l2 = 'LT', r2 = 'RT', l3 = 'LS', r3 = 'RS', start = 'MENU', back = 'VIEW',
     up = '▲', down = '▼', left = '◀', right = '▶', updown = '▲▼', dpad = '✚', lstick = 'L', rstick = 'R' }
--- these words are the XInput names. A DirectInput pad has button numbers instead, so they are not a fallback.
-local XNAME = { l1 = true, r1 = true, l2 = true, r2 = true, l3 = true, r3 = true, start = true, back = true,
-    a = true, b = true, x = true, y = true }
-
-local function pill(dl, x, cy, label, size, alpha)
-    local P, S, F, T = U.P, U.S, U.fonts(), U.sizes()
-    local tw = U.measure(label, F.semi, T.tiny - 1)
-    local w, h = tw + S(10), S((size or 9) * 2)
-    dl:AddRectFilled({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.12 * alpha), S(5))
-    dl:AddRect({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.5 * alpha), S(5), 15, 1)
-    U.text_center(dl, x, cy, w, label, P.text, F.semi, T.tiny - 1, alpha)
-    return w
-end
 
 -- one glyph; returns its width
 function PAD.glyph(dl, x, cy, name, size, alpha)
     local P, S, F, T = U.P, U.S, U.fonts(), U.sizes()
     alpha = alpha or 1
     name = st.map[name] or name
-    -- Enable XInput off: the game's own names, Button1 onward. The cross stays arrows.
-    if not st.xinput_mode then
-        local num = st.dlabel and st.dlabel[name]
-        if num then return pill(dl, x, cy, num, size, alpha) end
-        if XNAME[name] then return 0 end
-    end
     local face = FACE[name]
     if face then
         local r = S(size or 9)
         dl:AddCircleFilled({ x + r, cy }, r, U.u32(face[2], 0.22 * alpha), 20)
         dl:AddCircle({ x + r, cy }, r, U.u32(face[2], 0.95 * alpha), 20, 1.2)
-        U.text_center(dl, x, cy, r * 2, face[1], face[2], F.bold, T.tiny - 1, alpha)
+        -- (on whole pixels: a half-pixel position smears the letter and reads as off-centre)
+        U.text_center(dl, math.floor(x + 0.5), math.floor(cy + 0.5), r * 2, face[1], face[2], F.bold, T.tiny - 1, alpha)
         return r * 2
     end
-    return pill(dl, x, cy, PILL[name] or name:upper(), size, alpha)
+    local label = PILL[name] or name:upper()
+    local tw = U.measure(label, F.semi, T.tiny - 1)
+    local w, h = tw + S(10), S((size or 9) * 2)
+    dl:AddRectFilled({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.12 * alpha), S(5))
+    dl:AddRect({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.5 * alpha), S(5), 15, 1)
+    U.text_center(dl, math.floor(x + 0.5), math.floor(cy + 0.5), w, label, P.text, F.semi, T.tiny - 1, alpha)
+    return w
 end
 
 -- a row of them: items = { { 'confirm', 'Select' }, { 'l1 r1', 'Tabs' }, ... }; returns the width used

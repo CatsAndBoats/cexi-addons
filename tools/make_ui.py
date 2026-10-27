@@ -67,7 +67,7 @@ parts += fix(func('mix'))
 parts += block(r'^local COL = \{', r'^\}')
 parts += block(r'^local VAR = \{', r'^\}')
 parts += fix(func('theme_colors'))
-parts.append('''local THEME_COUNT = 25
+parts.append('''local THEME_COUNT = 26
 -- NoTitleBar, NoResize, NoScrollbar, NoScrollWithMouse, NoCollapse, NoBackground
 U.WINDOW_FLAGS = 1 + 2 + 8 + 16 + 32 + 128
 U.NO_SAVE, U.NO_FOCUS = 256, 4096
@@ -94,7 +94,7 @@ fa_block[-1] = '''    khanda = 0xF66D, scroll = 0xF70E, flask = 0xF0C3, utensils
     ['circle-minus'] = 0xF056, ['circle-plus'] = 0xF055, ['hand-holding-dollar'] = 0xF4C0, ['money-bill'] = 0xF0D6, ['arrows-rotate'] = 0xF021,
     ['box-open'] = 0xF49E, ['wand-magic-sparkles'] = 0xE2CA, ['circle-dot'] = 0xF192, ['square-check'] = 0xF14A, ['list-ul'] = 0xF0CA,
     ['chart-line'] = 0xF201, ['chart-simple'] = 0xE473, ['star-half-stroke'] = 0xF5C0, binoculars = 0xF1E5, ['bell-on'] = 0xF8FA,
-    ['scale-balanced'] = 0xF24E, shirt = 0xF553, ['caret-up'] = 0xF0D8, ['caret-down'] = 0xF0D7, plus = 0xF067, minus = 0xF068,
+    ['scale-balanced'] = 0xF24E, shirt = 0xF553, ['caret-up'] = 0xF0D8, ['caret-down'] = 0xF0D7, plus = 0xF067, minus = 0xF068, ['table-cells'] = 0xF00A, ['trash-can'] = 0xF2ED,
 }'''
 parts += fa_block
 parts += ['local fa_cache = {}']
@@ -180,6 +180,8 @@ function U.frame(frame_dt, frame_scale, t)
     return true
 end
 function U.set_window_alpha(a) WINDOW_ALPHA = a end
+function U.reload_fonts() F.loaded = false end -- the language changed: the faces are chosen again next frame
+function U.load_image(key, path) return load_texture(key, path) end -- a texture of the host's own (released by key)
 function U.fonts() return F end
 function U.sizes() return T end
 function U.scale() return scale end

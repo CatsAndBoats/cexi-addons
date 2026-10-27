@@ -1,9 +1,10 @@
 -- Items: what the game itself knows about them (names, descriptions, stats and icons, straight from its DATs through the
--- resource manager) and the house's catalogue (which items it lists, in which category; generated from the server's
--- item table). Nothing here touches the network.
+-- resource manager) and what the house lists (which items, in which category: the search server's own answers, kept
+-- per server in a file, so a category opened once on a server is known from then on). Nothing here touches the
+-- network itself.
 local ffi = require('ffi')
 local U = require('ui')
-local CATALOGUE = require('catalogue')
+local LANG = require('lang')
 
 local I = {}
 
@@ -49,6 +50,45 @@ end
 
 local function cstr(p) return p ~= nil and ffi.string(p) or '' end
 
+-- The spell a scroll teaches, by the scroll's English name ("Fire II", or "Scroll of Fire II"), through the resource
+-- manager's GetSpellByName (vtable slot 4, language 2 = English): its learn level for each job (LevelRequired, by job
+-- number; -1 for a job that never learns it, over 99 for job points). nil for anything that isn't a spell's scroll.
+pcall(ffi.cdef, [[
+typedef struct {
+    uint16_t Index; uint16_t Type; uint16_t Element; uint16_t Targets; uint16_t Skill; uint16_t ManaCost;
+    uint8_t CastTime; uint8_t RecastDelay; int16_t LevelRequired[24];
+} ah_ISpellHead;
+]])
+local get_spell = nil
+local spells_of = {} -- item id -> levels table, or false
+function I.scroll_levels(id)
+    local have = spells_of[id]
+    if have ~= nil then return have or nil end
+    spells_of[id] = false
+    if get_spell == nil then
+        local res = vana.ashita.object('resources')
+        if res == nil then return nil end
+        local ptr = ffi.cast('void*', res)
+        local fn = ffi.cast('void* (__thiscall *)(void*, const char*, uint32_t)', ffi.cast('void***', ptr)[0][4])
+        get_spell = function (name) return fn(ptr, name, 2) end
+    end
+    local get = resources()
+    local it = get and get(id) or nil
+    if it == nil then return nil end
+    -- the English name: slot 2 on a Japanese client, slot 0 (the default) on an English one
+    local name = cstr(it.Name[2])
+    if name == '' or name:find('[\128-\255]') then name = cstr(it.Name[0]) end
+    name = name:gsub('^[Ss]croll of ', '')
+    if name == '' or name:find('[\128-\255]') then return nil end
+    local ok, p = pcall(get_spell, name)
+    if not ok or p == nil then return nil end
+    local sp = ffi.cast('ah_ISpellHead*', p)
+    local levels = {}
+    for job = 0, 23 do levels[job] = sp.LevelRequired[job] end
+    spells_of[id] = levels
+    return levels
+end
+
 -- Shift-JIS to UTF-8 (Windows API)
 local function sjis_to_utf8(str)
     if not str or str == '' then return str end
@@ -64,45 +104,24 @@ local function sjis_to_utf8(str)
     return ffi.string(ubuf)
 end
 
--- Japanese client? (lazy: checked on first item read)
-local JAPANESE_CLIENT = nil
-local function is_japanese()
-    if JAPANESE_CLIENT ~= nil then return JAPANESE_CLIENT end
+-- whether the client's item names are Japanese, for lang.lua when neither the setting nor VanaCore says: an English
+-- client has ASCII in Name[0]; a Japanese one has it empty or non-ASCII, with high bytes in Name[1]
+local function names_look_japanese()
     local get = resources()
-    if not get then JAPANESE_CLIENT = false return false end
-    -- English client: Name[0] is ASCII English. Japanese client: Name[0] is empty or non-ASCII.
-    for _, id in ipairs({4096, 4097, 1255}) do
+    if not get then return false end
+    for _, id in ipairs({ 4096, 4097, 1255 }) do
         local it = get(id)
         if it and it.Name then
             local raw0 = cstr(it.Name[0])
-            if raw0 and #raw0 > 0 then
-                local ascii = true
-                for i = 1, #raw0 do
-                    if raw0:byte(i) > 127 then ascii = false break end
-                end
-                if ascii then
-                    JAPANESE_CLIENT = false
-                    vana.log('auctionhouse-vanacore items japanese=false (Name[0] ascii)')
-                    return false
-                end
-            end
-            -- Name[0] empty or non-ASCII: treat as Japanese if Name[1] has high bytes
+            if raw0 ~= '' and not raw0:find('[\128-\255]') then return false end
             local raw1 = cstr(it.Name[1])
-            if raw1 and #raw1 > 0 then
-                for i = 1, #raw1 do
-                    if raw1:byte(i) > 127 then
-                        JAPANESE_CLIENT = true
-                        vana.log('auctionhouse-vanacore items japanese=true')
-                        return true
-                    end
-                end
-            end
+            if raw1 ~= '' and raw1:find('[\128-\255]') then return true end
         end
     end
-    JAPANESE_CLIENT = false
-    vana.log('auctionhouse-vanacore items japanese=false')
     return false
 end
+LANG.set_sniff(names_look_japanese)
+local function is_japanese() return LANG.ja() end
 
 -- chat on a Japanese client is Shift-JIS; the search index is UTF-8. ASCII names pass through.
 function I.client_text(str)
@@ -148,11 +167,16 @@ function I.get(id)
             delay = it.Delay, image_size = tonumber(it.ImageSize) or 0,
         }
     end
+    -- a record the client has only a placeholder for ("." or nothing: an item the server added and the client's
+    -- DATs don't describe): the game's own window leaves these out, and so does this one
+    r.placeholder = r.missing or r.name == '' or r.name == '.'
     records[id] = r
     return r
 end
 
 function I.name(id) return I.get(id).name end
+-- whether the client has a real record for it (see placeholder above)
+function I.known(id) return not I.get(id).placeholder end
 
 -------------------------------------------------------------------------------
 -- Icons: the game's own, made into textures as they're first drawn; the least recently used go when there are many
@@ -199,8 +223,11 @@ function I.release_icons()
     icons, icon_count = {}, 0
 end
 
+-- the language changed: the names and descriptions are read again in the new one
+function I.forget_records() records = {} end
+
 -------------------------------------------------------------------------------
--- The catalogue: categories, their items, and a name search
+-- The categories, what the house lists in them, and a name search
 -------------------------------------------------------------------------------
 
 I.CATEGORY_NAME = {
@@ -229,23 +256,96 @@ I.GROUPS = {
     { id = 'others', name = 'Others', icon = 'box', cats = { 46, 64, 65, 99, 255 } },
 }
 
-I.rows = {}          -- id -> { id, category, stack, flags, level, jobs, slot }
-local by_cat = {}    -- category -> ids
-for _, row in ipairs(CATALOGUE) do
-    local r = { id = row[1], category = row[2], stack = row[3], flags = row[4], level = row[5], jobs = row[6], slot = row[7] }
-    I.rows[r.id] = r
-    by_cat[r.category] = by_cat[r.category] or {}
-    table.insert(by_cat[r.category], r.id)
-end
-
+-- What the house lists, from the house itself: each category's search-server answer (the list the game's own window
+-- shows) is that category's items, and an item's category is the one the house files it under. Nothing is shipped:
+-- a new auction item is here as soon as the server lists it and its category is opened. The answers are kept per
+-- server (I.load_index / I.save_index), so a session starts with the last ones while the house is asked again.
+I.rows = {}          -- id -> { id, category }: every item the house lists
+local served = {}    -- category -> { [id] = true }, once its answer is in (this session's, or the file's)
+local fresh = {}     -- category -> true once answered this session
 local sorted_cats = {}
--- a category's items, by name
+local index = nil    -- the name search's index (below), built on the first search
+local index_path, index_dirty, index_saved_at = nil, false, 0
+
+function I.set_served(cat, ids, from_file)
+    -- the items it no longer lists leave it (and the house, unless another category lists them)
+    for id in pairs(served[cat] or {}) do
+        local row = I.rows[id]
+        if row and row.category == cat then I.rows[id] = nil end
+    end
+    local set = {}
+    for _, id in ipairs(ids) do
+        set[id] = true
+        I.rows[id] = { id = id, category = cat }
+    end
+    served[cat] = set
+    if not from_file then fresh[cat] = true index_dirty = true end
+    sorted_cats[cat] = nil
+    index = nil
+end
+-- whether the house has said what a category holds (this session, or in the file), and this session
+function I.answered(cat) return served[cat] ~= nil end
+function I.fresh(cat) return fresh[cat] == true end
+-- whether the house lists an item at all
+function I.listed(id) return I.rows[id] ~= nil end
+
+-- a category's items, by name (none until the house has answered for it)
 function I.category(cat)
     if sorted_cats[cat] then return sorted_cats[cat] end
-    local ids = by_cat[cat] or {}
+    local ids = {}
+    for id in pairs(served[cat] or {}) do if I.known(id) then ids[#ids + 1] = id end end
     table.sort(ids, function (a, b) return I.name(a) < I.name(b) end)
     sorted_cats[cat] = ids
     return ids
+end
+
+-- every category the window shows, in order
+function I.all_categories()
+    local out = {}
+    for _, g in ipairs(I.GROUPS) do for _, c in ipairs(g.cats) do out[#out + 1] = c end end
+    return out
+end
+
+-- the answers, kept per server: { [category] = { ids } }
+function I.load_index(file)
+    I.save_index(true)
+    index_path = file
+    for cat in pairs(served) do served[cat] = nil end
+    for k in pairs(fresh) do fresh[k] = nil end
+    for k in pairs(I.rows) do I.rows[k] = nil end
+    sorted_cats, index, index_dirty = {}, nil, false
+    if file == nil or not vana.fs.exists(file) then return end
+    local ok, chunk = pcall(loadfile, file)
+    if not ok or chunk == nil then return end
+    local ok2, data = pcall(chunk)
+    if not ok2 or type(data) ~= 'table' then return end
+    for cat, ids in pairs(data) do
+        if type(ids) == 'table' then I.set_served(tonumber(cat) or cat, ids, true) end
+    end
+end
+-- whether any answers are kept
+function I.has_index() return next(I.rows) ~= nil end
+function I.save_index(force)
+    if index_path == nil or not index_dirty then return end
+    if not force and os.time() - index_saved_at < 10 then return end
+    index_saved_at = os.time()
+    local dir = index_path:match('^(.*)\\[^\\]+$')
+    if dir then pcall(vana.fs.create_dir, dir) end
+    local f = io.open(index_path, 'w')
+    if f == nil then return end
+    f:write('return {\n')
+    local cats = {}
+    for cat in pairs(served) do cats[#cats + 1] = cat end
+    table.sort(cats)
+    for _, cat in ipairs(cats) do
+        local ids = {}
+        for id in pairs(served[cat]) do ids[#ids + 1] = id end
+        table.sort(ids)
+        f:write('[', tostring(cat), ']={', table.concat(ids, ','), '},\n')
+    end
+    f:write('}\n')
+    f:close()
+    index_dirty = false
 end
 
 function I.category_of(id)
@@ -260,14 +360,15 @@ function I.group_of(cat)
     return I.GROUPS[#I.GROUPS]
 end
 
--- every listed item whose name contains the words, best matches first; built on the first search
-local index = nil
+-- every listed item whose name contains the words, best matches first (the index is declared above)
 function I.search(query, limit)
     query = (query or ''):lower():gsub('^%s+', ''):gsub('%s+$', '')
     if query == '' then return {} end
     if index == nil then
         index = {}
-        for id in pairs(I.rows) do index[#index + 1] = { id = id, name = I.name(id):lower() } end
+        for id in pairs(I.rows) do
+            if I.known(id) then index[#index + 1] = { id = id, name = I.name(id):lower() } end
+        end
     end
     local words = {}
     for w in query:gmatch('%S+') do words[#words + 1] = w end
@@ -306,11 +407,11 @@ function I.jobs_line(id)
     local jobs = I.jobs_of(r.jobs)
     local who
     if #jobs == 0 then who = ''
-    elseif #jobs >= 22 or I.all_jobs(r.jobs) then who = U.lang() == 'ja' and '全ジョブ' or 'All jobs'
-    elseif U.lang() ~= 'ja' and #jobs > 8 then who = #jobs .. ' jobs'
+    elseif #jobs >= 22 or I.all_jobs(r.jobs) then who = LANG.lang() == 'ja' and '全ジョブ' or 'All jobs'
+    elseif LANG.lang() ~= 'ja' and #jobs > 8 then who = #jobs .. ' jobs'
     else
         local names = {}
-        for _, j in ipairs(jobs) do names[#names + 1] = U.job_label(j) end
+        for _, j in ipairs(jobs) do names[#names + 1] = LANG.job_label(j, U.JOBS[j]) end
         who = table.concat(names, ' ')
     end
     if r.level > 0 then return 'Lv ' .. r.level .. (who ~= '' and ('  ·  ' .. who) or '') end

@@ -9,18 +9,11 @@
     /ah opens it. Talk to an auction clerk, as you would: whatever the clerk is called, in a city or an outpost, the
     server answers with the house's Open packet, and that is what lets you bid and sell (and where you stood is kept,
     so /ah there later can trade as well).
-
-    1.0.0Je (Hando): the pad help matches the buttons in use, and Confirm on the search box returns to the results the text already found.
-    1.0.0Jd (Hando): the category cursor and Close stay where they are, and the pad is not handed to FancyChat while this window is open.
-    1.0.0Jc (Hando): search results take the cursor, Japanese sale notices, the sell-tab pad, and category-list wrap.
-    1.0.0Jb (Hando): a Confirm on the sort or filter strip toggles once and stays.
-    1.0.0Ja (Tsuyumi, Hando): Japanese client text, begun by Tsuyumi, and the controller layout described in README.md.
-    An English client keeps the original English UI. Later Japanese revisions are 1.0.0Jf, and so on.
 ]]
 
 addon.name    = 'auctionhouse-vanacore'
-addon.author  = 'Carver, Tsuyumi, Hando'
-addon.version = '1.0.0Je'
+addon.author  = 'Carver'
+addon.version = '1.1'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -37,6 +30,7 @@ local PRICES = require('prices')
 local LEDGER = require('ledger')
 local COMPARE = require('compare')
 local PAD = require('pad')
+local LANG = require('lang') -- the window's language (English, or Japanese on a Japanese client; Hando's strings)
 local P = U.P
 local S = U.S
 local T = U.sizes()
@@ -52,7 +46,7 @@ local RESULT = { Ok = 1, Fail = 197, Wait = 246, Unable = 0xC5, Full = 0xE5 }
 
 -- how far from a spot the house was opened at it still serves you (yalms), how long fetched lists and histories stay fresh (s),
 -- how often the sales list may be asked for (the server says 5 s), how long to wait on the server before saying so
-local LIMITS = { counter = 8, list = 90, history = 45, sales = 5.5, reply = 6, scan = 0.5, inventory = 2, retry = 8 }
+local LIMITS = { counter = 5.5, list = 90, history = 45, sales = 5.5, reply = 6, scan = 0.5, inventory = 2, retry = 8 }
 
 -------------------------------------------------------------------------------
 -- State and settings
@@ -75,12 +69,15 @@ local st = {
 }
 
 local settings = {
-    scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, near_counter = true, take_over = true, spots = {}, search_host = '', search_port = 54002,
+    scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, take_over = true, spots = {}, search_host = '', search_port = 54002,
     sort = 'name', in_stock = false, remember = {},
     chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false, compare = false,
     sellable_only = false, -- the Sell tab hides what the house won't take
     open_sound = true, open_sound_id = 'small_bell', -- a bell as the window opens (sounds\<id>.wav)
-    pad_sort = '', -- controller button that cycles name / level / stock; '' is off (l3 or r3)
+    view_anywhere = false, -- the window opens away from a counter too (browsing; bids and sales still need one)
+    language = 'auto', -- 'auto' (the client's), 'en' or 'ja'
+    sell_view = 'grid', -- the Sell tab's bag: 'grid' (icons) or 'list' (rows with names)
+    icon = 'cat', -- the header's badge: 'cat' (images\badge_cat.png) or 'coin' (the glass gil, drawn)
 }
 
 -- the bells the window can open with, in sounds\: the first is the default
@@ -215,22 +212,73 @@ local function set_theme(id)
     return theme
 end
 
+-- the language setting applied: lang.lua decides again, the fonts are chosen again (a Japanese face when wanted),
+-- and the item names and descriptions are read again in the new language
+local function apply_language()
+    LANG.set(settings.language or 'auto')
+    U.fonts().want_japanese = LANG.ja()
+    U.reload_fonts()
+    I.forget_records()
+    st.said_no_jp_font = nil
+end
+
+-- a small flag for the language in use: Japan's, or the Stars and Stripes for English
+local function draw_flag(dl, x, y, w, h, lang)
+    local r = S(3)
+    if lang == 'ja' then
+        dl:AddRectFilled({ x, y }, { x + w, y + h }, U.u32('#F4F4F4'), r)
+        dl:AddCircleFilled({ x + w / 2, y + h / 2 }, h * 0.3, U.u32('#BC002D'), 24)
+    else
+        dl:AddRectFilled({ x, y }, { x + w, y + h }, U.u32('#F4F4F4'), r)
+        local sh = h / 13
+        for i = 0, 12, 2 do dl:AddRectFilled({ x, y + i * sh }, { x + w, y + (i + 1) * sh }, U.u32('#B22234')) end
+        dl:AddRectFilled({ x, y }, { x + w * 0.4, y + sh * 7 }, U.u32('#3C3B6E'), r, 1)
+        for row = 0, 2 do
+            for col = 0, 2 do
+                dl:AddCircleFilled({ x + w * 0.08 + col * w * 0.12, y + sh * 1.3 + row * sh * 2.2 }, math.max(1, h * 0.04), U.u32('#FFFFFF'), 6)
+            end
+        end
+    end
+    dl:AddRect({ x, y }, { x + w, y + h }, U.u32(P.line, 0.9), r, 15, 1)
+end
+
 -------------------------------------------------------------------------------
 -- The search server: where it is
 -------------------------------------------------------------------------------
 
 -- the host VanaCore logged in to, from its own log ("Game start: on <host> (lobby ...)"): the search server lives there
+-- the server this client logged in to. VanaCore's log is shared by every client started from this folder, so the
+-- newest "Game start: on" line can be another client's (a test client on 127.0.0.1 beside a live one): the line
+-- that counts is the one after "game process <this process's id> started". Only when that isn't in the log (an
+-- older VanaCore, a log that rotated) is the newest line taken
+local function own_pid()
+    local ok, pid = pcall(function ()
+        local ffi = require('ffi')
+        pcall(ffi.cdef, 'unsigned long GetCurrentProcessId(void);')
+        return tonumber(ffi.C.GetCurrentProcessId())
+    end)
+    return ok and pid or nil
+end
+
 local function host_from_log()
     local path = vana.paths.install .. '\\logs\\vanacore.log'
     local f = io.open(path, 'rb')
     if f == nil then return nil end
-    local size = f:seek('end') or 0
-    f:seek('set', math.max(0, size - 400000))
-    local tail = f:read('*a') or ''
+    local all = f:read('*a') or ''
     f:close()
-    local host = nil
-    for h in tail:gmatch('Game start: on ([%w%.%-]+) %(') do host = h end
-    return host
+    local pid = own_pid()
+    local mine, newest = nil, nil
+    local ours = false
+    for line in all:gmatch('[^\r\n]+') do
+        local started = line:match('game process (%d+) started')
+        if started then ours = pid ~= nil and tonumber(started) == pid end
+        local h = line:match('Game start: on ([%w%.%-]+) %(')
+        if h then
+            newest = h
+            if ours then mine = h ours = false end
+        end
+    end
+    return mine or newest
 end
 
 local function configure_search()
@@ -244,6 +292,9 @@ local function configure_search()
     -- the price log is per server: what sells on the test server says nothing about live
     PRICES.save(true)
     PRICES.load(settings_dir() .. '\\prices-' .. (host:gsub('[^%w%.%-]', '_')) .. '.lua')
+    -- what the house lists is per server too: its last answers, asked again as the window is used
+    I.load_index(settings_dir() .. '\\index-' .. (host:gsub('[^%w%.%-]', '_')) .. '.lua')
+    st.sweep_wanted, st.sweep_tries = false, nil
 end
 
 -------------------------------------------------------------------------------
@@ -461,14 +512,19 @@ local function on_packet(e)
     elseif cmd == CMD.LotCancel then
         if st.cancel_pending ~= nil and result == 0 then
             local row = st.sales[st.cancel_pending]
+            local rl = st.relist
+            if rl and rl.stage == 'cancel' and rl.key == st.cancel_pending then rl.stage, rl.at = 'bag', clock() end
             st.sales[st.cancel_pending] = nil
             st.cancel_pending = nil
-            U.toast('ok', 'Taken down', row and (I.name(row.id) .. ' is back in your bag') or 'Returned to your bag', 4, 'box-open')
+            if not (rl and rl.stage == 'bag') then
+                U.toast('ok', 'Taken down', row and (I.name(row.id) .. ' is back in your bag') or 'Returned to your bag', 4, 'box-open')
+            end
             if row then LEDGER.add({ kind = 'taken', id = row.id, stack = row.stack, price = row.price }) end
             refresh_inventory()
             st.sales_dirty = true -- the house closes the gap: the pages are read again once the cooldown passes
         elseif st.cancel_pending ~= nil then
             st.cancel_pending = nil
+            st.relist = nil -- still up at its old price
             U.toast('danger', "Couldn't take it down", result == RESULT.Full and 'Your inventory is full' or 'Try again in a moment', 5, 'triangle-exclamation')
         else
             on_sales_slot(d)
@@ -485,7 +541,8 @@ local function on_packet(e)
         else
             st.sell.confirm_on_fee = nil
             st.sell.fee, st.sell.asked = nil, nil
-            U.toast('danger', "Can't sell that", 'The house refused it (used, locked, or not for auction)', 5, 'ban')
+            U.toast('danger', "Can't sell that", 'The house refused it (used, locked, or not for auction)' .. (st.relist and ' (it is in your bag)' or ''), 5, 'ban')
+            st.relist = nil
         end
     elseif cmd == CMD.LotIn then
         st.sell.pending = false
@@ -497,10 +554,12 @@ local function on_packet(e)
                 LEDGER.add({ kind = 'listed', id = a.item, stack = a.stack, price = a.price, fee = st.sell.fee })
             end
             st.sell.asked, st.sell.fee, st.sell.slot = nil, nil, nil
+            st.relist = nil
             refresh_inventory()
             st.sales_dirty = true
         else
-            U.toast('danger', "Couldn't list it", 'Not enough gil for the fee, the slots are full, or the item changed', 6, 'triangle-exclamation')
+            U.toast('danger', "Couldn't list it", 'Not enough gil for the fee, the slots are full, or the item changed' .. (st.relist and ' (it is in your bag)' or ''), 6, 'triangle-exclamation')
+            st.relist = nil
         end
     elseif cmd == CMD.Bid then
         local b = st.buy.pending
@@ -508,9 +567,9 @@ local function on_packet(e)
         local item, price, qty = u16(d, 0x0C), rd32(d, 0x08), rd32(d, 0x10)
         if result == RESULT.Ok then
             -- (the game says it in chat too: "You buy the ... for ... gil")
-            if U.lang() == 'ja' then
-                local what = (qty > 1 and (I.name(item) .. 'のスタック') or I.name(item))
-                U.toast('ok', '落札', what .. 'を' .. gil(price) .. 'ギルで落札しました', 5, 'cart-shopping')
+            if LANG.ja() then
+                local what = (qty > 1 and (I.name(item) .. LANG.t(' (stack)')) or I.name(item))
+                U.toast('ok', LANG.t('Bought'), string.format(LANG.t('%s bought for %s gil'), what, gil(price)), 5, 'cart-shopping')
             else
                 U.toast('ok', 'Bought ' .. I.name(item), (qty > 1 and (qty .. ' for ') or '') .. gil(price) .. ' gil', 5, 'cart-shopping')
             end
@@ -524,16 +583,13 @@ local function on_packet(e)
             end
             refresh_inventory()
         elseif result == RESULT.Full then
-            if U.lang() == 'ja' then
-                U.toast('danger', '落札失敗', '所持品がいっぱい、またはそのレアアイテムをすでに持っています', 6, 'triangle-exclamation')
-            else
-                U.toast('danger', "Couldn't buy", 'Your inventory is full, or you already hold that rare item', 6, 'triangle-exclamation')
-            end
+            U.toast('danger', LANG.t("Couldn't buy"), LANG.t('Your inventory is full, or you already hold that rare item'), 6, 'triangle-exclamation')
         else
-            if U.lang() == 'ja' then
-                U.toast('danger', '落札失敗', I.name(b and b.item or item) .. 'は、その金額では出品されていません', 6, 'hand-holding-dollar')
+            local missed = I.name(b and b.item or item)
+            if LANG.ja() then
+                U.toast('danger', LANG.t('Bid failed'), string.format(LANG.t('%s is not listed at that price'), missed), 6, 'hand-holding-dollar')
             else
-                U.toast('danger', 'Bid failed', 'Nobody is selling ' .. I.name(b and b.item or item) .. ' at that price', 6, 'hand-holding-dollar')
+                U.toast('danger', 'Bid failed', 'Nobody is selling ' .. missed .. ' at that price', 6, 'hand-holding-dollar')
             end
             forget_history(b and b.item or item)
         end
@@ -593,6 +649,10 @@ local function fetch_list(cat, force)
         local items = {}
         -- the server sends -1 (0xFFFFFFFF) as the stack count of anything that doesn't stack: that is none, not many
         for _, it in ipairs(r.items) do items[it.id] = { single = it.single < 0x80000000 and it.single or 0, stack = it.stack < 0x80000000 and it.stack or 0 } end
+        -- the house's answer is the category's list (items.lua keeps it, per server)
+        local ids = {}
+        for _, it in ipairs(r.items) do ids[#ids + 1] = it.id end
+        I.set_served(cat, ids)
         st.lists[cat] = { items = items, at = clock(), total = r.total }
         st.list_at = clock()
     end)
@@ -694,7 +754,8 @@ local function wearer()
     local okp, party = pcall(vana.game.party)
     local m = okp and type(party) == 'table' and type(party.members) == 'table' and party.members[1] or nil
     local e = me()
-    w = { job = m and m.main_job or 0, level = m and m.main_job_level or 0, race = e and e.race or 0, at = clock() }
+    w = { job = m and m.main_job or 0, level = m and m.main_job_level or 0, sub = m and m.sub_job or 0,
+          sub_level = m and m.sub_job_level or 0, race = e and e.race or 0, at = clock() }
     st.wearer = w
     return w
 end
@@ -710,6 +771,21 @@ local function can_equip(id)
     if (r.level or 0) > w.level then return false end
     if w.race > 0 and (r.races or 0) ~= 0 and bit.band(r.races, bit.lshift(1, w.race)) == 0 then return false end
     return true
+end
+
+-- whether you can learn the spell a scroll teaches, as you are: your main job at its level, or your sub job at its
+-- level, has it (the server's own check when the scroll is used). nil for anything that isn't a spell's scroll
+local SCROLL_CATS = { [28] = true, [29] = true, [30] = true, [31] = true, [32] = true }
+local function can_learn(id)
+    if not SCROLL_CATS[I.category_of(id) or 0] then return nil end
+    local lv = I.scroll_levels(id)
+    if lv == nil then return nil end
+    local w = wearer()
+    local function by(job, level)
+        local need = lv[job]
+        return job > 0 and need ~= nil and need >= 0 and need <= 99 and level >= need
+    end
+    return by(w.job, w.level) or by(w.sub or 0, w.sub_level or 0)
 end
 
 -------------------------------------------------------------------------------
@@ -763,8 +839,10 @@ local function scan_counter()
     st.counter.near = best ~= nil and best <= LIMITS.counter
 end
 
+-- bidding, listing and taking down need you at a clerk, always: the server only checks that the zone has an auction
+-- house, so this is what keeps trading at the counter, as the game's own window does (browsing works anywhere)
 local function may_trade()
-    return (not settings.near_counter) or st.counter.near
+    return st.counter.near
 end
 
 -------------------------------------------------------------------------------
@@ -811,7 +889,79 @@ local function do_cancel(c)
     end
 end
 
+-- RELIST: a listing taken down and put up again at a new price. Each step waits on the house: the take-down (turning
+-- its pages to the listing first when needed), the item back in the bag, the new fee quoted; then the usual listing
+-- confirmation opens with that fee, and saying yes lists it. Stopped anywhere after the take-down, the item is in the bag
+local function relist_end(why)
+    if st.relist and why then U.toast('warn', LANG.t('Not relisted'), why, 6, 'box-open') end
+    st.relist = nil
+end
+
+local function relist_step()
+    local rl = st.relist
+    if rl == nil then return end
+    if rl.stage == 'cancel' then
+        -- the take-down ended without coming down (refused, the page never shown, no clerk): its own notice said why
+        if st.cancel_pending == nil and st.sweep == nil and clock() - rl.at > 2 then st.relist = nil end
+    elseif rl.stage == 'bag' then
+        -- the house sends the bag's change a moment after its reply: look until the item (a whole stack, for a stack) is in
+        if clock() - (rl.look or 0) < 0.3 then return end
+        rl.look = clock()
+        refresh_inventory()
+        local need = rl.stack and I.get(rl.id).stack or 1
+        local slot = nil
+        for _, it in ipairs(st.inventory) do
+            if it.id == rl.id and it.count >= need then slot = it.slot break end
+        end
+        if slot then
+            rl.stage, rl.at = 'quote', clock()
+            st.sell.confirm_on_fee = true
+            do_ask(slot, rl.id, rl.price, rl.stack)
+            if not st.sell.pending then relist_end(LANG.t('It is in your bag; list it from the Sell tab')) end
+        elseif clock() - rl.at > 8 then
+            relist_end(LANG.t('It is in your bag; list it from the Sell tab'))
+        end
+    elseif rl.stage == 'quote' then
+        -- the fee came (the confirmation is up) or didn't; once the confirmation is gone without a listing, it's over
+        if st.confirm and st.confirm.kind == 'sell' then rl.stage = 'confirm'
+        elseif not st.sell.pending then relist_end(LANG.t('It is in your bag; list it from the Sell tab')) end
+    elseif rl.stage == 'confirm' then
+        if st.confirm == nil and not st.sell.pending then relist_end(LANG.t('It is in your bag; list it from the Sell tab')) end
+    end
+end
+
+-- the new prices offered for a listing: cuts off its price, and the market's median and last sale when they're under
+-- it; one is suggested (the median when the listing is above it, else a small cut)
+local function relist_options(price, hs)
+    local opts = {}
+    local function add(label, p, kind)
+        p = math.floor(p)
+        if p < 1 or p >= price then return end
+        for _, o in ipairs(opts) do if o.price == p then return end end
+        opts[#opts + 1] = { label = label, price = p, kind = kind }
+    end
+    for _, pc in ipairs({ 1, 5, 10, 20 }) do add('-' .. pc .. '%', price * (1 - pc / 100), 'cut') end
+    local s_ = hs and hs.stats
+    if s_ then
+        add(LANG.t('Median'), s_.median, 'median')
+        add(LANG.t('Last sale'), s_.last, 'last')
+    end
+    table.sort(opts, function (a, b) return a.price > b.price end)
+    local suggest = nil
+    for _, o in ipairs(opts) do
+        if s_ and price > s_.median then
+            if o.kind == 'median' then suggest = o end
+        elseif o.label == ((s_ and price <= s_.median) and '-1%' or '-5%') then suggest = o end
+    end
+    return opts, suggest or opts[1]
+end
+
 -- follow an item (singles or stacks), or stop
+local function is_watched(id, stack)
+    for _, e in ipairs(settings.watch) do if e.id == id and (e.stack or false) == (stack or false) then return true end end
+    return false
+end
+
 local function toggle_watch(id, stack)
     stack = stack or false
     local e, i = watch_entry(id, stack)
@@ -861,8 +1011,9 @@ local function on_sold(name, buyer, price)
         fetch_history(id, stack, true)
     end
     local what = id and I.name(id) or name
-    if U.lang() == 'ja' then
-        U.toast('ok', '売却', (stack and (what .. 'のスタック') or what) .. 'が' .. gil(price) .. 'ギルで売れました（' .. buyer .. '）', 8, 'sack-dollar')
+    if LANG.ja() then
+        local sold = stack and (what .. LANG.t(' (stack)')) or what
+        U.toast('ok', LANG.t('Sold!'), string.format(LANG.t('%s sold for %s gil (to %s)'), sold, gil(price), buyer), 8, 'sack-dollar')
     else
         U.toast('ok', 'Sold!', what .. (stack and ' (stack)' or '') .. '  ·  ' .. gil(price) .. ' gil from ' .. buyer, 8, 'sack-dollar')
     end
@@ -884,13 +1035,18 @@ local function play_open_sound(force)
 end
 
 open_window = function ()
+    -- as the game's own, unless View anywhere is on: only at an auction counter (within 5.5 yalms of where a clerk
+    -- was talked to), and the window closes on walking away from it (tick)
+    scan_counter()
+    if not st.counter.near and not settings.view_anywhere then
+        if not st.open then U.toast('danger', LANG.t('Talk to an auction clerk'), LANG.t("The house opens at its counter, as the game's own does"), 5, 'gavel') end
+        return
+    end
     if not st.open then play_open_sound() end -- (not again for /ah buy and the like on a window already open)
     st.open = true
     -- the controller's focus starts on the category in the sidebar (on a search's first result when one is up)
     st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, st.results == nil
-    st.pad_where = st.results == nil and 'cats' or 'items'
     st.opened_at = now_t -- ImGui's clock, the one the fade is measured against
-    scan_counter()
     refresh_inventory()
     if logged_in() then
         send_work_check()
@@ -916,6 +1072,32 @@ local function ensure_bind()
     vana.chat.run('/bind ' .. settings.keybind .. ' /ah', 1)
 end
 
+-- the key that opens the house, changed or taken away (Settings, /ah bind): the old one unbound, the new one bound
+local function set_keybind(spec)
+    local old = settings.keybind or ''
+    if old ~= '' then pcall(vana.chat.run, '/unbind ' .. old, 1) end
+    settings.keybind = spec or ''
+    save_settings()
+    if settings.keybind ~= '' then pcall(vana.chat.run, '/bind ' .. settings.keybind .. ' /ah', 1) end
+    st.bind_capture = nil
+end
+-- the next key pressed becomes the bind, with its modifiers in VanaCore's spelling (^ Ctrl, ! Alt, + Shift): a
+-- digit, a letter or an F key; Esc keeps what there was
+local function capture_keybind()
+    if imgui.IsKeyPressed(U.KEY_ESCAPE) then st.bind_capture = nil return end
+    local io = imgui.GetIO()
+    for k = 536, 583 do
+        if imgui.IsKeyPressed(k) then
+            local name
+            if k <= 545 then name = tostring(k - 536)
+            elseif k <= 571 then name = string.char(65 + k - 546)
+            else name = 'F' .. (k - 571) end
+            set_keybind((io.KeyCtrl and '^' or '') .. (io.KeyAlt and '!' or '') .. (io.KeyShift and '+' or '') .. name)
+            return
+        end
+    end
+end
+
 -------------------------------------------------------------------------------
 -- Drawing
 -------------------------------------------------------------------------------
@@ -938,6 +1120,73 @@ local GOLD, PALE = '#FFD166', '#FFF3C4'
 -- ImGui 1.92's numbers (its input flags were renumbered in 1.91: AutoSelectAll is 1 << 12 now)
 -- inside a list's child window: a stick scrolls it (ImGui's own stick scrolling is of the window with the focus, the
 -- root, which doesn't scroll)
+-- A list's edge under a controller: its first row holds Up and its last holds Down, so the ring stops there instead
+-- of leaving for whatever ImGui finds past the list (it found the header's close button past the bottom). Called
+-- just before the row is drawn, for the row that had the ring last frame; the focus is asked for again, which
+-- replaces ImGui's move for this frame.
+local function edge_seat(key, first, last)
+    if not (first or last) or not PAD.shown() then return end
+    local fo = U.anim.focus
+    if fo == nil or fo.key ~= key or now_t - fo.at > 0.1 then return end
+    local want = (first and PAD.down('up')) or (last and PAD.down('down'))
+    if want then st.edge_hold = { key = key, at = now_t } end
+    -- (and a moment past the release: the pad's read says up a frame before ImGui's last repeat of the press has
+    -- landed, and that frame alone was enough to let the ring out)
+    if want or (st.edge_hold and st.edge_hold.key == key and now_t - st.edge_hold.at < 0.15) then imgui.SetKeyboardFocusHere() end
+end
+
+-- A stick in the item list walks the ring through the rows, faster the further it's pushed, and the list follows
+-- it. (Scrolling the list under a ring that stayed put left the ring on a row past the list's edge, drawn there as
+-- a ghost, and nothing picked on the way.) Called inside the list's child; the row is seated once it's drawn.
+-- a Listings row from the focus key of any of its three buttons
+local function sales_row_key(k)
+    return k:match('^##hist(.+)$') or k:match('^##relist(.+)$') or k:match('^##cancel(.+)$')
+end
+-- a Watch row from the focus key of its name, its price box or its cross
+local function watch_row_key(k)
+    return k:match('^##under(.+)$') or k:match('^##unwatch(.+)$') or k:match('^##w(.+)$')
+end
+
+local function stick_walk(n, key_of, scroll_to, stride, cur_of)
+    if not PAD.capturing() then st.stick_acc, st.walk_i = nil, nil return end
+    local _, ly, _, ry = PAD.stick()
+    local v = ly ~= 0 and ly or ry
+    if v == 0 or n == 0 then
+        -- let go: the place is kept a moment, for a walk that turns round (the stick crosses the centre for a
+        -- frame, and the ring is still a few rows behind the walk when it does)
+        if st.walk_i then st.walk_last_key, st.walk_last_at = key_of(math.min(n, st.walk_i)), now_t end
+        st.stick_acc, st.walk_i = nil, nil
+        return
+    end
+    -- the walk keeps its own place while the stick is held: the focus lands a frame after each seat, and steering
+    -- by where the ring was would chase it (and lose it when the ring's row is out of view)
+    local cur = st.walk_i
+    if cur == nil and st.walk_last_key and now_t - (st.walk_last_at or -1) < 0.4 then
+        for i = 1, n do if key_of(i) == st.walk_last_key then cur = i break end end
+    end
+    if cur == nil then
+        local fo = U.anim.focus
+        local fkey = fo and fo.key and now_t - fo.at < 0.1 and fo.key or nil
+        if cur_of then cur = cur_of(fkey) -- (a row with several buttons: any of them is the row)
+        elseif fkey then for i = 1, n do if key_of(i) == fkey then cur = i break end end end
+    end
+    if cur == nil then cur = v > 0 and (n + 1) or 0 end -- the ring isn't in the list: it comes in from the near end
+    if cur > n + 1 then cur = n + 1 end
+    if st.stick_acc == nil then st.stick_acc, st.stick_since = 1, now_t end -- the first row at once
+    -- up to 14 rows a second, and three times that once the stick has been held a second and a half
+    local rate = 14 * (1 + 2 * math.min(1, (now_t - (st.stick_since or now_t)) / 1.5))
+    st.stick_acc = st.stick_acc + math.abs(v) * rate * dt
+    local step = math.floor(st.stick_acc)
+    if step < 1 then return end
+    st.stick_acc = st.stick_acc - step
+    step = step * (stride or 1) -- (a grid: a row of it at a time)
+    local target = math.max(1, math.min(n, cur + (v > 0 and -step or step))) -- the stick up is up the list
+    if target == cur then return end
+    st.walk_i = target
+    st.stick_seat_key = key_of(target) -- the row takes the focus when it's drawn
+    if scroll_to then scroll_to(target) end -- a list that only draws rows in view scrolls the row into it first
+end
+
 local function pad_scroll()
     if not PAD.capturing() then return end
     local lx, ly, rx, ry = PAD.stick()
@@ -946,96 +1195,8 @@ local function pad_scroll()
     imgui.SetScrollY(math.max(0, math.min(imgui.GetScrollMaxY(), imgui.GetScrollY() - sy * S(1100) * dt)))
 end
 
--- left/right on a category list or a result list: one page, then the focus sits on the row at the top of it
-local function pad_page_scroll()
-    local dir = st.pad_page_dir
-    if dir == nil or not PAD.capturing() then return nil end
-    st.pad_page_dir = nil
-    local page = math.max(S(24), imgui.GetWindowHeight() - S(8))
-    local maxy = imgui.GetScrollMaxY()
-    local y = imgui.GetScrollY() + dir * page
-    if y < 0 then y = 0 end
-    if y > maxy then y = maxy end
-    imgui.SetScrollY(y)
-    return y
-end
-
--- a pad in use only walks the widgets of the pane it is in; the mouse still clicks every button
-local function pad_nav_allows(key)
-    local s = st.pad_scope
-    if key == '##ahsearch' then return false end -- the mouse types here; the pad lands on ##ahsearch_pad instead
-    if s == nil then return true end
-    if s == 'search' then return key == '##ahsearch_pad' end
-    if s == 'close' then return key == '##close' end
-    if s == 'cats' then
-        -- one row at a time, so the D-pad cannot wrap downward on its own and stop at the top.
-        -- the row that still has the focus stays allowed until the next one has taken it: dropping it in the same
-        -- frame made ImGui throw the highlight at the history scroller, which then took no input
-        if st.pad_cat_paging then return key:sub(1, 5) == '##grp' or key:sub(1, 5) == '##cat' end
-        if st.pad_cat_focus and key == st.pad_cat_focus then return true end
-        if st.pad_cat_keep and key == st.pad_cat_keep then return true end
-        local order = st.pad_cat_order
-        if order and st.pad_cat_i and order[st.pad_cat_i] then return key == order[st.pad_cat_i] end
-        return false
-    end
-    if s == 'items' then return key:sub(1, 6) == '##item' end
-    if s == 'filters' then
-        local keys = { '##compare', '##instock', '##usable' }
-        return key == keys[st.pad_strip_i or 1]
-    end
-    if s == 'sort' then return key == '##sort' .. (st.pad_strip_i or 1) end
-    if s == 'card' then
-        local part = st.pad_card or 'price'
-        if part == 'watch' then return key == '##star' end
-        if part == 'single' or part == 'stack' then return key:sub(1, 4) == '##ss' end
-        if part == 'hist' then return false end
-        return key == '##bid' or key == '##bid_btn'
-    end
-    if s == 'sell' then
-        -- on the asking price or the List button the D-pad stays there; Cancel is what returns to the bag
-        if st.pad_where == 'sell_box' then
-            if st.pad_sell_part == 'list' or st.pad_seat == 'list' then return key == '##list_btn' end
-            return key == '##ask'
-        end
-        if st.pad_where == 'bag' then return key:sub(1, 5) == '##bag' end
-        return key:sub(1, 5) == '##bag' or key == '##list_btn' or key == '##ask' or key:sub(1, 8) == '##sellss' or key == '##sellable'
-    end
-    if key == '##close' or key == '##settings' or key == '##refresh' or key == '##mysales' or key == '##clearq' then return false end
-    if key:sub(1, 5) == '##tab' then return false end
-    return true
-end
-
-local function push_no_nav(id)
-    if U.nav_allows(id) or imgui.PushItemFlag == nil then return false end
-    local ok = pcall(imgui.PushItemFlag, 2, true) -- ImGuiItemFlags_NoNav (1 << 1 since ImGui 1.91)
-    return ok == true
-end
-
-local field_state = {}
-
-local function on_bid_card()
-    return st.tab == 'buy' and (st.pad_card ~= nil or st.pad_editing or st.pad_where == 'price' or st.pad_where == 'bid' or st.pad_where == 'card' or st.pad_where == 'hist')
-end
-
--- cancel on the asking price or the List button returns to the bag item that was chosen
-local function seat_bag()
-    local fs = field_state['##ask']
-    if fs then fs.pad_on = false end
-    st.pad_editing = false
-    st.pad_first, st.pad_first_id, st.pad_cats, st.pad_bag, st.pad_close = 3, st.sell.slot, false, true, nil
-    st.pad_where, st.pad_seat, st.pad_card, st.pad_price_hold, st.pad_sell_part = 'bag', nil, nil, nil, nil
-end
-
--- cancel anywhere on the bid card (price, history, single, stack, watch, Bid) returns to the result row
-local function seat_results()
-    local fs = field_state['##bid']
-    if fs then fs.pad_on = false end
-    st.pad_editing = false
-    st.pad_first, st.pad_first_id, st.pad_cats, st.pad_close = 3, st.selected, false, nil
-    st.pad_where, st.pad_seat, st.pad_card, st.pad_price_hold = 'items', nil, nil, nil
-end
-
 local FIELD = { CharsDecimal = 1, AutoSelectAll = 4096, InputTextCursor = 33, TextDisabled = 1, TextSelectedBg = 53, active_frame = -10 }
+local field_state = {}
 -- A price box under a controller. A text box would open for typing, which a pad can't do, so while the pad is in use
 -- and the box has the focus it is a digit editor of its own instead, worked as the game's own bid box is: Confirm
 -- takes it with the ones digit lit, Left moves the light up the columns (one past the top digit is a new column, a
@@ -1047,20 +1208,23 @@ local function pad_price_box(id, hint, buf, width, size, fs)
     local im = imgui
     local h = fs.h or (S(size) + S(12))
     -- (or sent here from its button: Left from Bid, Up from List; asked again each frame until it has taken)
-    if st.pad_leave then
-        fs.pad_on = false
-        if fs.orig ~= nil then buf[1] = fs.orig end
-    elseif st.pad_where ~= 'filters' and st.pad_where ~= 'sort' and (fs.pad_on or st.pad_seat == 'price' or (st.pad_price_hold or 0) > 0) then im.SetKeyboardFocusHere() end
-    local pressed = im.InvisibleButton(id, { width, h }, U.nav_allows(id) and 8 or 0)
-    if U.anim.suppress_press then pressed = false end
+    local seated = st.pad_seat == 'price' or st.pad_seat == id -- (by name: a Watch row's price box among many)
+    if fs.pad_on or seated then im.SetKeyboardFocusHere() end
+    local pressed = im.InvisibleButton(id, { width, h }, 8)
     local x0, y0 = im.GetItemRectMin()
     local dl = im.GetWindowDrawList()
     local focused = im.IsItemFocused()
-    if st.pad_seat == 'price' then
+    if seated then
         fs.seat_tries = (fs.seat_tries or 0) + 1
         if focused or fs.seat_tries > 6 then st.pad_seat, fs.seat_tries = nil, nil end
     end
-    fs.focused = focused or st.pad_seat == 'price'
+    fs.focused = focused or seated
+    -- sent here to edit at once (X on a Watch row): the editor opens as a press would
+    if focused and st.pad_edit_now == id and not fs.pad_on then
+        st.pad_edit_now = nil
+        fs.pad_on, fs.orig, fs.col, fs.armed = true, buf[1] or '', 0, false
+        buf[1] = ''
+    end
     local changed = false
     local v = tonumber(buf[1]) or 0
     -- while editing, Confirm is read from the pad itself: the focus taken back each frame is a navigation request,
@@ -1070,8 +1234,10 @@ local function pad_price_box(id, hint, buf, width, size, fs)
     local keep = fs.pad_on and fs.armed and PAD.pressed('confirm')
     if fs.pad_on and (pressed or keep) then
         fs.pad_on = false
-        st.pad_seat = id == '##bid' and 'bid' or 'list' -- on to the button
-        if id == '##ask' then st.pad_where, st.pad_sell_part, st.pad_price_hold = 'sell_box', 'list', nil end
+        -- on to the box's button; a Watch row's price box goes back to its row
+        if id == '##bid' then st.pad_seat = 'bid'
+        elseif id == '##ask' then st.pad_seat = 'list'
+        elseif id:sub(1, 7) == '##under' then st.stick_seat_key = '##w' .. id:sub(8) end
         -- the same press, still held, must not also press the button the focus moves to (or open the box again)
         st.pad_mute = 'held'
     elseif pressed and focused and not st.pad_mute then
@@ -1079,6 +1245,16 @@ local function pad_price_box(id, hint, buf, width, size, fs)
         fs.pad_on, fs.orig, fs.col, fs.armed = true, buf[1] or '', 0, false
         v, buf[1] = 0, ''
         changed = buf[1] ~= fs.orig
+    end
+    -- the bid box, not being edited: Up is the singles/stacks switch above it (for an item that stacks)
+    if focused and not fs.pad_on and id == '##bid' and st.selected and I.get(st.selected).stack > 1 then
+        st.pad_hold = true
+        if PAD.pressed('up') then st.pad_seat = 'stack' end
+    end
+    -- and Left from it is the pane to its left: the list on the picked row, or the bag on the picked item
+    if focused and not fs.pad_on and PAD.pressed('left') then
+        if id == '##bid' then st.pad_first, st.pad_first_id, st.pad_cats = 3, st.selected, false
+        elseif id == '##ask' and st.sell.slot then st.stick_seat_key = '##bag' .. st.sell.slot end
     end
     if fs.pad_on then
         st.pad_editing, st.pad_hold = true, 'all'
@@ -1091,32 +1267,17 @@ local function pad_price_box(id, hint, buf, width, size, fs)
         if PAD.repeating('right') then
             if fs.col > 0 then fs.col = fs.col - 1 else nv = 0 end -- Right at the ones clears the number
         end
-        if PAD.pressed('cancel') or st.pad_leave then
+        if PAD.pressed('cancel') then
             fs.pad_on = false
             nv = tonumber(fs.orig) or 0
             buf[1] = fs.orig
-            if id == '##bid' then seat_results()
-            elseif id == '##ask' then seat_bag() end
         end
         if nv ~= v then
             buf[1] = nv > 0 and tostring(nv) or ''
             changed, v = true, nv
         end
-    elseif focused and id == '##bid' and (st.pad_card == nil or st.pad_card == 'price' or st.pad_card == 'bid') and st.pad_where ~= 'items' and st.pad_where ~= 'cats' and st.pad_where ~= 'close' and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' and not st.pad_first then
-        -- not editing yet: left and right move between this box and Bid. Up and down do not leave the card.
-        st.pad_where_now = 'price'
-        if st.pad_card == nil or st.pad_card == 'price' or st.pad_card == 'bid' then st.pad_card = 'price' end
-        st.pad_hold = 'all'
-        if PAD.pressed('cancel') then seat_results() end
-        if PAD.pressed('left') or PAD.pressed('right') then
-            st.pad_seat, st.pad_where, st.pad_card, st.pad_price_hold = 'bid', 'bid', 'price', nil
-        end
-    elseif (focused or fs.pad_on) and id == '##ask' then
-        st.pad_where_now, st.pad_sell_part = 'sell_box', 'price'
-        st.pad_hold = 'all'
-        if PAD.pressed('cancel') then seat_bag() end
     end
-    if (focused or fs.pad_on) and (st.pad_card == nil or st.pad_card == 'price' or st.pad_card == 'bid') and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then U.anim.focus = { x = x0, y = y0, w = width, h = h, at = now_t, key = id } end -- the ring
+    if focused or fs.pad_on then U.anim.focus = { x = x0, y = y0, w = width, h = h, at = now_t, key = id } end -- the ring
     -- the box, as the text box looks: a gold ring and glow while editing, the plain line otherwise
     local r = S(9)
     if fs.pad_on then
@@ -1161,7 +1322,7 @@ local function field(id, hint, buf, width, size, numeric, overlap)
     local im = imgui
     local fs = field_state[id]
     if fs == nil then fs = { trust = false, last = buf[1] or '', edit_at = 0 } field_state[id] = fs end
-    if numeric and PAD.shown() and (fs.pad_on or fs.focused or st.pad_seat == 'price') then return pad_price_box(id, hint, buf, width, size, fs) end
+    if numeric and PAD.shown() and (fs.pad_on or fs.focused or st.pad_seat == 'price' or st.pad_seat == id) then return pad_price_box(id, hint, buf, width, size, fs) end
     im.SetNextItemWidth(width)
     -- a button laid over the box (the search box's clear) needs this to get the click: ImGui gives it to the first item
     if overlap then im.SetNextItemAllowOverlap() end
@@ -1169,12 +1330,10 @@ local function field(id, hint, buf, width, size, numeric, overlap)
     im.PushStyleColor(FIELD.TextDisabled, U.rgba(P.faint))
     im.PushStyleColor(FIELD.TextSelectedBg, U.rgba(GOLD, 0.28))
     local changed, caret_x
-    local nonav = push_no_nav(id)
     local ok, err = pcall(with_font, F.text, size, function ()
-        changed = im.InputTextWithHint(id, hint, buf, numeric and 10 or 192, numeric and (FIELD.CharsDecimal + FIELD.AutoSelectAll) or 0)
+        changed = im.InputTextWithHint(id, hint, buf, numeric and 10 or 48, numeric and (FIELD.CharsDecimal + FIELD.AutoSelectAll) or 0)
         caret_x = im.CalcTextSize(buf[1] or '')
     end)
-    if nonav and imgui.PopItemFlag then pcall(imgui.PopItemFlag) end
     im.PopStyleColor(3)
     if not ok then error(err, 0) end
     local x0, y0 = im.GetItemRectMin()
@@ -1183,7 +1342,6 @@ local function field(id, hint, buf, width, size, numeric, overlap)
     local active, hovered = im.IsItemActive(), im.IsItemHovered()
     local now = clock()
     fs.h, fs.focused = h, im.IsItemFocused() and not active -- for the controller's digit editor, should it take over
-    if id == '##ahsearch' and st.pad_where == 'search' then st.pad_hold = 'all' end
     -- a controller, with the box focused but not being typed in: up and down step the price (a tenth of its size,
     -- at least 10 gil); an empty box starts from the hint's last sale
     if numeric and im.IsItemFocused() and not active then
@@ -1289,6 +1447,14 @@ local function glass_gil(dl, cx, cy, size, t, alpha)
     dl:AddCircle({ cx, cy }, ri - 0.5, u32('#000000', 0.5 * alpha), 48, math.max(1, r * 0.03))
 end
 
+-- the header's cat badge, loaded on first use (false once it couldn't be: not asked again every frame)
+local function badge_texture()
+    if st.badge_tex == nil then
+        st.badge_tex = U.load_image('badge', vana.paths.addon .. '\\images\\badge_cat.png') or false
+    end
+    return st.badge_tex or nil
+end
+
 -- an item's icon in a rounded well, with a fallback letter
 local function item_icon(dl, id, x, y, size, alpha)
     alpha = alpha or 1
@@ -1302,11 +1468,23 @@ local function item_icon(dl, id, x, y, size, alpha)
     dl:AddRect({ x, y }, { x + size, y + size }, u32(P.line, 0.8 * alpha), S(6), 15, 1)
 end
 
+-- how many the picked choice is (a stack's size), on the icon's bottom-right corner, the way the game marks a stack
+local function stack_badge(dl, x, y, size, n)
+    if (n or 1) <= 1 then return end
+    local label = 'x' .. n
+    local tw = measure(label, F.bold, T.tiny)
+    local bw, bh = tw + S(10), S(17)
+    local bx, by = x + size - bw + S(4), y + size - bh + S(4)
+    dl:AddRectFilled({ bx, by }, { bx + bw, by + bh }, u32(GOLD, 0.95), S(6))
+    dl:AddRect({ bx, by }, { bx + bw, by + bh }, u32(P.ink, 0.6), S(6), 15, 1)
+    text(dl, bx + S(5), by + S(1), label, P.ink, F.bold, T.tiny)
+end
+
 local function stock_pills(dl, x, y, id, alpha, right_align)
     local single, stack, fresh = stock_of(id)
     local r = I.get(id)
     local parts = {}
-    if single ~= nil and single > 0 then parts[#parts + 1] = { single .. ' ' .. (single == 1 and U.t('single') or U.t('singles')), P.ok } end
+    if single ~= nil and single > 0 then parts[#parts + 1] = { single .. ' ' .. (single == 1 and LANG.t('single') or LANG.t('singles')), P.ok } end
     if r.stack > 1 and stack ~= nil and stack > 0 then parts[#parts + 1] = { stack .. ' stack' .. (stack == 1 and '' or 's'), P.cyan } end
     if #parts == 0 then
         if single == nil and stack == nil then parts[1] = { 'stock…', P.faint } else parts[1] = { 'none up', P.faint } end
@@ -1325,21 +1503,30 @@ end
 -- the header: the mark, the title, where you are, your gil, the buttons
 local function draw_header(dl, x, y, w, t)
     local h = S(88)
-    U.aurora(dl, x, y, w, h + S(24), t, S(16))
-    glass_gil(dl, x + S(44), y + S(42), S(46), t, 1)
+    -- the aurora ends on the header's own line: bleeding 24 under it, its faint tail was cut off across the tab row
+    -- as a step (the glow rings and grid clipped there), which some themes showed as a line behind the tabs
+    U.aurora(dl, x, y, w, h, t, S(16))
+    -- the badge: the cat with its coin (images\badge_cat.png, a texture loaded once), or the glass gil drawn
+    local cat = settings.icon ~= 'coin' and badge_texture()
+    if cat then
+        local bs = S(60)
+        dl:AddImage(cat, { x + S(44) - bs / 2, y + S(42) - bs / 2 }, { x + S(44) + bs / 2, y + S(42) + bs / 2 }, { 0, 0 }, { 1, 1 }, u32('#FFFFFF'))
+    else
+        glass_gil(dl, x + S(44), y + S(42), S(46), t, 1)
+    end
     U.gradient_text(dl, x + S(82), y + S(16), 'AUCTION HOUSE', GOLD, P.accent2, F.dispb, T.title)
     local where
-    if not logged_in() then where = 'Not logged in'
-    elseif st.counter.near then where = U.t('At the counter')
+    if not logged_in() then where = LANG.t('Not logged in')
+    elseif st.counter.near then where = LANG.t('At the counter')
     elseif st.counter.dist then where = string.format('Counter %.0f yalms away', st.counter.dist)
-    else where = 'Talk to an auction clerk to trade' end
+    else where = LANG.t('Talk to an auction clerk to trade') end
     local sub = where
     if st.lists[st.category] then
         local n = 0
         for _, row in pairs(st.lists[st.category].items) do if row.single > 0 or row.stack > 0 then n = n + 1 end end
-        sub = sub .. '   ·   ' .. n .. ' listed in ' .. (U.t(I.CATEGORY_NAME[st.category] or 'this category'))
+        sub = sub .. '   ·   ' .. n .. ' listed in ' .. (LANG.t(I.CATEGORY_NAME[st.category] or 'this category'))
     end
-    text(dl, x + S(84), y + S(50), sub, (st.counter.near or not settings.near_counter) and P.dim or P.warn, F.text, T.small)
+    text(dl, x + S(84), y + S(50), sub, st.counter.near and P.dim or P.warn, F.text, T.small)
     local pulse = 0.55 + 0.45 * math.sin(t * 2)
     dl:AddRectFilledMultiColor({ x + S(16), y + h - 1 }, { x + w - S(16), y + h + 1 }, u32(GOLD, 0), u32(GOLD, 0.9 * pulse), u32(P.accent2, 0.9 * pulse), u32(P.accent, 0))
     -- right side
@@ -1347,16 +1534,9 @@ local function draw_header(dl, x, y, w, t)
     local size = S(32)
     local by = y + S(16)
     bx = bx - size
-    if st.pad_close == 2 or st.pad_close == 1 then imgui.SetWindowFocus() end
-    if st.pad_close == 1 then imgui.SetKeyboardFocusHere() end
-    if icon_button(dl, '##close', bx, by, size, 'xmark', P.dim, U.t('Close (Esc)')) then st.open = false end
-    if imgui.IsItemFocused() then
-        st.pad_where_now = 'close'
-    elseif PAD.shown() and st.pad_where == 'close' and not st.pad_close then
-        st.pad_close = 2 -- the D-pad left Close: sit back on it. Confirm still closes once it has landed
-    end
+    if icon_button(dl, '##close', bx, by, size, 'xmark', P.dim, LANG.t('Close (Esc)')) then st.open = false end
     bx = bx - size - S(4)
-    if icon_button(dl, '##settings', bx, by, size, 'gear', st.settings_open and P.accent or P.dim, U.t('Settings')) then st.settings_open = not st.settings_open end
+    if icon_button(dl, '##settings', bx, by, size, 'gear', st.settings_open and P.accent or P.dim, LANG.t('Settings')) then st.settings_open = not st.settings_open end
     bx = bx - size - S(4)
     local waiting = SEARCH.pending() > 0 or st.sales_wait
     if waiting then
@@ -1364,7 +1544,7 @@ local function draw_header(dl, x, y, w, t)
         dl:PathArcTo({ bx + size / 2, by + size / 2 }, size / 2 - S(2), t * 5, t * 5 + math.pi * 1.4, 24)
         dl:PathStroke(u32(P.cyan, 0.9), 0, S(2))
     end
-    if icon_button(dl, '##refresh', bx, by, size, 'rotate-right', waiting and P.cyan or P.dim, U.t('Refresh the list and the item')) then
+    if icon_button(dl, '##refresh', bx, by, size, 'rotate-right', waiting and P.cyan or P.dim, LANG.t('Refresh the list and the item')) then
         fetch_list(st.category, true)
         if st.selected then fetch_history(st.selected, false, true) if I.get(st.selected).stack > 1 then fetch_history(st.selected, true, true) end end
         refresh_inventory()
@@ -1372,7 +1552,7 @@ local function draw_header(dl, x, y, w, t)
     bx = bx - size - S(4)
     local n_sales = 0
     for _ in pairs(st.sales) do n_sales = n_sales + 1 end
-    if icon_button(dl, '##mysales', bx, by, size, 'receipt', st.tab == 'sales' and GOLD or P.dim, U.t('Listings')) then st.tab, st.settings_open = 'sales', false end
+    if icon_button(dl, '##mysales', bx, by, size, 'receipt', st.tab == 'sales' and GOLD or P.dim, LANG.t('Listings')) then st.tab, st.settings_open = 'sales', false end
     if n_sales > 0 then
         dl:AddCircleFilled({ bx + size - S(5), by + S(5) }, S(6), u32(GOLD), 16)
         text_center(dl, bx + size - S(11), by + S(5), S(12), tostring(n_sales), P.ink, F.bold, T.tiny - 2)
@@ -1386,21 +1566,10 @@ local function draw_header(dl, x, y, w, t)
     pill(dl, px, by + S(5), label, mix(GOLD, P.ink, 0.78), GOLD, F.disp, T.small, S(9), 'coins')
     -- the search box, on the buy tab: up here, where there's room (the tab row holds the tabs and the list's filters)
     if st.tab == 'buy' then
-        local hint = U.t('Search every item by name')
         local sw = S(300)
-        if U.lang() == 'ja' then sw = math.max(sw, measure(hint, F.text, T.small) + S(48)) end
         local sx = px - S(20) - sw
         imgui.SetCursorScreenPos({ sx, by })
-        -- the pad stands on its own button, so Confirm returns to the results instead of opening the text box. The mouse still clicks the box.
-        if st.pad_where == 'search' then
-            if not imgui.IsAnyItemActive() and not st.pad_search_seated then U.focus_key('##ahsearch_pad') end
-            imgui.SetNextItemAllowOverlap()
-            hit('##ahsearch_pad', sw, T.small + S(14))
-            if imgui.IsItemFocused() then st.pad_search_seated = true
-            elseif not imgui.IsAnyItemActive() then st.pad_search_seated = nil end
-            imgui.SetCursorScreenPos({ sx, by })
-        end
-        local changed = field('##ahsearch', hint, st.query, sw, T.small, false, true)
+        local changed = field('##ahsearch', LANG.t('Search every item by name'), st.query, sw, T.small, false, true)
         if changed then
             local q = st.query[1] or ''
             if #q >= 2 then st.results, st.result_total = I.search(q, 80) fetch_result_lists() else st.results = nil end
@@ -1408,10 +1577,10 @@ local function draw_header(dl, x, y, w, t)
         end
         if (st.query[1] or '') ~= '' then
             imgui.SetCursorScreenPos({ sx + sw - S(30), by + S(1) })
-            local cleared, _, chv = hit('##clearq', S(26), S(26))
+            local cleared, _, chv = hit('##clearq', S(26), S(26), S(13))
             if chv > 0.01 then dl:AddCircleFilled({ sx + sw - S(16), by + size / 2 }, S(11), u32(P.text, 0.10 * chv), 20) end
             icon(dl, sx + sw - S(16), by + size / 2, 'xmark', mix(P.dim, P.text, chv), T.small)
-            if imgui.IsItemHovered() then imgui.SetMouseCursor(7) with_font(F.text, T.small, imgui.SetTooltip, U.t('Clear the search')) end
+            if imgui.IsItemHovered() then imgui.SetMouseCursor(7) with_font(F.text, T.small, imgui.SetTooltip, LANG.t('Clear the search')) end
             if cleared then
                 st.query[1] = ''
                 st.results, st.result_total = nil, 0
@@ -1428,19 +1597,12 @@ end
 local function chip_width(label)
     return S(22) + S(12) + S(6) + measure(label, F.disp, T.tiny)
 end
--- Confirm on a strip is handled in pad_buttons. ImGui then clicks that same chip a frame later,
--- which turned the switch straight back. Ignore that click until the button has been let go.
-local function strip_pad_click()
-    if st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then return false end
-    return PAD.pressed('confirm') or U.anim.suppress_press or st.pad_mute ~= nil
-end
-
 local function filter_chip(dl, key, fx, fy, label, on, color, tip, icon_on, icon_off)
     local gs, ch = S(12), S(24)
     local lw = measure(label, F.disp, T.tiny)
     local cw = chip_width(label)
     imgui.SetCursorScreenPos({ fx, fy })
-    local pressed, hovered, hv = hit(key, cw, ch)
+    local pressed, hovered, hv = hit(key, cw, ch, S(9))
     if hovered and tip then with_font(F.text, T.small, imgui.SetTooltip, tip) end
     if on then
         dl:AddRectFilled({ fx, fy }, { fx + cw, fy + ch }, u32(color, 0.28), S(9))
@@ -1457,7 +1619,7 @@ end
 
 local function draw_tabs(dl, x, y, w)
     local h = S(40)
-    local tabs = { { 'buy', U.t('BUY'), 'cart-shopping' }, { 'sell', U.t('SELL'), 'tag' }, { 'sales', U.t('LISTINGS'), 'receipt' }, { 'activity', U.t('ACTIVITY'), 'clock-rotate-left' }, { 'watch', U.t('WATCH'), 'star' } }
+    local tabs = { { 'buy', LANG.t('BUY'), 'cart-shopping' }, { 'sell', LANG.t('SELL'), 'tag' }, { 'sales', LANG.t('LISTINGS'), 'receipt' }, { 'activity', LANG.t('ACTIVITY'), 'clock-rotate-left' }, { 'watch', LANG.t('WATCH'), 'star' } }
     local tx = x + S(24)
     for _, tab in ipairs(tabs) do
         local on = st.tab == tab[1]
@@ -1480,31 +1642,23 @@ local function draw_tabs(dl, x, y, w)
     -- the list's filters, on the buy tab (they filter search results too; the search box is in the header)
     if st.tab == 'buy' then
         local fy = y + (h - S(24)) / 2
-        local cx = x + w - S(24) - chip_width(U.t('USABLE'))
+        local cx = x + w - S(24) - chip_width(LANG.t('USABLE'))
         local wr = wearer()
-        local who = wr.job > 0 and ((U.job_label(wr.job) or '?') .. wr.level) or (U.lang() == 'ja' and 'あなた' or 'you')
-        local tip
-        if U.lang() == 'ja' then
-            tip = settings.usable and (who .. 'が装備できないものを隠しています') or (who .. 'が装備できないもの（ジョブ・レベル・種族）を隠す。それ以外はそのまま')
-        else
-            tip = settings.usable and ('Hiding gear your ' .. who .. " can't wear") or ('Hide gear your ' .. who .. " can't wear (job, level and race); everything else stays")
-        end
-        if st.pad_where == 'filters' and st.pad_strip_i == 3 then U.focus_key('##usable') end
-        if filter_chip(dl, '##usable', cx, fy, U.t('USABLE'), settings.usable, GOLD, tip, 'user-check', 'user') and not strip_pad_click() then
+        local who = wr.job > 0 and ((U.JOBS[wr.job] or '?') .. wr.level) or 'you'
+        local tip = settings.usable and ('Hiding gear your ' .. who .. " can't wear and scrolls it can't learn") or ('Hide gear your ' .. who .. " can't wear (job, level and race) and scrolls it can't learn (main or sub job at its level); everything else stays")
+        if filter_chip(dl, '##usable', cx, fy, LANG.t('USABLE'), settings.usable, GOLD, tip, 'user-check', 'user') then
             settings.usable = not settings.usable
             save_settings()
         end
-        cx = cx - S(8) - chip_width(U.t('IN STOCK'))
-        tip = settings.in_stock and U.t('Showing only what is up for sale') or U.t('Show only what is up for sale')
-        if st.pad_where == 'filters' and st.pad_strip_i == 2 then U.focus_key('##instock') end
-        if filter_chip(dl, '##instock', cx, fy, U.t('IN STOCK'), settings.in_stock, P.ok, tip, 'square-check', 'filter') and not strip_pad_click() then
+        cx = cx - S(8) - chip_width(LANG.t('IN STOCK'))
+        tip = settings.in_stock and LANG.t('Showing only what is up for sale') or LANG.t('Show only what is up for sale')
+        if filter_chip(dl, '##instock', cx, fy, LANG.t('IN STOCK'), settings.in_stock, P.ok, tip, 'square-check', 'filter') then
             settings.in_stock = not settings.in_stock
             save_settings()
         end
-        cx = cx - S(8) - chip_width(U.t('COMPARE'))
-        tip = settings.compare and U.t('Hovering gear sets it against what you wear') or U.t('Hover gear to set it against what you wear in that slot')
-        if st.pad_where == 'filters' and st.pad_strip_i == 1 then U.focus_key('##compare') end
-        if filter_chip(dl, '##compare', cx, fy, U.t('COMPARE'), settings.compare, P.cyan, tip, 'scale-balanced', 'scale-balanced') and not strip_pad_click() then
+        cx = cx - S(8) - chip_width(LANG.t('COMPARE'))
+        tip = settings.compare and LANG.t('Hovering gear sets it against what you wear') or LANG.t('Hover gear to set it against what you wear in that slot')
+        if filter_chip(dl, '##compare', cx, fy, LANG.t('COMPARE'), settings.compare, P.cyan, tip, 'scale-balanced', 'scale-balanced') then
             settings.compare = not settings.compare
             save_settings()
         end
@@ -1517,9 +1671,7 @@ end
 local function draw_sidebar(dl, x, y, w, h)
     panel(dl, x, y, w, h, P.glass, 0.92, S(12))
     imgui.SetCursorScreenPos({ x, y })
-    -- with the pad, the child keeps its own navigation (no NavFlattened), so up and down stay in this column
-    -- 256 NavFlattened, so the column itself is not a focus target; 1<<17 NoNavFocus while the pad is in use
-    imgui.BeginChild('##cats', { w, h }, 256, PAD.shown() and 131072 or 0)
+    imgui.BeginChild('##cats', { w, h }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
     local cdl = imgui.GetWindowDrawList()
     -- the controller's focus (re)starts here on the category in use (pad_cats): its group opened, the child made the
     -- focused window, then the row seated in it the frame after, as the list does
@@ -1528,75 +1680,61 @@ local function draw_sidebar(dl, x, y, w, h)
         st.group_open[I.group_of(st.category).id] = true
         if st.pad_first == 2 then imgui.SetWindowFocus() end
     end
-    local page_y = st.pad_where == 'cats' and pad_page_scroll() or nil
-    st.pad_cat_paging = page_y ~= nil
-    local origin = y + S(8)
-    local order = {}
-    if st.pad_cat_focus then U.focus_key(st.pad_cat_focus) end
-    local page_seated = false
-    local cy = origin - imgui.GetScrollY() -- drawn where the scroll puts it
-    local function page_seat(row_h)
-        if page_y == nil or page_seated then return end
-        if cy + imgui.GetScrollY() - origin + row_h > page_y + 1 then
-            imgui.SetKeyboardFocusHere()
-            page_seated = true
-            st.pad_cat_page_arm = true
-        end
+    local cy = y + S(8) - imgui.GetScrollY() -- drawn where the scroll puts it
+    -- the sidebar's last row, for the ring to stop at: the last group, or its last listed category when it's open
+    local last_key
+    for _, g in ipairs(I.GROUPS) do
+        last_key = '##grp' .. g.id
+        local open = st.group_open[g.id]
+        if open == nil then open = g.id == st.group end
+        if open then for _, cat in ipairs(g.cats) do if #I.category(cat) > 0 then last_key = '##cat' .. cat end end end
     end
+    -- a stick with the ring in the sidebar walks its rows (in last frame's order; the row scrolls into view itself)
+    if st.pad_where == 'cats' and st.cat_keys then
+        local ck = st.cat_keys
+        stick_walk(#ck, function (i) return ck[i] end)
+    end
+    local keys = {}
     for _, g in ipairs(I.GROUPS) do
         local open = st.group_open[g.id]
         if open == nil then open = (g.id == st.group) st.group_open[g.id] = open end
         imgui.SetCursorScreenPos({ x, cy })
-        page_seat(S(30))
-        local gkey = '##grp' .. g.id
-        order[#order + 1] = gkey
-        if st.pad_cat_page_arm then st.pad_cat_i, st.pad_cat_focus, st.pad_cat_keep, st.pad_cat_page_arm = #order, gkey, nil, nil end
-        local pressed, _, hv = hit(gkey, w, S(30))
-        if st.pad_cat_focus == gkey then imgui.SetScrollHereY(0.5) end
-        if imgui.IsItemFocused() then
-            st.pad_where_now, st.pad_cat_i = 'cats', #order
-            if st.pad_cat_focus == gkey then st.pad_cat_focus, st.pad_cat_keep = nil, nil end
-        elseif st.pad_where == 'cats' and PAD.shown() and not st.pad_cat_focus and not st.pad_cat_paging and gkey == (st.pad_cat_order and st.pad_cat_order[st.pad_cat_i]) then
-            st.pad_cat_refocus = gkey
-        end
-        if pressed and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then st.group_open[g.id] = not open end
+        keys[#keys + 1] = '##grp' .. g.id
+        if st.stick_seat_key == keys[#keys] then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end
+        edge_seat('##grp' .. g.id, g == I.GROUPS[1], '##grp' .. g.id == last_key)
+        local pressed, _, hv = hit('##grp' .. g.id, w, S(30), S(8), { x = x + S(6), y = cy + S(2), w = w - S(12), h = S(26) })
+        if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
+        if pressed then st.group_open[g.id] = not open end
         local active = I.group_of(st.category).id == g.id
         cdl:AddRectFilled({ x + S(6), cy + S(2) }, { x + w - S(6), cy + S(28) }, u32(P.card_hi, (active and 0.5 or 0.15) + 0.3 * hv), S(8))
         icon(cdl, x + S(20), cy + S(15), g.icon, active and GOLD or mix(P.dim, P.text, hv), T.small)
-        text_mid(cdl, x + S(36), cy + S(15), U.t(g.name):upper(), active and P.text or mix(P.dim, P.text, hv), F.disp, T.small)
+        text_mid(cdl, x + S(36), cy + S(15), LANG.t(g.name):upper(), active and P.text or mix(P.dim, P.text, hv), F.disp, T.small)
         icon(cdl, x + w - S(18), cy + S(15), open and 'chevron-down' or 'chevron-right', P.faint, T.tiny)
         cy = cy + S(32)
         if open then
             for _, cat in ipairs(g.cats) do
                 local n = #I.category(cat)
-                if n > 0 then
+                if n > 0 or not I.answered(cat) then -- (one the house hasn't answered for yet shows, empty)
                     imgui.SetCursorScreenPos({ x, cy })
                     local seat = seating and cat == st.category
                     if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
-                    page_seat(S(24))
-                    local ckey = '##cat' .. cat
-                    order[#order + 1] = ckey
-                    if st.pad_cat_page_arm then st.pad_cat_i, st.pad_cat_focus, st.pad_cat_keep, st.pad_cat_page_arm = #order, ckey, nil, nil end
-                    local cp, _, chv = hit(ckey, w, S(24))
+                    keys[#keys + 1] = '##cat' .. cat
+                    if st.stick_seat_key == keys[#keys] then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end
+                    edge_seat('##cat' .. cat, false, '##cat' .. cat == last_key)
+                    local cp, _, chv = hit('##cat' .. cat, w, S(24), S(7), { x = x + S(12), y = cy + S(1), w = w - S(18), h = S(22) })
                     if seat then imgui.SetItemDefaultFocus() end
-                    if st.pad_cat_focus == ckey then imgui.SetScrollHereY(0.5) end
-                    if imgui.IsItemFocused() then
-                        st.pad_where_now, st.pad_cat_i = 'cats', #order
-                        if st.pad_cat_focus == ckey then st.pad_cat_focus, st.pad_cat_keep = nil, nil end
-                    elseif st.pad_where == 'cats' and PAD.shown() and not st.pad_cat_focus and not st.pad_cat_paging and ckey == (st.pad_cat_order and st.pad_cat_order[st.pad_cat_i]) then
-                        st.pad_cat_refocus = ckey
-                    end
+                    if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
                     local on = st.category == cat and st.results == nil
-                    if cp and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
+                    if cp then
                         st.category, st.group = cat, g.id
                         st.query[1], st.results = '', nil
                         st.list_at = clock()
                         fetch_list(cat)
                         -- a controller: Confirm on a category goes on to its list's first row
-                        if PAD.shown() then st.pad_first, st.pad_first_id, st.pad_cats, st.pad_where = 3, nil, false, 'items' end
+                        if PAD.shown() then st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, false end
                     end
                     if on then cdl:AddRectFilled({ x + S(12), cy + S(1) }, { x + w - S(6), cy + S(23) }, u32(GOLD, 0.14), S(7)) end
-                    text_mid(cdl, x + S(26), cy + S(12), U.t(I.CATEGORY_NAME[cat] or ('Category ' .. cat)), on and GOLD or mix(P.dim, P.text, 0.5 + 0.5 * chv), F.text, T.small)
+                    text_mid(cdl, x + S(26), cy + S(12), LANG.t(I.CATEGORY_NAME[cat] or ('Category ' .. cat)), on and GOLD or mix(P.dim, P.text, 0.5 + 0.5 * chv), F.text, T.small)
                     -- how many are up, once known
                     local list = st.lists[cat]
                     if list then
@@ -1611,13 +1749,10 @@ local function draw_sidebar(dl, x, y, w, h)
             cy = cy + S(4)
         end
     end
+    st.cat_keys = keys
     imgui.SetCursorScreenPos({ x, cy + S(4) }) -- the content's end, so the child knows how far it scrolls
     imgui.Dummy({ 1, 1 })
     imgui.EndChild()
-    st.pad_cat_order = order
-    st.pad_cat_paging = nil
-    if st.pad_cat_refocus and not st.pad_cat_focus then st.pad_cat_focus = st.pad_cat_refocus end
-    st.pad_cat_refocus = nil
 end
 
 -- the subtitle under an item's name. Japanese job marks are one character, so a long list wraps onto a second
@@ -1627,12 +1762,12 @@ local function item_sub_lines(id, max_w, size)
     local r = I.get(id)
     local line = I.jobs_line(id)
     if r.stack > 1 then line = (line ~= '' and (line .. '  ·  ') or '') .. 'Stacks of ' .. r.stack end
-    if U.lang() ~= 'ja' or line == '' or measure(line, F.text, size) <= max_w then return { line } end
+    if LANG.lang() ~= 'ja' or line == '' or measure(line, F.text, size) <= max_w then return { line } end
     local lines = wrap(line, F.text, size, math.max(S(40), max_w))
     if #lines <= 2 then return lines end
     local jobs = I.jobs_of(r.jobs)
     local marks = {}
-    for _, j in ipairs(jobs) do marks[#marks + 1] = U.job_label(j) end
+    for _, j in ipairs(jobs) do marks[#marks + 1] = LANG.job_label(j, U.JOBS[j]) end
     if #marks == 0 then return { fit(line, F.text, size, max_w) } end
     local prefix = (r.level or 0) > 0 and ('Lv ' .. r.level .. ' ') or ''
     local n1 = #marks
@@ -1655,7 +1790,7 @@ local function draw_item_row(dl, id, x, y, w, alpha, lines)
     -- (the controller first: ImGui counts the focused row as hovered while its cursor shows)
     if PAD.shown() and imgui.IsItemFocused() then st.hover_id = id st.hover_rect = { x = x, y = y, w = w, h = h }
     elseif hovered then st.hover_id = id st.hover_rect = nil end
-    if imgui.IsItemFocused() then st.pad_where_now = 'items' st.pad_row = id end
+    if imgui.IsItemFocused() then st.pad_where_now, st.pad_row = 'items', id end -- (the row Right from the sidebar comes back to)
     local selected = st.selected == id
     local r = I.get(id)
     panel(dl, x, y, w, h, selected and P.card_hi or P.card, (selected and 1 or 0.9 + 0.1 * hv) * alpha, S(10), selected and GOLD or (hv > 0.01 and mix(P.line, P.accent, hv) or nil), selected)
@@ -1664,7 +1799,11 @@ local function draw_item_row(dl, id, x, y, w, alpha, lines)
     local name = fit(r.name, F.disp, T.h2, w - S(250))
     -- gear you can wear as you are shows yellow; gear you can't, dimmed; anything else as it was
     local ncol = P.text
-    if (r.jobs or 0) ~= 0 then ncol = can_equip(id) and mix(P.text, GOLD, 0.75) or mix(P.text, P.dim, 0.6) end
+    if (r.jobs or 0) ~= 0 then ncol = can_equip(id) and mix(P.text, GOLD, 0.75) or mix(P.text, P.dim, 0.6)
+    else
+        local learn = can_learn(id) -- a spell's scroll: yours to learn, or not
+        if learn ~= nil then ncol = learn and mix(P.text, GOLD, 0.75) or mix(P.text, P.dim, 0.6) end
+    end
     text(dl, x + S(60), y + S(8), name, selected and GOLD or ncol, F.disp, T.h2, alpha)
     local sub_w = w - S(60) - S(110)
     lines = lines or item_sub_lines(id, sub_w)
@@ -1681,14 +1820,12 @@ local function draw_item_row(dl, id, x, y, w, alpha, lines)
         local lbl = gil(hs.stats.last) .. ' gil'
         text(dl, x + w - S(14) - measure(lbl, F.semi, T.small), y + S(34), lbl, GOLD, F.semi, T.small, alpha)
     end
-    if pressed and not st.pad_mute and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
+    if pressed then
         U.ripple_at(key)
         -- a controller: Confirm picks the item and goes on to its card's price box, ready for a bid
         if PAD.shown() then
             if not selected then select_item(id) end
-            -- held for several frames: the Confirm that opened this is still a navigation request, and one
-            -- SetKeyboardFocusHere is dropped, so the price box only flashed
-            st.pad_seat, st.pad_where, st.pad_card, st.pad_price_hold, st.pad_mute = 'price', 'price', 'price', 8, 'held'
+            st.pad_seat = 'price'
         elseif not selected then select_item(id)
         else select_item(nil) end
     end
@@ -1702,13 +1839,37 @@ local function sort_desc()
     if settings.sort_desc ~= nil then return settings.sort_desc == true end
     return SORT_DESC[settings.sort or 'name'] == true
 end
+-- under search results: the search covers the categories the house has answered for on this server (any opened,
+-- now or before); the rest can be asked for, once
+local function draw_search_reach(dl, x, y, w)
+    local total, missing = 0, 0
+    for _, cat in ipairs(I.all_categories()) do
+        total = total + 1
+        if not I.answered(cat) then missing = missing + 1 end
+    end
+    if missing == 0 then return 0 end
+    if st.sweep_wanted then
+        text_center(dl, x, y + S(14), w, string.format(LANG.t('Asking the house for the other categories…  %d left'), missing), P.cyan, F.text, T.small)
+        return S(32)
+    end
+    text_center(dl, x, y + S(4), w, string.format(LANG.t('Searched the %d categories opened so far; %d never opened here'), total - missing, missing), P.faint, F.text, T.tiny)
+    local bw = math.min(w - S(40), S(300))
+    if button(dl, '##search_all', x + (w - bw) / 2, y + S(20), bw, S(30), LANG.t('Include the other categories'), P.accent, 'ghost', 'magnifying-glass', F.semi, T.small) then
+        st.sweep_wanted, st.sweep_tries = true, nil
+    end
+    return S(58)
+end
+
 local function draw_list(dl, x, y, w, h, t)
     local ids, title
     if st.results then
-        ids, title = st.results, 'SEARCH  ·  ' .. #st.results .. (st.result_total > #st.results and (' of ' .. st.result_total) or '') .. ' results'
+        -- a result the house turns out not to list (its category answered without it) drops out
+        ids = {}
+        for _, id in ipairs(st.results) do if I.listed(id) then ids[#ids + 1] = id end end
+        title = 'SEARCH  ·  ' .. #ids .. (st.result_total > #st.results and (' of ' .. st.result_total) or '') .. ' results'
     else
         ids = I.category(st.category)
-        title = U.t(I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' items'
+        title = LANG.t(I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' items'
     end
     -- the sort, for a category and for search results alike (NAME A to Z keeps a search's best matches first, and a
     -- category comes A to Z already); ties go A to Z by name
@@ -1747,7 +1908,12 @@ local function draw_list(dl, x, y, w, h, t)
     if settings.usable then
         local keep = {}
         -- only gear is judged: food, medicines, materials and the rest (no jobs named) anyone can use
-        for _, id in ipairs(ids) do if (I.get(id).jobs or 0) == 0 or can_equip(id) then keep[#keep + 1] = id end end
+        for _, id in ipairs(ids) do
+            -- gear you can wear, scrolls you can learn, and everything else (food, materials) as it is
+            local ok
+            if (I.get(id).jobs or 0) ~= 0 then ok = can_equip(id) else ok = can_learn(id) ~= false end
+            if ok then keep[#keep + 1] = id end
+        end
         ids = keep
     end
     local hidden = total - #ids
@@ -1756,14 +1922,14 @@ local function draw_list(dl, x, y, w, h, t)
         if st.results then
             title = 'SEARCH  ·  ' .. #ids .. ' ' .. what
         else
-            title = U.t(I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' ' .. U.t(what) .. ' ' .. U.t('of') .. ' ' .. total
+            title = LANG.t(I.CATEGORY_NAME[st.category] or ''):upper() .. '  ·  ' .. #ids .. ' ' .. LANG.t(what) .. ' ' .. LANG.t('of') .. ' ' .. total
         end
     end
     -- the sort, at the right; the title and the fetching note keep to the room left of it
     local current, desc = settings.sort or 'name', sort_desc()
     local WAYS = { name = { 'A to Z', 'Z to A' }, level = { 'lowest first', 'highest first' }, stock = { 'fewest first', 'most first' } }
     local sorts = {}
-    for _, s in ipairs({ { 'name', U.t('NAME') }, { 'level', U.t('LEVEL') }, { 'stock', U.t('STOCK') } }) do
+    for _, s in ipairs({ { 'name', LANG.t('NAME') }, { 'level', LANG.t('LEVEL') }, { 'stock', LANG.t('STOCK') } }) do
         local on = s[1] == current
         local d = SORT_DESC[s[1]] -- (not `on and desc or …`: a false desc would fall through to the default)
         if on then d = desc end
@@ -1792,9 +1958,7 @@ local function draw_list(dl, x, y, w, h, t)
         elseif measure('fetching…', F.text, T.tiny) <= left then note = 'fetching…' end
         if note then text(dl, x + S(6) + measure(title, F.disp, T.small) + S(10), y + S(2), note, P.cyan, F.text, T.tiny) end
     end
-    if st.pad_where == 'sort' then U.focus_key('##sort' .. (st.pad_strip_i or 1)) end
     local _, _, clicked = U.segments(dl, '##sort', x + w - sw, y - S(6), S(24), sorts, current, nil, F.disp, T.tiny)
-    if strip_pad_click() then clicked = nil end
     if clicked == current then
         settings.sort_desc = not desc
         save_settings()
@@ -1805,54 +1969,53 @@ local function draw_list(dl, x, y, w, h, t)
     local ly = y + S(28)
     local lh = h - S(28)
     imgui.SetCursorScreenPos({ x, ly })
-    imgui.BeginChild('##items', { w, lh }, 256, PAD.shown() and 131072 or 0)
+    imgui.BeginChild('##items', { w, lh }, 256, 0) -- NavFlattened: a controller's focus walks in from outside
     local cdl = imgui.GetWindowDrawList()
-    pad_scroll()
-    -- left/right moves the cursor by one page of rows and scrolls there. It does not focus the list window.
-    local page_id = nil
-    if st.pad_where == 'items' and st.pad_page_dir and #ids > 0 then
-        local dir = st.pad_page_dir
-        st.pad_page_dir = nil
-        local idx, cur = 1, st.pad_row
-        for i, id in ipairs(ids) do if id == cur then idx = i break end end
-        local page = math.max(1, math.floor(lh / (S(56) + S(6))))
-        idx = math.max(1, math.min(#ids, idx + dir * page))
-        page_id = ids[idx]
-        st.pad_row = page_id
-        local text_w = (w - S(12)) - S(60) - S(110)
-        local y = 0
-        for i, id in ipairs(ids) do
-            if id == page_id then break end
-            local lines = item_sub_lines(id, text_w)
-            y = y + S(56) + (#lines > 1 and S(14) or 0) + S(6)
-        end
-        imgui.SetScrollY(y)
+    -- the stick walks the list while the ring is in it (or nowhere); in the sidebar it walks the categories
+    if st.pad_where == 'items' or st.pad_where == nil then
+        stick_walk(#ids, function (i) return '##item' .. ids[i] end, function (i)
+            -- (the walk starts from the focused row, in view or not)
+            -- (the row's place from its index: rows out of view aren't drawn, so it's scrolled into view first)
+            local rh = S(56)
+            local top = (i - 1) * (rh + S(6))
+            -- the ring kept at the middle of the view, as a scrubber reads best (not nudged along an edge)
+            imgui.SetScrollY(math.max(0, math.min(imgui.GetScrollMaxY(), top - (lh - rh) / 2)))
+        end, 1, function () for i, id in ipairs(ids) do if id == st.pad_row then return i end end end)
     end
     local seating = st.pad_first and not st.pad_cats and PAD.capturing()
     -- a list the controller's focus (re)starts in shows its top
     if seating and st.pad_first_id == nil then imgui.SetScrollY(0) end
-    -- from the card or the sidebar: the child is made the focused window first, and the row seated in it the frame after
+    -- from the card or the sidebar: ImGui won't tab the focus from another window into this (flattened) child, so
+    -- the child is made the focused window first, and the row seated in it the frame after
     if seating and st.pad_first == 2 then imgui.SetWindowFocus() end
     local scroll_y = imgui.GetScrollY()
+    -- while the stick walks, the rows are laid out from the scroll the walk wants (ImGui's own takes a frame to
+    -- follow), with the walk's row at the middle of the view, and that row wears the ring at once: the ring stays
+    -- put at the centre and the list flows under it, rather than hopping after the scroll
+    local walk_row = st.walk_i and ids[st.walk_i] or nil
+    if walk_row then
+        local rh = S(56)
+        scroll_y = math.max(0, math.min(imgui.GetScrollMaxY(), (st.walk_i - 1) * (rh + S(6)) - (lh - rh) / 2))
+        imgui.SetScrollY(scroll_y)
+    end
     local cy = ly - scroll_y
     local since = clock() - st.list_at
     local shown = 0
     local first_drawn = nil
     if #ids == 0 then
-        local why = hidden == 0 and (st.results and 'Nothing by that name' or 'Nothing here')
+        local why = hidden == 0 and (st.results and 'Nothing by that name' or (I.answered(st.category) and 'Nothing here' or LANG.t('Asking the house…')))
             or (settings.in_stock and settings.usable and 'Nothing up that you can wear')
             or (settings.usable and 'Nothing here you can wear') or 'Nothing in stock'
         text_center(cdl, x, ly + S(60), w, why, P.dim, F.disp, T.h1)
         if hidden > 0 then text_center(cdl, x, ly + S(90), w, hidden .. (hidden == 1 and ' item is' or ' items are') .. ' hidden by ' .. (settings.in_stock and settings.usable and 'the filters' or settings.usable and 'the Usable filter' or 'the In stock filter'), P.faint, F.text, T.small) end
         if st.results == nil and st.search_error then text_center(cdl, x, ly + S(90), w, 'Search server: ' .. tostring(st.search_error), P.danger, F.text, T.small) end
+        if st.results then draw_search_reach(cdl, x, ly + S(120), w) end
     end
     local vis_top, vis_bot = ly - S(60), ly + lh + S(60)
-    local row_w = w - S(12)
-    local text_w = row_w - S(60) - S(110)
+    st.list_ids = ids -- (for /ah pad: which row the ring is on)
     for i, id in ipairs(ids) do
-        local lines = item_sub_lines(id, text_w)
-        local rh = S(56) + (#lines > 1 and S(14) or 0)
-        if (cy + rh >= vis_top and cy <= vis_bot) or id == page_id then
+        local rh = S(56)
+        if cy + rh >= vis_top and cy <= vis_bot then
             local alpha = math.min(1, (since * 6 - i * 0.05) + 0.3)
             -- the controller's focus (re)starts on the first row shown: as the window appears (SetItemDefaultFocus
             -- works then), and two frames after a tab or category change, once ImGui has restored the window's old
@@ -1860,16 +2023,64 @@ local function draw_list(dl, x, y, w, h, t)
             if first_drawn == nil then first_drawn = i end
             -- (or, back from the card, on the picked row: pad_first_id)
             local seat = seating and (st.pad_first_id and id == st.pad_first_id or (st.pad_first_id == nil and i == first_drawn))
-            if (seat and st.pad_first == 1) or id == page_id then imgui.SetKeyboardFocusHere() st.pad_seats = (st.pad_seats or 0) + 1 end
-            draw_item_row(cdl, id, x + S(4), cy, row_w, math.max(0.05, math.min(1, alpha)), lines)
+            if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() st.pad_seats = (st.pad_seats or 0) + 1 st.seated = true end
+            if st.stick_seat_key and st.stick_seat_key == '##item' .. id then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end -- the stick's row, once drawn
+            edge_seat('##item' .. id, i == 1, i == #ids)
+            draw_item_row(cdl, id, x + S(4), cy, w - S(12), math.max(0.05, math.min(1, alpha)))
+            if walk_row == id then
+                U.anim.focus = { x = x + S(4), y = cy, w = w - S(12), h = rh, at = now_t, key = '##item' .. id, r = S(10) }
+                st.hover_id, st.hover_rect = id, { x = x + S(4), y = cy, w = w - S(12), h = rh }
+            end
             if seat then imgui.SetItemDefaultFocus() end
         end
         cy = cy + rh + S(6)
         shown = shown + 1
     end
+    if st.results and #ids > 0 then cy = cy + draw_search_reach(cdl, x, cy + S(4), w - S(12)) end
+    -- a remembered row that isn't in this list (another category, a filter): the first row instead
+    if seating and st.pad_first == 1 and st.pad_first_id and not st.seated then st.pad_first, st.pad_first_id = 2, nil end
+    st.seated = nil
+    -- a ring on a row scrolled out of the list (the mouse wheel) would show past the list's edge: not drawn
+    local fo = U.anim.focus
+    if fo and fo.at == now_t and fo.key:sub(1, 6) == '##item' and (fo.y + fo.h < ly or fo.y > ly + lh) then U.anim.focus = nil end
+    if st.stick_seat_key then -- a row that never came up (the list changed): let go
+        st.stick_tries = (st.stick_tries or 0) + 1
+        if st.stick_tries > 6 then st.stick_seat_key, st.stick_tries = nil, nil end
+    else st.stick_tries = nil end
     imgui.SetCursorScreenPos({ x, cy + S(2) })
     imgui.Dummy({ 1, 1 })
     imgui.EndChild()
+    -- the scrubber: with the stick held in the list, where the ring is by the sort in use (the letter, the level or
+    -- the stock), large over the dimmed list as a phone's contact list shows it; it comes after a moment, so a flick
+    -- never shows it, and fades out when the stick is let go
+    local walking = st.stick_acc ~= nil and (st.pad_where == 'items' or st.pad_where == nil)
+    if walking and st.scrub_since == nil then st.scrub_since = now_t end
+    if not walking then st.scrub_since = nil end
+    local want = (walking and now_t - st.scrub_since > 0.3) and 1 or 0
+    st.scrub_a = lerp(st.scrub_a or 0, want, math.min(1, dt * (want > 0 and 10 or 6)))
+    local row_id = (st.walk_i and ids[st.walk_i]) or st.pad_row -- the walk's row, before the ring has landed on it
+    if st.scrub_a > 0.01 and row_id and I.rows[row_id] then
+        local a = st.scrub_a
+        local fdl = imgui.GetForegroundDrawList()
+        fdl:AddRectFilled({ x, ly }, { x + w, ly + lh }, u32(P.bg, 0.5 * a), S(10))
+        local r = I.get(row_id)
+        local sort = settings.sort or 'name'
+        local label, small
+        if sort == 'level' then label, small = tostring(r.level or 0), LANG.t('LEVEL')
+        elseif sort == 'stock' then
+            local s1, s2 = stock_of(row_id)
+            label, small = tostring((s1 or 0) + (s2 or 0)), LANG.t('UP NOW')
+        else
+            local ch = (r.name or ''):sub(1, 1):upper()
+            label = ch:match('%a') and ch or '#'
+        end
+        local bw, bh = S(104), S(104)
+        local bx, by = x + w - bw - S(28), ly + (lh - bh) / 2 -- at the right, over the stock pills, not the name it names
+        shadow(fdl, bx, by, bw, bh, S(22), a)
+        panel(fdl, bx, by, bw, bh, P.glass, 0.96 * a, S(22), P.line)
+        text_center(fdl, bx, by + bh / 2 - (small and S(8) or 0), bw, label, P.text, F.disp, T.h1 * 2, a)
+        if small then text_center(fdl, bx, by + bh - S(20), bw, small, P.dim, F.disp, T.tiny, a) end
+    end
 end
 
 -- the selected item: everything about it, its history, and the buy box
@@ -1879,27 +2090,24 @@ local function draw_detail(dl, x, y, w, h, t)
     st.card_focus = false
     if id == nil then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
-        text_center(dl, x, y + h / 2 + S(30), w, U.t('Pick an item'), P.text, F.disp, T.h1)
-        text_center(dl, x, y + h / 2 + S(54), w, U.t('Its stock, sale history and a buy box show here'), P.dim, F.text, T.small)
+        text_center(dl, x, y + h / 2 + S(30), w, LANG.t('Pick an item'), P.text, F.disp, T.h1)
+        text_center(dl, x, y + h / 2 + S(54), w, LANG.t('Its stock, sale history and a buy box show here'), P.dim, F.text, T.small)
         return
     end
     local r = I.get(id)
     local cx, cy = x + S(16), y + S(16)
     item_icon(dl, id, cx, cy, S(56), 1)
+    if st.stack then stack_badge(dl, cx, cy, S(56), r.stack) end
     -- the star: follow this item (single or stack, whichever is picked) on the watch tab
     local watched = watch_entry(id, st.stack) ~= nil
-    if st.pad_card == 'watch' and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then U.focus_key('##star') end
-    if icon_button(dl, '##star', x + w - S(44), y + S(10), S(28), 'star', watched and GOLD or P.dim, watched and U.t('Stop watching') or (U.t('Watch this item') .. (r.stack > 1 and (st.stack and U.t(' (stacks)') or U.t(' (singles)')) or ''))) then
+    if icon_button(dl, '##star', x + w - S(44), y + S(10), S(28), 'star', watched and GOLD or P.dim, watched and LANG.t('Stop watching') or (LANG.t('Watch this item') .. (r.stack > 1 and (st.stack and ' (stacks)' or ' (singles)') or ''))) then
         toggle_watch(id, st.stack)
     end
     text(dl, cx + S(68), cy, fit(r.name, F.disp, T.h1, w - S(130)), GOLD, F.disp, T.h1)
-    local sub_lines = item_sub_lines(id, w - S(100), T.small)
-    if sub_lines[1] == '' then sub_lines[1] = U.t(I.CATEGORY_NAME[I.category_of(id) or 0] or '') end
-    for i, ln in ipairs(sub_lines) do
-        if i > 2 then break end
-        text(dl, cx + S(68), cy + S(28) + (i - 1) * S(16), fit(ln, F.text, T.small, w - S(100)), P.dim, F.text, T.small)
-    end
-    cy = cy + S(66) + (#sub_lines > 1 and S(16) or 0)
+    local line = I.jobs_line(id)
+    if r.stack > 1 then line = (line ~= '' and (line .. '  ·  ') or '') .. 'Stacks of ' .. r.stack end
+    text(dl, cx + S(68), cy + S(28), fit(line ~= '' and line or (I.CATEGORY_NAME[I.category_of(id) or 0] or ''), F.text, T.small, w - S(100)), P.dim, F.text, T.small)
+    cy = cy + S(66)
     -- the description, wrapped
     local desc = COMPARE.readable(r.desc)
     if desc ~= '' then
@@ -1916,43 +2124,59 @@ local function draw_detail(dl, x, y, w, h, t)
     -- the jobs, as badges, when it's gear for some of them
     local jobs = I.jobs_of(r.jobs)
     if r.level > 0 and #jobs > 0 and #jobs < 22 and not I.all_jobs(r.jobs) then
-        local bx, by = cx, cy
+        local bx = cx
         for _, j in ipairs(jobs) do
-            if bx + S(24) > x + w - S(16) then bx, by = cx, by + S(24) end
-            U.job_badge(dl, bx + S(11), by + S(11), S(10), j, 0, 1)
+            if bx + S(24) > x + w - S(16) then break end
+            U.job_badge(dl, bx + S(11), cy + S(11), S(10), j, 0, 1)
             bx = bx + S(26)
         end
-        cy = by + S(30)
+        cy = cy + S(30)
     end
     dl:AddLine({ cx, cy }, { x + w - S(16), cy }, u32(P.line), 1)
     cy = cy + S(10)
     -- stock and the single/stack switch
     local single, stack = stock_of(id)
-    text(dl, cx, cy, U.t('IN STOCK'), P.accent, F.disp, T.small)
+    text(dl, cx, cy, LANG.t('IN STOCK'), P.accent, F.disp, T.small)
     stock_pills(dl, x + w - S(16), cy - S(2), id, 1, true)
     cy = cy + S(26)
     if r.stack > 1 then
-        if st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
-            if st.pad_card == 'single' then U.focus_key('##ss1') elseif st.pad_card == 'stack' then U.focus_key('##ss2') end
+        -- a controller is sent here by Up from the price box (ImGui's own Up skipped it for the sidebar): the side in
+        -- use takes the focus, asked again each frame until it has (VanaCore moves ImGui's focus on the same press)
+        if st.pad_seat == 'stack' then
+            imgui.SetKeyboardFocusHere(st.stack and 1 or 0) -- (the switch's two buttons are its next two items)
+            st.stack_tries = (st.stack_tries or 0) + 1
         end
-        local picked = U.segments(dl, '##ss', cx, cy, S(26), { { false, U.t('SINGLE') }, { true, U.t('STACK of') .. ' ' .. r.stack } }, st.stack, function () return GOLD end, F.disp, T.tiny)
+        local picked = U.segments(dl, '##ss', cx, cy, S(26), { { false, LANG.t('SINGLE') }, { true, 'STACK of ' .. r.stack } }, st.stack, function () return GOLD end, F.disp, T.tiny)
         if picked ~= st.stack then st.stack = picked st.buy.price[1] = '' end
+        local fo = U.anim.focus
+        local on_switch = PAD.shown() and fo ~= nil and fo.at == now_t and (fo.key == '##ss1' or fo.key == '##ss2')
+        if st.pad_seat == 'stack' and (on_switch or st.stack_tries > 6) then st.pad_seat, st.stack_tries = nil, nil end
+        -- on it: Left and Right pick singles or stacks, Down goes back to the price box
+        if on_switch and st.pad_seat == nil then
+            st.card_focus, st.pad_hold = true, 'all'
+            local want = st.stack
+            if PAD.pressed('left') then want = false end
+            if PAD.pressed('right') then want = true end
+            if want ~= st.stack then st.stack, st.buy.price[1] = want, '' end
+            if PAD.pressed('left') or PAD.pressed('right') then st.pad_seat = 'stack' end -- (kept on the side picked)
+            if PAD.pressed('down') then st.pad_seat = 'price' end
+        end
         cy = cy + S(34)
     end
     -- the history
     local hs = history_of(id, st.stack)
     -- gone after a purchase or a sale (it changed): asked for again (fetch_history waits out a failure)
     if hs == nil then fetch_history(id, st.stack) end
-    text(dl, cx, cy, U.t('RECENT SALES'), P.accent, F.disp, T.small)
+    text(dl, cx, cy, LANG.t('RECENT SALES'), P.accent, F.disp, T.small)
     if st.fetching[id .. '/' .. (st.stack and 1 or 0)] then text(dl, x + w - S(48) - measure('fetching…', F.text, T.tiny), cy + S(2), 'fetching…', P.cyan, F.text, T.tiny) end
-    if icon_button(dl, '##chart_toggle', x + w - S(42), cy - S(5), S(24), 'chart-line', settings.chart and P.cyan or P.faint, settings.chart and U.t('Hide the price graph') or U.t('Show the price graph')) then
+    if icon_button(dl, '##chart_toggle', x + w - S(42), cy - S(5), S(24), 'chart-line', settings.chart and P.cyan or P.faint, settings.chart and LANG.t('Hide the price graph') or LANG.t('Show the price graph')) then
         settings.chart = not settings.chart save_settings()
     end
     local hy = cy
     cy = cy + S(22)
     local bottom = y + h - S(96)
     if hs == nil then
-        text(dl, cx, cy, st.search_error and ('Search server: ' .. tostring(st.search_error)) or 'Asking the house…', st.search_error and P.danger or P.dim, F.text, T.small)
+        text(dl, cx, cy, st.search_error and ('Search server: ' .. tostring(st.search_error)) or LANG.t('Asking the house…'), st.search_error and P.danger or P.dim, F.text, T.small)
     elseif #hs.sales == 0 then
         text(dl, cx, cy, 'No ' .. (st.stack and 'stacks' or 'singles') .. ' sold lately', P.dim, F.text, T.small)
         cy = cy + S(20)
@@ -1993,17 +2217,7 @@ local function draw_detail(dl, x, y, w, h, t)
         local rows_h = bottom - cy
         if rows_h > S(18) then
             imgui.SetCursorScreenPos({ cx, cy })
-            -- NoNav (196608) and NoFocusOnAppearing (4096). The rows appear when a sale list arrives; without the
-            -- second flag that appearance took the pad, and NoNav then left the D-pad with nowhere to go.
-            imgui.BeginChild('##hist_rows', { w - S(24), rows_h }, 0, 200704)
-            if st.pad_card == 'hist' and PAD.shown() and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
-                local dir = (PAD.repeating('down', 0.25, 0.1) and 1 or 0) - (PAD.repeating('up', 0.25, 0.1) and 1 or 0)
-                if dir ~= 0 then imgui.SetScrollY(math.max(0, math.min(imgui.GetScrollMaxY(), imgui.GetScrollY() + dir * S(19)))) end
-                local wx, wy = imgui.GetWindowPos()
-                local ww, wh = imgui.GetWindowSize()
-                U.anim.focus = { x = wx, y = wy, w = ww, h = wh, at = now_t, key = '##hist' }
-                st.pad_where_now = 'hist'
-            end
+            imgui.BeginChild('##hist_rows', { w - S(24), rows_h }, false, 0)
             local cdl = imgui.GetWindowDrawList()
             local ry = cy - imgui.GetScrollY()
             for i, sale in ipairs(hs.sales) do
@@ -2027,23 +2241,20 @@ local function draw_detail(dl, x, y, w, h, t)
     by = by + S(22)
     imgui.SetCursorScreenPos({ cx, by })
     local _, _, entered = field('##bid', hs and hs.stats and ('last sold ' .. tostring(hs.stats.last)) or 'gil', st.buy.price, w - S(32) - S(110), T.body, true)
-    st.card_focus = imgui.IsItemFocused() -- a controller's focus is on the card: Cancel goes back to the list
+    st.card_focus = st.card_focus or imgui.IsItemFocused() -- a controller's focus is on the card: Cancel goes back to the list
     local price = tonumber(st.buy.price[1]) or (hs and hs.stats and hs.stats.last) or 0
     local can = may_trade() and price > 0 and logged_in() and st.buy.pending == nil
-    local label = st.buy.pending and 'Bidding…' or U.t('Bid')
+    local label = st.buy.pending and 'Bidding…' or 'Bid'
     if entered and can and settings.confirm_buy then st.confirm = { kind = 'buy', item = id, price = price, stack = st.stack } end
     -- a controller: Confirm on the picked row, or a closed confirmation, lands the focus here
     if st.pad_seat == 'bid' then imgui.SetKeyboardFocusHere() st.pad_seat = nil end
     local bid_pressed = button(dl, '##bid_btn', x + w - S(16) - S(104), by, S(104), S(34), label, can and GOLD or P.faint, can and 'solid' or 'ghost', 'gavel')
     if st.pad_mute then bid_pressed = false end -- the Confirm that kept the price, not a press of Bid
     if bid_pressed and PAD.shown() then st.pad_mute = 'held' end -- nor of the confirmation's Bid, which takes the focus
-    if imgui.IsItemFocused() and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' then
+    if imgui.IsItemFocused() then
         st.card_focus = true
-        st.pad_where_now = 'bid'
-        st.pad_hold = 'all' -- the D-pad is the window's here: sideways returns to the price box
-        if PAD.pressed('left') or PAD.pressed('right') then
-            st.pad_seat, st.pad_where, st.pad_card, st.pad_price_hold = 'price', 'price', 'price', 4
-        end
+        st.pad_hold = 'all' -- the D-pad is the window's here: Left is the price box (ImGui's own Left wandered off to the sidebar)
+        if PAD.pressed('left') then st.pad_seat = 'price' end
     end
     if bid_pressed and can then
         if settings.confirm_buy then
@@ -2062,6 +2273,95 @@ local function draw_detail(dl, x, y, w, h, t)
 end
 
 -- SELL: the bag, and the listing box
+-- SELL's market box: what's up now (singles and stacks), how it has sold (last, median, range, the trend), the
+-- price graph of the record, and the latest sales, as many as fit. Last, median and each sale fill the asking price
+-- when clicked. Returns nothing; draws in x..x+w, y..y+h
+local function draw_sell_market(dl, x, y, w, h, id, hs)
+    local stack = st.sell.stack
+    local head = LANG.t('MARKET') .. '  ·  ' .. (stack and LANG.t('stacks') or LANG.t('singles'))
+    text(dl, x, y, head, P.accent, F.disp, T.small)
+    if hs and hs.stats and hs.stats.trend then
+        local tr = hs.stats.trend
+        local flat = math.abs(tr) <= 0.02
+        local tl = flat and LANG.t('steady') or string.format('%s%.0f%%', tr > 0 and '+' or '', tr * 100)
+        text(dl, x + measure(head, F.disp, T.small) + S(10), y + S(1), tl, flat and P.dim or (tr > 0 and P.ok or P.warn), F.semi, T.tiny)
+    end
+    stock_pills(dl, x + w, y - S(3), id, 1, true)
+    local cy = y + S(22)
+    local bottom = y + h
+    local function ask(price)
+        st.sell.price[1] = tostring(price)
+        st.sell.fee, st.sell.asked = nil, nil
+    end
+    if hs == nil then
+        text(dl, x, cy, st.search_error and ('Search server: ' .. tostring(st.search_error)) or LANG.t('Asking the house…'), st.search_error and P.danger or P.dim, F.text, T.small)
+        return
+    end
+    if hs.stats == nil then
+        text(dl, x, cy, LANG.t(stack and 'No stacks sold lately' or 'No singles sold lately'), P.dim, F.text, T.small)
+        text(dl, x, cy + S(20), LANG.t('Nobody has bought one here lately: your price sets the market'), P.faint, F.text, T.tiny)
+        return
+    end
+    local s = hs.stats
+    -- last, median, range (last and median are prices to take)
+    local cw = w / 3
+    local cols = { { 'LAST', s.last, GOLD }, { 'MEDIAN', s.median, P.text }, { 'RANGE', nil, P.text } }
+    for i, c in ipairs(cols) do
+        local cx = x + (i - 1) * cw
+        if c[2] then
+            imgui.SetCursorScreenPos({ cx - S(6), cy - S(4) })
+            local pressed, hovered, hv = hit('##mkt' .. i, cw - S(4), S(44), S(8), { x = cx - S(6), y = cy - S(4), w = cw - S(4), h = S(44) })
+            if hv > 0.01 then dl:AddRectFilled({ cx - S(6), cy - S(4) }, { cx + cw - S(10), cy + S(40) }, u32(GOLD, 0.09 * hv), S(8)) end
+            if hovered then with_font(F.text, T.small, imgui.SetTooltip, LANG.t('Ask this price')) end
+            if pressed then ask(c[2]) end
+        end
+        text(dl, cx, cy, LANG.t(c[1]), P.faint, F.disp, T.tiny)
+        if c[2] then
+            text(dl, cx, cy + S(14), fit(gil(c[2]), F.disp, T.h2, cw - S(12)), c[3], F.disp, T.h2)
+        else
+            text(dl, cx, cy + S(18), fit(gil(s.low) .. ' – ' .. gil(s.high), F.semi, T.small, cw - S(4)), c[3], F.semi, T.small)
+        end
+    end
+    cy = cy + S(40)
+    -- the graph, as the Buy card draws it (every sale on record, the median dashed), when there's room for it and
+    -- three sales under it; without the room, each sale says how far it was from the median instead
+    local series = PRICES.series(id, stack)
+    local rh = S(20)
+    local room = bottom - cy - S(8) - rh * math.min(3, #hs.sales)
+    local charted = settings.chart and #series >= 1 and room >= S(50)
+    if charted then
+        local gh = math.min(S(96), room)
+        panel(dl, x - S(4), cy, w + S(8), gh, P.well, 0.6, S(8))
+        PRICES.chart(dl, x, cy + S(4), w, gh - S(8), series, { color = P.cyan, median = s.median, key = '##sellchart' .. id })
+        cy = cy + gh + S(8)
+    else
+        dl:AddLine({ x, cy }, { x + w, cy }, u32(P.line, 0.7), 1)
+        cy = cy + S(6)
+    end
+    -- the latest sales, newest first, a flat list as on the Buy card: price, when, who sold to whom
+    local n = math.min(#hs.sales, 8, math.max(0, math.floor((bottom - cy) / rh)))
+    for i = 1, n do
+        local sale = hs.sales[i]
+        imgui.SetCursorScreenPos({ x - S(6), cy })
+        local pressed, hovered, hv = hit('##mks' .. i, w + S(12), rh, S(6), { x = x - S(6), y = cy, w = w + S(12), h = rh })
+        if hv > 0.01 then dl:AddRectFilled({ x - S(6), cy }, { x + w + S(6), cy + rh }, u32(GOLD, 0.08 * hv), S(6)) end
+        if hovered then with_font(F.text, T.small, imgui.SetTooltip, LANG.t('Ask this price')) end
+        if pressed then ask(sale.price) end
+        text_mid(dl, x, cy + rh / 2, gil(sale.price), i == 1 and GOLD or P.text, F.semi, T.small)
+        text_mid(dl, x + S(96), cy + rh / 2, ago(sale.date), P.dim, F.text, T.tiny)
+        local whow = w - S(190)
+        if not charted and s.median > 0 then
+            local d = (sale.price - s.median) / s.median
+            local pct = math.abs(d) < 0.005 and '±0%' or string.format('%s%d%%', d > 0 and '+' or '−', math.floor(math.abs(d) * 100 + 0.5))
+            text_mid(dl, x + S(170), cy + rh / 2, pct, math.abs(d) < 0.03 and P.dim or (d > 0 and P.warn or P.ok), F.semi, T.tiny)
+            whow = w - S(230)
+        end
+        local who = fit((sale.seller or '?') .. ' → ' .. (sale.buyer or '?'), F.text, T.tiny, whow)
+        text_mid(dl, x + w - measure(who, F.text, T.tiny), cy + rh / 2, who, P.faint, F.text, T.tiny)
+        cy = cy + rh
+    end
+end
+
 local function draw_sell(dl, x, y, w, h, t)
     if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
     local bagw = w - S(340)
@@ -2069,16 +2369,33 @@ local function draw_sell(dl, x, y, w, h, t)
     local items, hidden = {}, 0
     for _, it in ipairs(st.inventory) do
         local r = I.get(it.id)
-        local sellable = I.rows[it.id] ~= nil and bit.band(r.flags, 0x40) == 0 -- the house lists it, and it isn't NOAUCTION-flagged by the DAT
+        -- sellable as the game's own window judges it: not NOAUCTION-flagged in the client's item data. Not by the house's
+        -- category lists: only the categories you've opened are asked for, so an item missing from them may still be
+        -- one the house takes (the fee quote says so when it doesn't)
+        local sellable = bit.band(r.flags, 0x40) == 0
         if settings.sellable_only and not sellable then hidden = hidden + 1
         else items[#items + 1] = { it = it, r = r, sellable = sellable } end
     end
-    text(dl, x + S(6), y, U.t('YOUR BAG') .. '  ·  ' .. #st.inventory .. ' ' .. U.t('items') .. (hidden > 0 and ('  ·  ' .. hidden .. ' ' .. U.t('the house won\'t take, hidden')) or ''), P.dim, F.disp, T.small)
-    local chip_x = x + bagw - S(8) - chip_width(U.t('SELLABLE'))
-    if filter_chip(dl, '##sellable', chip_x, y - S(4), U.t('SELLABLE'), settings.sellable_only, GOLD,
-        settings.sellable_only and U.t("Hiding what the house won't take") or U.t("Hide what the house won't take"), 'tag', 'tag') then
+    text(dl, x + S(6), y, LANG.t('YOUR BAG') .. '  ·  ' .. #st.inventory .. ' ' .. LANG.t('items') .. (hidden > 0 and ('  ·  ' .. hidden .. ' ' .. LANG.t('the house won\'t take, hidden')) or ''), P.dim, F.disp, T.small)
+    local chip_x = x + bagw - S(8) - chip_width(LANG.t('SELLABLE'))
+    if filter_chip(dl, '##sellable', chip_x, y - S(4), LANG.t('SELLABLE'), settings.sellable_only, GOLD,
+        settings.sellable_only and LANG.t("Hiding what the house won't take") or LANG.t("Hide what the house won't take"), 'tag', 'tag') then
         settings.sellable_only = not settings.sellable_only
         save_settings()
+    end
+    -- the bag as icons or as a list (remembered)
+    do
+        local bs = S(26)
+        local bx = chip_x - S(10) - bs * 2 - S(4)
+        for i, v in ipairs({ { 'grid', 'table-cells', 'Show the bag as icons' }, { 'list', 'list-ul', 'Show the bag as a list' } }) do
+            local on = (settings.sell_view or 'grid') == v[1]
+            local px_ = bx + (i - 1) * (bs + S(4))
+            if on then dl:AddRectFilled({ px_, y - S(5) }, { px_ + bs, y - S(5) + bs }, u32(GOLD, 0.16), S(7)) end
+            if icon_button(dl, '##sellview' .. v[1], px_, y - S(5), bs, v[2], on and GOLD or P.dim, LANG.t(v[3])) and not on then
+                settings.sell_view = v[1]
+                save_settings()
+            end
+        end
     end
     local gy = y + S(28)
     local gh = h - S(28)
@@ -2087,10 +2404,16 @@ local function draw_sell(dl, x, y, w, h, t)
     local cdl = imgui.GetWindowDrawList()
     pad_scroll()
     if st.pad_first and PAD.capturing() then imgui.SetScrollY(0) end
-    if st.pad_bag and st.pad_first == 2 and PAD.capturing() then imgui.SetWindowFocus() end
     local cell = S(52)
     local per = math.max(1, math.floor((bagw - S(16)) / (cell + S(6))))
+    local listed_view = settings.sell_view == 'list'
+    local rowh = S(46)
     local cx, cy = x + S(4), gy - imgui.GetScrollY()
+    -- the stick walks the bag a row of cells at a time (one at a time in the list view), unless the price box has the ring
+    local ask = field_state['##ask']
+    if not (ask and (ask.focused or ask.pad_on)) then
+        stick_walk(#items, function (i) return '##bag' .. items[i].it.slot end, nil, listed_view and 1 or per)
+    end
     local n = 0
     if #items == 0 and hidden > 0 then
         text_center(cdl, x, gy + S(40), bagw, 'Nothing in your bag the house takes', P.dim, F.disp, T.body)
@@ -2099,13 +2422,34 @@ local function draw_sell(dl, x, y, w, h, t)
         local it, r, sellable = entry.it, entry.r, entry.sellable
         local key = '##bag' .. it.slot
         imgui.SetCursorScreenPos({ cx, cy })
-        local want = st.pad_bag and st.sell.slot or nil
-        local seat = st.pad_first and PAD.capturing() and ((want ~= nil and it.slot == want) or (want == nil and n == 0))
+        local seat = st.pad_first and n == 0 and PAD.capturing()
         if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
-        local pressed, hovered, hv = hit(key, cell, cell)
-        if imgui.IsItemFocused() then st.pad_where_now = 'bag' end
+        if st.stick_seat_key == key then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end -- the stick's cell, or Left from the price box
+        edge_seat(key, n == 0, n == #items - 1)
+        local cw_, ch_ = cell, cell
+        if listed_view then cw_, ch_ = bagw - S(16), rowh end
+        local pressed, hovered, hv = hit(key, cw_, ch_, S(8))
         if seat then imgui.SetItemDefaultFocus() end
         local on = st.sell.slot == it.slot
+        if listed_view then
+            -- a row: the icon, the name and how many, its category (or that the house won't take it), and the last
+            -- sale when it's known (asked for only when the item is picked)
+            local a_ = sellable and 1 or 0.4
+            panel(cdl, cx, cy, cw_, ch_, on and P.card_hi or P.card, (on and 1 or 0.85 + 0.15 * hv) * a_, S(9), on and GOLD or (hv > 0.01 and mix(P.line, P.accent, hv) or nil))
+            item_icon(cdl, it.id, cx + S(7), cy + S(6), ch_ - S(12), a_)
+            local nx = cx + ch_ + S(6)
+            text(cdl, nx, cy + S(5), fit(r.name, F.disp, T.body, cw_ - ch_ - S(150)), sellable and P.text or P.faint, F.disp, T.body)
+            local sub = it.count > 1 and ('x' .. it.count .. (r.stack > 1 and ('  ·  ' .. LANG.t('stacks of') .. ' ' .. r.stack) or '')) or ''
+            local cat = I.category_of(it.id)
+            local cn = sellable and (cat and LANG.t(I.CATEGORY_NAME[cat] or '') or '') or LANG.t('The house does not take this')
+            if cn ~= '' then sub = sub ~= '' and (sub .. '  ·  ' .. cn) or cn end
+            text(cdl, nx, cy + S(26), fit(sub, F.text, T.tiny, cw_ - ch_ - S(150)), P.dim, F.text, T.tiny, a_)
+            local hs = sellable and history_of(it.id, false)
+            if hs and hs.stats then
+                local pl = gil(hs.stats.last) .. ' gil'
+                text_mid(cdl, cx + cw_ - S(14) - measure(pl, F.semi, T.small), cy + ch_ / 2, pl, GOLD, F.semi, T.small)
+            end
+        else
         cdl:AddRectFilled({ cx, cy }, { cx + cell, cy + cell }, u32(on and GOLD or P.card, on and 0.22 or (0.6 + 0.3 * hv)), S(8))
         item_icon(cdl, it.id, cx + S(6), cy + S(6), cell - S(12), sellable and 1 or 0.35)
         if it.count > 1 then
@@ -2114,29 +2458,23 @@ local function draw_sell(dl, x, y, w, h, t)
             text(cdl, cx + cell - S(6) - measure(cl, F.bold, T.tiny - 1), cy + cell - S(17), cl, P.text, F.bold, T.tiny - 1)
         end
         if on then cdl:AddRect({ cx, cy }, { cx + cell, cy + cell }, u32(GOLD, 0.9), S(8), 15, S(1.5)) end
-        if hovered then
-            with_font(F.text, T.small, imgui.SetTooltip, r.name .. (it.count > 1 and (' x' .. it.count) or '') .. (sellable and '' or ('\n' .. U.t('The house does not take this'))))
         end
-        if pressed and sellable and st.pad_where ~= 'sell_box' then
-            local same = st.sell.slot == it.slot
+        if hovered and not listed_view then
+            with_font(F.text, T.small, imgui.SetTooltip, r.name .. (it.count > 1 and (' x' .. it.count) or '') .. (sellable and '' or ('\n' .. LANG.t('The house does not take this'))))
+        end
+        if pressed and sellable then
             st.sell.slot, st.sell.item, st.sell.count = it.slot, it.id, it.count
-            if not same then
-                st.sell.stack = false
-                st.sell.price[1] = ''
-                st.sell.fee, st.sell.asked = nil, nil
-                fetch_history(it.id, false)
-                if r.stack > 1 then fetch_history(it.id, true) end
-            end
-            -- a controller: Confirm on a bag item stays on its asking price
-            if PAD.shown() then
-                st.pad_seat, st.pad_where, st.pad_sell_part, st.pad_price_hold, st.pad_mute = 'price', 'sell_box', 'price', 8, 'held'
-                st.pad_bag, st.pad_first = false, nil
-            end
+            st.sell.stack = false
+            st.sell.price[1] = ''
+            st.sell.fee, st.sell.asked = nil, nil
+            fetch_history(it.id, false)
+            if r.stack > 1 then fetch_history(it.id, true) end
         end
         n = n + 1
-        if n % per == 0 then cx = x + S(4) cy = cy + cell + S(6) else cx = cx + cell + S(6) end
+        if listed_view then cy = cy + rowh + S(5)
+        elseif n % per == 0 then cx = x + S(4) cy = cy + cell + S(6) else cx = cx + cell + S(6) end
     end
-    if n % per ~= 0 then cy = cy + cell + S(6) end
+    if not listed_view and n % per ~= 0 then cy = cy + cell + S(6) end
     imgui.SetCursorScreenPos({ x, cy + S(2) })
     imgui.Dummy({ 1, 1 })
     imgui.EndChild()
@@ -2147,65 +2485,74 @@ local function draw_sell(dl, x, y, w, h, t)
     local sx, sy = px + S(16), y + S(16)
     if st.sell.slot == nil or st.sell.item == nil then
         icon(dl, px + pw / 2, y + h / 2 - S(24), 'tag', P.faint, T.title)
-        text_center(dl, px, y + h / 2 + S(10), pw, U.t('Pick something from your bag'), P.text, F.disp, T.h2)
-        text_center(dl, px, y + h / 2 + S(34), pw, U.t('Greyed items are ones the house does not take'), P.dim, F.text, T.small)
+        text_center(dl, px, y + h / 2 + S(10), pw, LANG.t('Pick something from your bag'), P.text, F.disp, T.h2)
+        text_center(dl, px, y + h / 2 + S(34), pw, LANG.t('Greyed items are ones the house does not take'), P.dim, F.text, T.small)
         return
     end
     local id = st.sell.item
     local r = I.get(id)
     item_icon(dl, id, sx, sy, S(48), 1)
+    if st.sell.stack then stack_badge(dl, sx, sy, S(48), r.stack) end
     text(dl, sx + S(60), sy, fit(r.name, F.disp, T.h2, pw - S(90)), GOLD, F.disp, T.h2)
-    text(dl, sx + S(60), sy + S(26), U.t('You have') .. ' ' .. st.sell.count .. (r.stack > 1 and ('  ·  ' .. U.t('stacks of') .. ' ' .. r.stack) or ''), P.dim, F.text, T.small)
+    text(dl, sx + S(60), sy + S(26), LANG.t('You have') .. ' ' .. st.sell.count .. (r.stack > 1 and ('  ·  ' .. LANG.t('stacks of') .. ' ' .. r.stack) or ''), P.dim, F.text, T.small)
     sy = sy + S(62)
     if r.stack > 1 then
+        -- stacks can be picked with fewer than a stack in the slot: their prices show, only listing waits for a full one
         local can_stack = st.sell.count >= r.stack
-        local picked = U.segments(dl, '##sellss', sx, sy, S(26), { { false, U.t('SINGLE') }, { true, U.t('FULL STACK') } }, st.sell.stack, function (o) return (o[1] and not can_stack) and P.faint or GOLD end, F.disp, T.tiny)
-        if picked and not can_stack then picked = false end
+        local picked = U.segments(dl, '##sellss', sx, sy, S(26), { { false, LANG.t('SINGLE') }, { true, LANG.t('FULL STACK') } }, st.sell.stack, function (o) return (o[1] and not can_stack) and P.dim or GOLD end, F.disp, T.tiny)
         if picked ~= st.sell.stack then st.sell.stack = picked st.sell.price[1] = '' st.sell.fee, st.sell.asked = nil, nil end
-        if not can_stack then text(dl, sx + S(200), sy + S(7), 'not a full stack', P.faint, F.text, T.tiny) end
-        sy = sy + S(34)
+        if not can_stack then text(dl, sx + S(200), sy + S(7), string.format(LANG.t('%d of %d for a stack'), st.sell.count, r.stack), P.faint, F.text, T.tiny) end
+        sy = sy + S(44)
     end
-    -- what it has been selling for
+    -- the market for it, filling the room between the item and the asking price (anchored at the bottom)
     local hs = history_of(id, st.sell.stack)
-    text(dl, sx, sy, 'RECENTLY SOLD FOR', P.accent, F.disp, T.small)
-    sy = sy + S(20)
-    if hs and hs.stats then
-        text(dl, sx, sy, U.t('last') .. ' ' .. gil(hs.stats.last) .. '  ·  ' .. U.t('median') .. ' ' .. gil(hs.stats.median) .. '  ·  ' .. U.t('range') .. ' ' .. gil(hs.stats.low) .. ' – ' .. gil(hs.stats.high), P.text, F.text, T.small)
-    elseif hs then
-        text(dl, sx, sy, 'No ' .. (st.sell.stack and 'stacks' or 'singles') .. ' sold lately', P.dim, F.text, T.small)
-    else
-        text(dl, sx, sy, 'Asking the house…', P.dim, F.text, T.small)
-    end
-    sy = sy + S(30)
-    text(dl, sx, sy, U.t('ASKING PRICE'), GOLD, F.disp, T.small)
+    if hs == nil then fetch_history(id, st.sell.stack) end
+    local cat = I.category_of(id)
+    if cat then fetch_list(cat) end -- the stock of both kinds (cached; asked again only when stale)
+    local by = y + h - S(138)
+    panel(dl, sx - S(8), sy - S(8), pw - S(16), by - sy - S(2), P.well, 0.35, S(10))
+    draw_sell_market(dl, sx, sy, pw - S(32), by - sy - S(18), id, hs)
+    sy = by
+    text(dl, sx, sy, LANG.t('ASKING PRICE'), GOLD, F.disp, T.small)
+    local label_y = sy
     sy = sy + S(20)
     imgui.SetCursorScreenPos({ sx, sy })
-    local edited, _, entered = field('##ask', hs and hs.stats and (U.t('type a price') .. ' · ' .. U.t('last sold') .. ' ' .. tostring(hs.stats.last)) or U.t('type a price'), st.sell.price, pw - S(32), T.body, true)
-    if imgui.IsItemFocused() then st.pad_where_now = 'sell_box' end
+    local edited, _, entered = field('##ask', hs and hs.stats and ('type a price · last sold ' .. tostring(hs.stats.last)) or LANG.t('type a price in gil'), st.sell.price, pw - S(32), T.body, true)
     if edited then st.sell.fee, st.sell.asked = nil, nil end
-    sy = sy + S(40)
+    sy = sy + S(38)
     local price = tonumber(st.sell.price[1]) or 0
-    local can = may_trade() and price > 0 and not st.sell.pending
+    -- where your price stands against the median, beside the label
+    if price > 0 and hs and hs.stats and hs.stats.median > 0 then
+        local d = (price - hs.stats.median) / hs.stats.median
+        local verdict, vcol
+        if math.abs(d) < 0.03 then verdict, vcol = LANG.t('at the median'), P.dim
+        elseif d > 0 then verdict, vcol = string.format(LANG.t('%d%% above the median'), math.floor(d * 100 + 0.5)), P.warn
+        else verdict, vcol = string.format(LANG.t('%d%% under the median'), math.floor(-d * 100 + 0.5)), P.ok end
+        text(dl, sx + pw - S(32) - measure(verdict, F.text, T.tiny), label_y + S(2), verdict, vcol, F.text, T.tiny)
+    end
+    local short = st.sell.stack and (st.sell.count or 0) < r.stack -- looking at stack prices without a full stack
+    local can = may_trade() and price > 0 and not st.sell.pending and not short
     -- one button, named for the price: the house is asked its fee, and its answer opens the card with the whole
     -- transaction (the price, the fee paid now, the payout) to say yes to; a fee already known opens it at once
     local known = st.sell.asked and st.sell.asked.price == price and st.sell.asked.stack == st.sell.stack
-    if known then
+    if not may_trade() then
+        text(dl, sx, sy, LANG.t('Talk to an auction clerk to sell'), P.warn, F.text, T.small)
+    elseif short then
+        text(dl, sx, sy, string.format(LANG.t('You have %d of %d: a stack lists once you have a full one'), st.sell.count, r.stack), P.warn, F.text, T.small)
+    elseif known then
         text(dl, sx, sy, 'Listing fee ' .. gil(st.sell.fee or 0) .. ' gil, paid now', st.sell.fee and st.sell.fee > st.gil and P.danger or P.dim, F.text, T.small)
     else
-        text(dl, sx, sy, U.t('The house quotes its listing fee first; nothing is listed until you say so'), P.faint, F.text, T.tiny)
+        text(dl, sx, sy, 'The house quotes its listing fee first; nothing is listed until you say so', P.faint, F.text, T.tiny)
     end
     sy = sy + S(26)
-    local label = st.sell.pending and 'Asking the house…' or (price > 0 and (U.t('List for') .. ' ' .. gil(price) .. ' gil') or U.t('List it'))
+    local label = st.sell.pending and LANG.t('Asking the house…') or short and LANG.t('Not a full stack') or (price > 0 and ('List for ' .. gil(price) .. ' gil') or LANG.t('List it'))
     local ok = can and (not known or (st.sell.fee or 0) <= st.gil)
-    if st.pad_seat == 'list' then imgui.SetKeyboardFocusHere() end -- kept until the focus has landed
+    if st.pad_seat == 'list' then imgui.SetKeyboardFocusHere() st.pad_seat = nil end -- a controller, from the price box
     local list_pressed = button(dl, '##list_btn', sx, sy, pw - S(32), S(36), label, ok and GOLD or P.faint, ok and 'solid' or 'ghost', 'tag')
-    if st.pad_mute or U.anim.suppress_press then list_pressed = false end -- the Confirm or active button that moved here, not a press of List
-    if st.pad_seat == 'list' and imgui.IsItemFocused() then st.pad_seat = nil end
-    if imgui.IsItemFocused() or st.pad_seat == 'list' then
-        st.pad_where_now, st.pad_sell_part = 'sell_box', 'list'
-        st.pad_hold = 'all'
-        if PAD.pressed('cancel') then seat_bag() end
-        if PAD.pressed('up') then st.pad_seat, st.pad_sell_part, st.pad_price_hold = 'price', 'price', 4 end
+    if st.pad_mute then list_pressed = false end -- the Confirm that kept the price, not a press of List
+    if imgui.IsItemFocused() then
+        st.pad_hold = true -- Up from List is the price box, the window's to do
+        if PAD.pressed('up') then st.pad_seat = 'price' end
     end
     if (list_pressed or entered) and ok then
         if known then
@@ -2215,7 +2562,6 @@ local function draw_sell(dl, x, y, w, h, t)
             do_ask(st.sell.slot, id, price, st.sell.stack)
         end
     end
-    if not may_trade() then text(dl, sx, sy + S(44), 'Talk to an auction clerk to sell', P.warn, F.text, T.tiny) end
 end
 
 -- LISTINGS
@@ -2223,10 +2569,10 @@ local function draw_sales(dl, x, y, w, h, t)
     local rows = {}
     for _, row in pairs(st.sales) do rows[#rows + 1] = row end
     table.sort(rows, function (a, b) return a.key < b.key end)
-    local head = U.t('UP FOR SALE') .. '  ·  ' .. #rows .. (#rows == 1 and (' ' .. U.t('item')) or (' ' .. U.t('items')))
+    local head = LANG.t('UP FOR SALE') .. '  ·  ' .. #rows .. (#rows == 1 and (' ' .. LANG.t('item')) or (' ' .. LANG.t('items')))
     text(dl, x + S(6), y, head, P.dim, F.disp, T.small)
     local cooling = clock() - st.sales_at < LIMITS.sales or st.sweep ~= nil
-    local label = (st.sweep or st.sales_wait) and 'Reading…' or U.t('Refresh')
+    local label = (st.sweep or st.sales_wait) and LANG.t('Reading…') or LANG.t('Refresh')
     if button(dl, '##sales_refresh', x + w - S(130), y - S(6), S(124), S(26), label, cooling and P.faint or P.accent, 'ghost', 'rotate-right', F.semi, T.tiny) and not cooling and may_trade() then
         start_sweep()
     end
@@ -2234,11 +2580,11 @@ local function draw_sales(dl, x, y, w, h, t)
     if #rows == 0 then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
         if st.sweep then
-            text_center(dl, x, y + h / 2 + S(30), w, U.t('Reading your listings'), P.text, F.disp, T.h1)
+            text_center(dl, x, y + h / 2 + S(30), w, LANG.t('Reading your listings'), P.text, F.disp, T.h1)
             text_center(dl, x, y + h / 2 + S(54), w, 'The house hands them out a page at a time; a few seconds', P.dim, F.text, T.small)
         else
-            text_center(dl, x, y + h / 2 + S(30), w, st.sales_open and 'Nothing up for sale' or 'Ask the house', P.text, F.disp, T.h1)
-            text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and 'Sell something from your bag' or (may_trade() and 'Refresh lists what you have up' or 'Talk to an auction clerk'), P.dim, F.text, T.small)
+            text_center(dl, x, y + h / 2 + S(30), w, st.sales_open and LANG.t('Nothing up for sale') or LANG.t('Ask the house'), P.text, F.disp, T.h1)
+            text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and LANG.t('Sell something from your bag') or (may_trade() and LANG.t('Refresh lists what you have up') or LANG.t('Talk to an auction clerk')), P.dim, F.text, T.small)
         end
         return
     end
@@ -2253,8 +2599,16 @@ local function draw_sales(dl, x, y, w, h, t)
     -- while the pages are being read the rows are under a veil and their buttons do nothing: a take-down sent while
     -- the house is turning its pages could land on the wrong one
     local busy = st.sweep ~= nil
+    -- the rows by key for Y (history) and X (relist), the first as the fallback; the stick walks them
+    st.sales_rows = { rows[1] }
+    for _, row in ipairs(rows) do st.sales_rows[row.key] = row end
+    stick_walk(#rows, function (i) return '##hist' .. rows[i].key end, nil, 1, function (k)
+        local rk = sales_row_key(k)
+        for i, row in ipairs(rows) do if row.key == rk then return i end end
+    end)
     for _, row in ipairs(rows) do
         local rh = S(60)
+        local first, last = row == rows[1], row == rows[#rows]
         local key = row.id .. '/' .. (row.stack and 1 or 0)
         local open = st.sales_hist == row.key -- this listing's, not every listing of the same item
         -- open, the card grows to hold the history, outlined as one
@@ -2267,15 +2621,18 @@ local function draw_sales(dl, x, y, w, h, t)
         panel(cdl, x + S(4), cy, w - S(8), rh + eh, P.card, 0.95, S(10))
         item_icon(cdl, row.id, x + S(14), cy + S(8), S(44), 1)
         local r = I.get(row.id)
-        text(cdl, x + S(68), cy + S(8), r.name .. (row.stack and ('  ·  ' .. U.t('stack of') .. ' ' .. r.stack) or ''), P.text, F.disp, T.h2)
         local pl = gil(row.price) .. ' gil'
-        text_mid(cdl, x + w - S(254) - measure(pl, F.disp, T.h2), cy + rh / 2, pl, GOLD, F.disp, T.h2) -- centred on the row, as the buttons are
+        local plw = measure(pl, F.disp, T.h2)
+        text(cdl, x + S(68), cy + S(8), fit(r.name .. (row.stack and ('  ·  ' .. LANG.t('stack of') .. ' ' .. r.stack) or ''), F.disp, T.h2, w - S(68) - S(386) - plw - S(12)), P.text, F.disp, T.h2)
+        text_mid(cdl, x + w - S(366) - plw, cy + rh / 2, pl, GOLD, F.disp, T.h2) -- centred on the row, as the buttons are
         -- its category, and when it went up where the server says (its pages don't); the page and slot are the house's
-        local sub = U.t(I.CATEGORY_NAME[I.category_of(row.id) or 0] or '')
+        local sub = LANG.t(I.CATEGORY_NAME[I.category_of(row.id) or 0] or '')
         if row.at and row.at > 0 then sub = sub .. (sub ~= '' and '  ·  ' or '') .. 'listed ' .. ago(row.at) end
         text(cdl, x + S(68), cy + S(34), sub, P.dim, F.text, T.tiny)
         -- its recent sales, asked for only when wanted (the search server isn't asked for what nobody looks at)
-        if button(cdl, '##hist' .. row.key, x + w - S(130) - S(8) - S(104), cy + S(14), S(104), S(32), open and U.t('Hide') or U.t('History'), busy and P.faint or (open and P.cyan or P.accent), 'ghost', 'clock-rotate-left', F.semi, T.small) and not busy then
+        if st.stick_seat_key == '##hist' .. row.key then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end
+        edge_seat('##hist' .. row.key, first, last)
+        if button(cdl, '##hist' .. row.key, x + w - S(130) - S(8) - S(104), cy + S(14), S(104), S(32), open and LANG.t('Hide') or LANG.t('History'), busy and P.faint or (open and P.cyan or P.accent), 'ghost', 'clock-rotate-left', F.semi, T.small) and not busy then
             if open then
                 st.sales_hist = nil -- (not `open and nil or key`: that is always key)
             else
@@ -2283,8 +2640,15 @@ local function draw_sales(dl, x, y, w, h, t)
                 fetch_history(row.id, row.stack)
             end
         end
-        local can = may_trade() and st.cancel_pending == nil and not busy
-        if button(cdl, '##cancel' .. row.key, x + w - S(130), cy + S(14), S(116), S(32), U.t('Take down'), can and P.danger or P.faint, 'ghost', 'xmark', F.semi, T.small) and can then
+        local can = may_trade() and st.cancel_pending == nil and not busy and st.relist == nil and not st.sell.pending
+        -- relist: down, and up again at a new price (a new fee), after picking the price and confirming
+        edge_seat('##relist' .. row.key, first, last)
+        if button(cdl, '##relist' .. row.key, x + w - S(130) - S(8) - S(104) - S(8) - S(104), cy + S(14), S(104), S(32), LANG.t('Relist'), can and GOLD or P.faint, 'ghost', 'rotate-right', F.semi, T.small) and can then
+            fetch_history(row.id, row.stack)
+            st.confirm = { kind = 'relist', slot = row.slot, item = row.id, page = row.page, key = row.key, price = row.price, stack = row.stack }
+        end
+        edge_seat('##cancel' .. row.key, first, last)
+        if button(cdl, '##cancel' .. row.key, x + w - S(130), cy + S(14), S(116), S(32), LANG.t('Take down'), can and P.danger or P.faint, 'ghost', 'xmark', F.semi, T.small) and can then
             st.confirm = { kind = 'cancel', slot = row.slot, item = row.id, page = row.page, key = row.key, price = row.price }
         end
         cy = cy + rh
@@ -2297,12 +2661,12 @@ local function draw_sales(dl, x, y, w, h, t)
             text(cdl, ix, ey, 'RECENT SALES  ·  ' .. (row.stack and 'stacks' or 'singles'), P.accent, F.disp, T.tiny)
             if st.fetching[key] then text(cdl, ix + S(150), ey + S(1), 'fetching…', P.cyan, F.text, T.tiny) end
             if hs == nil then
-                text(cdl, ix, ey + S(20), st.search_error and ('Search server: ' .. tostring(st.search_error)) or 'Asking the house…', st.search_error and P.danger or P.dim, F.text, T.small)
+                text(cdl, ix, ey + S(20), st.search_error and ('Search server: ' .. tostring(st.search_error)) or LANG.t('Asking the house…'), st.search_error and P.danger or P.dim, F.text, T.small)
             elseif #hs.sales == 0 then
                 text(cdl, ix, ey + S(20), 'No ' .. (row.stack and 'stacks' or 'singles') .. ' sold lately', P.dim, F.text, T.small)
             else
                 local st_ = hs.stats
-                local summary = U.t('last') .. ' ' .. gil(st_.last) .. '  ·  ' .. U.t('median') .. ' ' .. gil(st_.median) .. '  ·  ' .. U.t('range') .. ' ' .. gil(st_.low) .. ' – ' .. gil(st_.high)
+                local summary = LANG.t('last') .. ' ' .. gil(st_.last) .. '  ·  ' .. LANG.t('median') .. ' ' .. gil(st_.median) .. '  ·  ' .. LANG.t('range') .. ' ' .. gil(st_.low) .. ' – ' .. gil(st_.high)
                 if st_.trend then
                     local flat = math.abs(st_.trend) <= 0.02
                     summary = summary .. '  ·  ' .. (flat and 'steady' or string.format('%s%.0f%%', st_.trend > 0 and '+' or '', st_.trend * 100))
@@ -2336,8 +2700,8 @@ local function draw_sales(dl, x, y, w, h, t)
         cdl:AddRectFilled({ x, child_top }, { x + w, bottom }, u32(P.ink, 0.62), S(10))
         local pulse = 0.7 + 0.3 * math.sin(t * 3)
         local my = child_top + math.min(S(120), (bottom - child_top) / 2)
-        icon(cdl, x + w / 2 - measure(U.t('Reading your listings'), F.disp, T.h1) / 2 - S(18), my, 'rotate-right', P.cyan, T.h2, pulse)
-        text_center(cdl, x + S(18), my, w, U.t('Reading your listings'), P.text, F.disp, T.h1)
+        icon(cdl, x + w / 2 - measure(LANG.t('Reading your listings'), F.disp, T.h1) / 2 - S(18), my, 'rotate-right', P.cyan, T.h2, pulse)
+        text_center(cdl, x + S(18), my, w, LANG.t('Reading your listings'), P.text, F.disp, T.h1)
         text_center(cdl, x, my + S(26), w, 'The house hands them out a page at a time; a few seconds', P.dim, F.text, T.small)
     end
     imgui.EndChild()
@@ -2348,36 +2712,43 @@ end
 -- ACTIVITY: the character's record of the house, bought, listed, taken down and sold, newest first, a page at a time,
 -- with the gil in and out over the whole of it
 local ACT_KIND = {
-    bought = { label = U.t('BOUGHT'), color = P.cyan, icon = 'cart-shopping', sign = -1 },
-    sold = { label = U.t('SOLD'), color = P.ok, icon = 'sack-dollar', sign = 1 },
-    listed = { label = U.t('LISTED'), color = P.accent, icon = 'tag', sign = 0 },
-    taken = { label = U.t('TAKEN DOWN'), color = P.dim, icon = 'xmark', sign = 0 },
+    bought = { label = LANG.t('BOUGHT'), color = P.cyan, icon = 'cart-shopping', sign = -1 },
+    sold = { label = LANG.t('SOLD'), color = P.ok, icon = 'sack-dollar', sign = 1 },
+    listed = { label = LANG.t('LISTED'), color = P.accent, icon = 'tag', sign = 0 },
+    taken = { label = LANG.t('TAKEN DOWN'), color = P.dim, icon = 'xmark', sign = 0 },
 }
 local ACT_PER = 20
 local function draw_activity(dl, x, y, w, h, t)
     local rows, page, pages, total = LEDGER.page(st.act_filter, st.act_page, ACT_PER)
     st.act_page = page
-    text(dl, x + S(6), y, U.t('ACTIVITY') .. '  ·  ' .. total .. (total == 1 and (' ' .. U.t('entry')) or (' ' .. U.t('entries'))), P.dim, F.disp, T.small)
+    text(dl, x + S(6), y, LANG.t('ACTIVITY') .. '  ·  ' .. total .. (total == 1 and (' ' .. LANG.t('entry')) or (' ' .. LANG.t('entries'))), P.dim, F.disp, T.small)
     -- the filters
     local fy = y - S(4)
     local fx = x + w - S(6)
-    for _, f in ipairs({ { 'sold', U.t('SOLD'), P.ok, 'sack-dollar' }, { 'bought', U.t('BOUGHT'), P.cyan, 'cart-shopping' }, { 'all', U.t('ALL'), GOLD, 'clock-rotate-left' } }) do
+    for _, f in ipairs({ { 'sold', LANG.t('SOLD'), P.ok, 'sack-dollar' }, { 'bought', LANG.t('BOUGHT'), P.cyan, 'cart-shopping' }, { 'all', LANG.t('ALL'), GOLD, 'clock-rotate-left' } }) do
         fx = fx - chip_width(f[2])
         if filter_chip(dl, '##act_' .. f[1], fx, fy, f[2], st.act_filter == f[1], f[3], nil, f[4], f[4]) then
             st.act_filter, st.act_page, st.act_top = f[1], 1, true
         end
         fx = fx - S(8)
     end
+    -- clearing the record (all of it, whatever the filter), asked first
+    if LEDGER.count() > 0 then
+        local cw_ = S(84)
+        if button(dl, '##act_clear', fx - cw_, fy - S(2), cw_, S(26), LANG.t('Clear'), P.dim, 'ghost', 'trash-can', F.semi, T.tiny) then
+            st.confirm = { kind = 'clear', n = LEDGER.count() }
+        end
+    end
     -- the gil, over everything the filter keeps
     local tot = LEDGER.totals(st.act_filter)
     local ty = y + S(30)
     panel(dl, x + S(4), ty, w - S(8), S(50), P.well, 0.45, S(10))
     local cols = {}
-    if st.act_filter ~= 'sold' then cols[#cols + 1] = { U.t('SPENT'), gil(tot.spent), P.cyan, tot.bought .. (tot.bought == 1 and (' ' .. U.t('purchase')) or (' ' .. U.t('purchases'))) } end
-    if st.act_filter ~= 'bought' then cols[#cols + 1] = { U.t('EARNED'), gil(tot.earned), P.ok, tot.sold .. (tot.sold == 1 and (' ' .. U.t('sale')) or (' ' .. U.t('sales'))) } end
+    if st.act_filter ~= 'sold' then cols[#cols + 1] = { LANG.t('SPENT'), gil(tot.spent), P.cyan, tot.bought .. (tot.bought == 1 and (' ' .. LANG.t('purchase')) or (' ' .. LANG.t('purchases'))) } end
+    if st.act_filter ~= 'bought' then cols[#cols + 1] = { LANG.t('EARNED'), gil(tot.earned), P.ok, tot.sold .. (tot.sold == 1 and (' ' .. LANG.t('sale')) or (' ' .. LANG.t('sales'))) } end
     if st.act_filter == 'all' then
-        cols[#cols + 1] = { U.t('FEES'), gil(tot.fees), P.dim, tot.listed .. (tot.listed == 1 and (' ' .. U.t('listing')) or (' ' .. U.t('listings'))) }
-        cols[#cols + 1] = { U.t('NET'), (tot.net < 0 and '−' or '') .. gil(math.abs(tot.net)), tot.net < 0 and P.danger or (tot.net > 0 and GOLD or P.text), U.t('sales less purchases and fees') }
+        cols[#cols + 1] = { LANG.t('FEES'), gil(tot.fees), P.dim, tot.listed .. (tot.listed == 1 and (' ' .. LANG.t('listing')) or (' ' .. LANG.t('listings'))) }
+        cols[#cols + 1] = { LANG.t('NET'), (tot.net < 0 and '−' or '') .. gil(math.abs(tot.net)), tot.net < 0 and P.danger or (tot.net > 0 and GOLD or P.text), LANG.t('sales less purchases and fees') }
     end
     local cw = (w - S(8)) / #cols
     for i, c in ipairs(cols) do
@@ -2392,8 +2763,8 @@ local function draw_activity(dl, x, y, w, h, t)
     local bottom = y + h - S(30)
     if total == 0 then
         glass_gil(dl, x + w / 2, y + h / 2 - S(10), S(72), t, 0.9)
-        text_center(dl, x, y + h / 2 + S(50), w, st.act_filter == 'all' and U.t('Nothing yet') or ('Nothing ' .. st.act_filter .. ' yet'), P.text, F.disp, T.h1)
-        text_center(dl, x, y + h / 2 + S(74), w, U.t('What you buy, list, take down and sell here is kept, per character, across restarts'), P.dim, F.text, T.small)
+        text_center(dl, x, y + h / 2 + S(50), w, st.act_filter == 'all' and LANG.t('Nothing yet') or ('Nothing ' .. st.act_filter .. ' yet'), P.text, F.disp, T.h1)
+        text_center(dl, x, y + h / 2 + S(74), w, LANG.t('What you buy, list, take down and sell here is kept, per character, across restarts'), P.dim, F.text, T.small)
         return
     end
     imgui.SetCursorScreenPos({ x, cy })
@@ -2409,7 +2780,7 @@ local function draw_activity(dl, x, y, w, h, t)
         local what = r.id and I.name(r.id) or (r.name or 'Unknown item')
         if r.stack then
             local n = r.id and I.get(r.id).stack or 0
-            what = what .. (n > 1 and ('  ·  ' .. U.t('stack of') .. ' ' .. n) or '  ·  stack')
+            what = what .. (n > 1 and ('  ·  ' .. LANG.t('stack of') .. ' ' .. n) or '  ·  stack')
         end
         local pw = pill(cdl, x + S(60), cy + S(7), k.label, mix(k.color, P.ink, 0.72), k.color, F.disp, T.tiny - 1, S(7), k.icon)
         text(cdl, x + S(60) + pw + S(8), cy + S(6), fit(what, F.disp, T.body, w - S(300) - pw), P.text, F.disp, T.body)
@@ -2444,17 +2815,17 @@ end
 -- WATCH: the items you follow, each with its stock, last price, how it moved, a sparkline, and a price to be told at
 local function draw_watch(dl, x, y, w, h, t)
     local list = settings.watch
-    text(dl, x + S(6), y, U.t('WATCHING') .. '  ·  ' .. #list .. (#list == 1 and (' ' .. U.t('item')) or (' ' .. U.t('items'))), P.dim, F.disp, T.small)
-    local checked = st.watch_at > 0 and ('checked ' .. ago(os.time() - math.floor(clock() - st.watch_at))) or (settings.watch_poll and U.t('checks every') .. ' ' .. math.floor((settings.watch_every or 300) / 60) .. ' ' .. U.t('min') or 'background checks are off')
+    text(dl, x + S(6), y, LANG.t('WATCHING') .. '  ·  ' .. #list .. (#list == 1 and (' ' .. LANG.t('item')) or (' ' .. LANG.t('items'))), P.dim, F.disp, T.small)
+    local checked = st.watch_at > 0 and ('checked ' .. ago(os.time() - math.floor(clock() - st.watch_at))) or (settings.watch_poll and LANG.t('checks every') .. ' ' .. math.floor((settings.watch_every or 300) / 60) .. ' ' .. LANG.t('min') or 'background checks are off')
     text(dl, x + w - S(142) - measure(checked, F.text, T.tiny), y + S(3), checked, P.faint, F.text, T.tiny)
     local busy = SEARCH.pending() > 0
-    if button(dl, '##watch_refresh', x + w - S(130), y - S(6), S(124), S(26), busy and 'Asking…' or U.t('Check now'), busy and P.faint or P.accent, 'ghost', 'rotate-right', F.semi, T.tiny) and not busy and #list > 0 then
+    if button(dl, '##watch_refresh', x + w - S(130), y - S(6), S(124), S(26), busy and 'Asking…' or LANG.t('Check now'), busy and P.faint or P.accent, 'ghost', 'rotate-right', F.semi, T.tiny) and not busy and #list > 0 then
         poll_watch()
     end
     local ly, lh = y + S(32), h - S(32)
     if #list == 0 then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
-        text_center(dl, x, y + h / 2 + S(30), w, U.t('Nothing watched yet'), P.text, F.disp, T.h1)
+        text_center(dl, x, y + h / 2 + S(30), w, LANG.t('Nothing watched yet'), P.text, F.disp, T.h1)
         text_center(dl, x, y + h / 2 + S(54), w, "Star an item on its card: its stock, price and trend show here, and you're told when it sells under your price", P.dim, F.text, T.small)
         return
     end
@@ -2465,6 +2836,17 @@ local function draw_watch(dl, x, y, w, h, t)
     local cdl = imgui.GetWindowDrawList()
     local cy = ly - imgui.GetScrollY()
     local remove = nil
+    -- the rows by key for Y (unwatch) and X (the price), the first as the fallback; the stick walks them unless a
+    -- price box has the ring
+    st.watch_rows = { list[1] }
+    for _, e in ipairs(list) do st.watch_rows[watch_key(e.id, e.stack)] = e end
+    local fo = U.anim.focus
+    if not (fo and now_t - fo.at < 0.1 and fo.key:sub(1, 7) == '##under') then
+        stick_walk(#list, function (i) return '##w' .. watch_key(list[i].id, list[i].stack) end, nil, 1, function (k)
+            local wk = watch_row_key(k)
+            for i, e in ipairs(list) do if watch_key(e.id, e.stack) == wk then return i end end
+        end)
+    end
     for i, e in ipairs(list) do
         local lines = item_sub_lines(e.id, S(230))
         local rh = S(78) + (#lines > 1 and S(14) or 0)
@@ -2475,6 +2857,8 @@ local function draw_watch(dl, x, y, w, h, t)
         panel(cdl, x + S(4), cy, w - S(12), rh, P.card, 0.95, S(10))
         -- the name takes you to its card
         imgui.SetCursorScreenPos({ x + S(4), cy })
+        if st.stick_seat_key == '##w' .. key then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end
+        edge_seat('##w' .. key, i == 1, i == #list)
         local pressed, hovered, hv = hit('##w' .. key, S(300), rh)
         if pressed then
             local cat = I.category_of(id)
@@ -2484,11 +2868,11 @@ local function draw_watch(dl, x, y, w, h, t)
             st.results = nil
             select_item(id)
         end
-        if hovered then with_font(F.text, T.small, imgui.SetTooltip, U.t('Open its card')) end
+        if hovered then with_font(F.text, T.small, imgui.SetTooltip, LANG.t('Open its card')) end
         if hv > 0 then cdl:AddRectFilled({ x + S(4), cy }, { x + S(304), cy + rh }, u32(P.card_hi, 0.6 * hv), S(10)) end
         item_icon(cdl, id, x + S(14), cy + S(15), S(48), 1)
-        if lines[1] == '' then lines[1] = U.t(I.CATEGORY_NAME[I.category_of(id) or 0] or '') end
-        text(cdl, x + S(72), cy + S(10), fit(r.name .. (e.stack and ('  ·  ' .. U.t('stack of') .. ' ' .. r.stack) or ''), F.disp, T.h2, S(222)), mix(P.text, GOLD, hv), F.disp, T.h2)
+        if lines[1] == '' then lines[1] = LANG.t(I.CATEGORY_NAME[I.category_of(id) or 0] or '') end
+        text(cdl, x + S(72), cy + S(10), fit(r.name .. (e.stack and ('  ·  ' .. LANG.t('stack of') .. ' ' .. r.stack) or ''), F.disp, T.h2, S(222)), mix(P.text, GOLD, hv), F.disp, T.h2)
         for li, ln in ipairs(lines) do
             if li > 2 then break end
             text(cdl, x + S(72), cy + S(34) + (li - 1) * S(13), fit(ln, F.text, T.tiny, S(230)), P.dim, F.text, T.tiny)
@@ -2517,22 +2901,24 @@ local function draw_watch(dl, x, y, w, h, t)
         elseif hs then
             text(cdl, px, cy + S(14), 'No ' .. (e.stack and 'stacks' or 'singles') .. ' sold lately', P.dim, F.text, T.small)
         else
-            text(cdl, px, cy + S(14), st.fetching[key] and 'Asking the house…' or (st.search_error and 'Search server: ' .. tostring(st.search_error) or '—'), st.search_error and P.danger or P.faint, F.text, T.small)
+            text(cdl, px, cy + S(14), st.fetching[key] and LANG.t('Asking the house…') or (st.search_error and 'Search server: ' .. tostring(st.search_error) or '—'), st.search_error and P.danger or P.faint, F.text, T.small)
         end
         -- the price to be told at
         local ax = x + w - S(8) - S(40) - S(100)
         icon(cdl, ax + S(6), cy + S(16), 'bell', e.under and P.warn or P.faint, T.tiny)
-        text(cdl, ax + S(16), cy + S(10), U.t('TELL ME UNDER'), e.under and P.warn or P.faint, F.disp, T.tiny - 1)
+        text(cdl, ax + S(16), cy + S(10), LANG.t('TELL ME UNDER'), e.under and P.warn or P.faint, F.disp, T.tiny - 1)
         local buf = st.watch_buf[key]
         if buf == nil then buf = { e.under and tostring(e.under) or '' } st.watch_buf[key] = buf end
         imgui.SetCursorScreenPos({ ax, cy + S(28) })
-        local changed = field('##under' .. key, U.t('any price'), buf, S(100), T.small, true)
+        edge_seat('##under' .. key, i == 1, i == #list)
+        local changed = field('##under' .. key, LANG.t('any price'), buf, S(100), T.small, true)
         if changed then
             local v = tonumber(buf[1])
             e.under = (v and v > 0) and math.floor(v) or nil
             save_settings()
         end
-        if icon_button(cdl, '##unwatch' .. key, x + w - S(42), cy + S(25), S(28), 'xmark', P.dim, U.t('Stop watching')) then remove = i end
+        edge_seat('##unwatch' .. key, i == 1, i == #list)
+        if icon_button(cdl, '##unwatch' .. key, x + w - S(42), cy + S(25), S(28), 'xmark', P.dim, LANG.t('Stop watching')) then remove = i end
         cy = cy + rh + S(8)
     end
     text(cdl, x + S(6), cy + S(2), (settings.watch_poll and 'Checked every ' .. math.floor((settings.watch_every or 300) / 60) .. ' minutes while you play, house open or not' or 'Background checks are off (settings)') .. '  ·  a sale under your price, or stock coming back, shows as a notice', P.faint, F.text, T.tiny)
@@ -2546,25 +2932,55 @@ local function draw_settings(dl, x, y, w, h)
     panel(dl, x, y, w, h, P.glass, 0.98, S(14), P.accent2, true)
     local cx, cy = x + S(20), y + S(16)
     icon(dl, cx + S(8), cy + S(10), 'sliders', P.accent2, T.body)
-    text(dl, cx + S(26), cy, U.t('SETTINGS'), P.accent2, F.disp, T.h2)
+    text(dl, cx + S(26), cy, LANG.t('SETTINGS'), P.accent2, F.disp, T.h2)
     -- the theme, in the right-hand column: Party Finder's palettes, by the same names
     do
         local rx, ry = x + math.floor(w * 0.58), y + S(52)
-        text(dl, rx, ry, U.t('THEME'), P.dim, F.disp, T.small)
+        -- the header's badge
+        local iy = ry
+        text(dl, rx, iy, LANG.t('ICON'), P.dim, F.disp, T.small)
+        local iopts = { { id = 'cat', name = 'CatsEyeXI' }, { id = 'coin', name = LANG.t('Gil') } }
+        local icur = settings.icon or 'cat'
+        local ipicked = U.dropdown(dl, '##ah_icon', rx, iy + S(40), S(170), iopts, icur)
+        if ipicked ~= icur then settings.icon = ipicked save_settings() end
+        -- a preview of the one chosen, beside the choice
+        local pcx, pcy = rx + S(170) + S(16) + S(15), iy + S(40)
+        local cat = settings.icon ~= 'coin' and badge_texture()
+        if cat then
+            local bs = S(32)
+            dl:AddImage(cat, { pcx - bs / 2, pcy - bs / 2 }, { pcx + bs / 2, pcy + bs / 2 }, { 0, 0 }, { 1, 1 }, u32('#FFFFFF'))
+        else
+            glass_gil(dl, pcx, pcy, S(28), now_t, 1)
+        end
+        local ty = ry + S(88)
+        text(dl, rx, ty, LANG.t('THEME'), P.dim, F.disp, T.small)
         local opts = {}
         for _, th in ipairs(U.THEMES) do opts[#opts + 1] = { id = th.id, name = th.name } end
         local current = settings.theme or 'aurora'
-        local picked = U.dropdown(dl, '##ah_theme', rx, ry + S(40), S(170), opts, current)
+        local picked = U.dropdown(dl, '##ah_theme', rx, ty + S(40), S(170), opts, current)
         if picked ~= current then set_theme(picked) end
         local th = U.THEME_BY_ID[settings.theme or 'aurora'] or U.THEMES[1]
         for i, k in ipairs({ 'accent', 'accent2', 'cyan', 'card_hi' }) do
-            dl:AddCircleFilled({ rx + S(170) + S(20) + (i - 1) * S(16), ry + S(40) }, S(6), u32(th.palette[k] or P[k]), 16)
+            dl:AddCircleFilled({ rx + S(170) + S(20) + (i - 1) * S(16), ty + S(40) }, S(6), u32(th.palette[k] or P[k]), 16)
         end
-        text(dl, rx, ry + S(64), U.t('The same themes as Party Finder  ·  /ah theme <name>'), P.faint, F.text, T.tiny)
+        text(dl, rx, ty + S(64), "The same themes as Party Finder  ·  /ah theme <name>", P.faint, F.text, T.tiny)
+        -- the language: the client's own, or one picked; the flag beside it says which is in use
+        local ly = ry + S(176)
+        text(dl, rx, ly, LANG.t('LANGUAGE'), P.dim, F.disp, T.small)
+        local lopts = { { id = 'auto', name = LANG.t('Auto (the client\'s)') }, { id = 'en', name = 'English' }, { id = 'ja', name = '日本語' } }
+        local lcur = settings.language or 'auto'
+        local lpicked = U.dropdown(dl, '##ah_lang', rx, ly + S(40), S(170), lopts, lcur)
+        if lpicked ~= lcur then
+            settings.language = lpicked
+            apply_language()
+            save_settings()
+        end
+        draw_flag(dl, rx + S(170) + S(16), ly + S(40) - S(9), S(26), S(18), LANG.lang())
+        text(dl, rx, ly + S(64), LANG.t('Item names, the window and the help  ·  /ah lang auto|en|ja'), P.faint, F.text, T.tiny)
         -- the bell the window opens with: Off, or one of the bells (picking one plays it; the speaker plays it again)
-        local sy = ry + S(104)
-        text(dl, rx, sy, U.t('SOUND AS IT OPENS'), P.dim, F.disp, T.small)
-        local sopts = { { id = 'off', name = U.t('Off') } }
+        local sy = ry + S(264)
+        text(dl, rx, sy, 'SOUND AS IT OPENS', P.dim, F.disp, T.small)
+        local sopts = { { id = 'off', name = 'Off' } }
         for _, o in ipairs(OPEN_SOUNDS) do sopts[#sopts + 1] = o end
         local scur = settings.open_sound and (settings.open_sound_id or OPEN_SOUNDS[1].id) or 'off'
         local spicked = U.dropdown(dl, '##ah_sound', rx, sy + S(40), S(170), sopts, scur)
@@ -2573,88 +2989,187 @@ local function draw_settings(dl, x, y, w, h)
             else settings.open_sound, settings.open_sound_id = true, spicked play_open_sound() end
             save_settings()
         end
-        if settings.open_sound and icon_button(dl, '##ah_sound_play', rx + S(170) + S(10), sy + S(40) - S(14), S(28), 'volume-high', P.dim, U.t('Play it')) then
+        if settings.open_sound and icon_button(dl, '##ah_sound_play', rx + S(170) + S(10), sy + S(40) - S(14), S(28), 'volume-high', P.dim, 'Play it') then
             play_open_sound(true)
         end
-        text(dl, rx, sy + S(64), U.t('/ah sound <name>  ·  /ah sound off'), P.faint, F.text, T.tiny)
+        text(dl, rx, sy + S(64), '/ah sound <name>  ·  /ah sound off', P.faint, F.text, T.tiny)
     end
-    if icon_button(dl, '##settings_close', x + w - S(44), y + S(10), S(28), 'xmark', P.dim, U.t('Close')) then st.settings_open = false end
+    if icon_button(dl, '##settings_close', x + w - S(44), y + S(10), S(28), 'xmark', P.dim, LANG.t('Close')) then st.settings_open = false end
     cy = cy + S(36)
     local changed = false
     local v, ch
-    v, ch = U.toggle(dl, '##t_counter', cx, cy + S(10), U.t('Bid and sell only at an auction clerk'), settings.near_counter) settings.near_counter = v changed = changed or ch
+    v, ch = U.toggle(dl, '##t_takeover', cx, cy + S(10), LANG.t("Talking to a clerk opens this, not the game's menu"), settings.take_over) settings.take_over = v changed = changed or ch
     cy = cy + S(34)
-    v, ch = U.toggle(dl, '##t_takeover', cx, cy + S(10), U.t('Talking to a clerk opens this, not the game\'s menu'), settings.take_over) settings.take_over = v changed = changed or ch
+    v, ch = U.toggle(dl, '##t_confirm', cx, cy + S(10), LANG.t('Confirm before bidding'), settings.confirm_buy) settings.confirm_buy = v changed = changed or ch
     cy = cy + S(34)
-    v, ch = U.toggle(dl, '##t_confirm', cx, cy + S(10), U.t('Confirm before bidding'), settings.confirm_buy) settings.confirm_buy = v changed = changed or ch
+    v, ch = U.toggle(dl, '##t_chart', cx, cy + S(10), LANG.t("Price graph on an item's card"), settings.chart) settings.chart = v changed = changed or ch
     cy = cy + S(34)
-    v, ch = U.toggle(dl, '##t_chart', cx, cy + S(10), U.t('Price graph on an item\'s card'), settings.chart) settings.chart = v changed = changed or ch
-    cy = cy + S(34)
-    v, ch = U.toggle(dl, '##t_watch', cx, cy + S(10), U.t('Check watched items every') .. ' ' .. math.floor((settings.watch_every or 300) / 60) .. ' ' .. U.t('min, even with this closed'), settings.watch_poll) settings.watch_poll = v changed = changed or ch
+    v, ch = U.toggle(dl, '##t_watch', cx, cy + S(10), 'Check watched items every ' .. math.floor((settings.watch_every or 300) / 60) .. ' min, even with this closed', settings.watch_poll) settings.watch_poll = v changed = changed or ch
     cy = cy + S(40)
-    text(dl, cx, cy, U.t('WINDOW'), P.dim, F.disp, T.small)
+    text(dl, cx, cy, LANG.t('WINDOW'), P.dim, F.disp, T.small)
     cy = cy + S(24)
-    text_mid(dl, cx, cy, U.t('Opacity'), P.dim, F.text, T.small)
+    text_mid(dl, cx, cy, LANG.t('Opacity'), P.dim, F.text, T.small)
     local op = U.slider(dl, '##s_op', cx + S(80), cy, S(200), (settings.opacity or 1) * 100, 40, 100, '%d%%')
     if math.abs(op / 100 - settings.opacity) > 0.001 then settings.opacity = op / 100 changed = true end
     cy = cy + S(30)
-    text_mid(dl, cx, cy, U.t('Scale'), P.dim, F.text, T.small)
+    text_mid(dl, cx, cy, LANG.t('Scale'), P.dim, F.text, T.small)
     local sc, _, released = U.slider(dl, '##s_scale', cx + S(80), cy, S(200), st.scale_edit or settings.scale or 100, 50, 300, '%d%%', true)
     st.scale_edit = sc
     if released then settings.scale = math.floor(sc) st.scale_edit = nil changed = true end
     cy = cy + S(40)
     -- (the search server isn't shown: it's the login server's address, found from the login; /ah debug and /ah server
     -- are there for anyone who needs to see or change it)
-    text(dl, cx, cy, U.t('KEYS'), P.dim, F.disp, T.small)
+    text(dl, cx, cy, LANG.t('KEYS'), P.dim, F.disp, T.small)
     cy = cy + S(20)
-    local bind = (settings.keybind or ''):gsub('^%^', 'Ctrl+'):gsub('^!', 'Alt+'):gsub('^%+', 'Shift+')
-    text(dl, cx, cy, (bind ~= '' and (bind .. ' ' .. U.t('opens the house')) or 'No key bound') .. '  ·  ' .. U.t('Esc closes it'), P.text, F.text, T.small)
+    -- the bind in words: the modifiers, then the key (not a chain of gsubs: 'Ctrl+' would have its + read as Shift)
+    local spec = settings.keybind or ''
+    local bind = (spec:find('%^') and 'Ctrl+' or '') .. (spec:find('!') and 'Alt+' or '') .. (spec:find('%+') and 'Shift+' or '') .. spec:gsub('[%^!%+]', '')
+    local what = st.bind_capture and LANG.t('Press a key to open the house with  ·  Esc keeps it as it is')
+        or ((bind ~= '' and (bind .. ' ' .. LANG.t('opens the house')) or LANG.t('No key opens the house')) .. '  ·  ' .. LANG.t('Esc closes it'))
+    text_mid(dl, cx, cy + S(15), what, st.bind_capture and GOLD or P.text, F.text, T.small)
+    local bx = cx + math.floor(w * 0.58) - S(40) - S(96)
+    if bind ~= '' and not st.bind_capture then
+        bx = bx - S(80) - S(8)
+        if button(dl, '##bind_off', bx + S(96) + S(8), cy, S(80), S(30), LANG.t('Off'), P.dim, 'ghost', 'ban', F.semi, T.small) then set_keybind('') end
+    end
+    if button(dl, '##bind_change', bx, cy, S(96), S(30), LANG.t(st.bind_capture and 'Cancel' or 'Change'), P.accent, 'ghost', nil, F.semi, T.small) then st.bind_capture = not st.bind_capture or nil end
+    if st.bind_capture then capture_keybind() end
+    -- browsing away from a counter: at the bottom, in a warning box that can't be missed
+    do
+        local bx, bw, bh = x + S(20), w - S(40), S(56)
+        local by_ = y + h - S(12) - bh
+        panel(dl, bx, by_, bw, bh, P.warn, settings.view_anywhere and 0.16 or 0.08, S(10), P.warn)
+        icon(dl, bx + S(18), by_ + S(14), 'triangle-exclamation', P.warn, T.body)
+        v, ch = U.toggle(dl, '##t_anywhere', bx + S(34), by_ + S(14), LANG.t('View the Auction House anywhere'), settings.view_anywhere) settings.view_anywhere = v changed = changed or ch
+        local ty = by_ + S(28)
+        for _, l in ipairs(wrap(LANG.t('Using the Auction House outside of normal areas is generally against the rules on most servers and can be easily tracked. Use at your own risk, you have been warned.'), F.text, T.tiny, bw - S(70))) do
+            text(dl, bx + S(34), ty, l, P.warn, F.text, T.tiny)
+            ty = ty + S(13)
+        end
+    end
+    text(dl, cx, cy + S(30), LANG.t('Japanese localization: thanks to Hando'), P.faint, F.text, T.tiny)
     if changed then save_settings() end
 end
 
 local function draw_confirm()
     local c = st.confirm
     if c == nil then return end
-    local w, h = S(420), S(176)
-    if c.kind == 'sell' then h = (U.lang() == 'ja') and S(320) or S(206) end
+    local w, h = S(420), (c.kind == 'sell' or c.kind == 'clear') and S(206) or S(176)
+    if c.kind == 'relist' then w, h = S(470), S(338) end
+    if c.kind == 'sell' and st.relist then h = h + S(18) end
+    if c.kind == 'sell' and LANG.ja() then h = S(320) + (st.relist and S(18) or 0) end
     if c.kind == 'cancel' and st.server_page ~= nil and st.server_page ~= c.page then h = h + S(18) end -- a line about the wait
     U.dialog('##ah_confirm', w, h, 0, function (dl, x, y)
         shadow(dl, x, y, w, h, S(16), 1.5)
         panel(dl, x, y, w, h, P.glass, 1, S(16), GOLD, true)
+        if c.kind == 'relist' then
+            -- the new price: a cut, the median or the last sale, or typed; then down it comes and the fee is asked
+            local r = I.get(c.item)
+            local hs = history_of(c.item, c.stack)
+            local opts, suggest = relist_options(c.price, hs)
+            -- the box starts at the suggestion and follows it (the sales arrive a moment after the dialog opens) until a
+            -- choice is clicked or a price typed
+            local sp = suggest and tostring(suggest.price) or tostring(c.price)
+            if c.buf == nil then c.buf, c.auto = { sp }, sp end
+            if c.auto and c.buf[1] == c.auto and sp ~= c.auto then c.buf[1], c.auto = sp, sp end
+            if c.auto and c.buf[1] ~= c.auto then c.auto = nil end
+            text(dl, x + S(22), y + S(18), fit(LANG.t('Relist') .. ' ' .. r.name .. (c.stack and ('  ·  ' .. LANG.t('stack of') .. ' ' .. r.stack) or '') .. '?', F.disp, T.h1, w - S(110)), P.text, F.disp, T.h1)
+            item_icon(dl, c.item, x + w - S(22) - S(48), y + S(16), S(48), 1)
+            if c.stack then stack_badge(dl, x + w - S(22) - S(48), y + S(16), S(48), r.stack) end
+            local now = LANG.t('Up now for') .. ' ' .. gil(c.price) .. ' gil'
+            if hs and hs.stats then now = now .. '  ·  ' .. LANG.t('median') .. ' ' .. gil(hs.stats.median) .. '  ·  ' .. LANG.t('last') .. ' ' .. gil(hs.stats.last)
+            elseif hs then now = now .. '  ·  ' .. LANG.t('none sold lately')
+            else now = now .. '  ·  ' .. LANG.t('asking for its sales…') end
+            text(dl, x + S(22), y + S(50), fit(now, F.text, T.small, w - S(110)), P.dim, F.text, T.small)
+            text(dl, x + S(22), y + S(80), LANG.t('NEW PRICE'), GOLD, F.disp, T.small)
+            -- the choices, three to a row, each with its price; the suggested one marked
+            local per, gap = 3, S(8)
+            local bw = (w - S(44) - gap * (per - 1)) / per
+            local oy = y + S(100)
+            local picked = tonumber(c.buf[1])
+            for i, o in ipairs(opts) do
+                local col_, row_ = (i - 1) % per, math.floor((i - 1) / per)
+                local bx, by = x + S(22) + col_ * (bw + gap), oy + row_ * S(38)
+                local on = picked == o.price
+                local label = o.label .. '  ' .. gil(o.price) .. (o == suggest and ' ★' or '')
+                if button(dl, '##rl' .. i, bx, by, bw, S(32), fit(label, F.semi, T.small, bw - S(14)), on and GOLD or (o == suggest and P.accent or P.dim), on and 'solid' or 'ghost', nil, F.semi, T.small) then
+                    c.buf[1] = tostring(o.price)
+                    c.auto = nil
+                end
+            end
+            if #opts == 0 then text(dl, x + S(22), oy + S(8), LANG.t('Type the new price'), P.faint, F.text, T.small) end
+            local fy = oy + math.max(1, math.ceil(#opts / per)) * S(38) + S(4)
+            imgui.SetCursorScreenPos({ x + S(22), fy })
+            field('##relist_price', LANG.t('type a price in gil'), c.buf, w - S(44), T.body, true)
+            local np = tonumber(c.buf[1]) or 0
+            local note
+            if np > 0 and hs and hs.stats and hs.stats.median > 0 then
+                local d = (np - hs.stats.median) / hs.stats.median
+                if math.abs(d) < 0.03 then note = LANG.t('at the median')
+                elseif d > 0 then note = string.format(LANG.t('%d%% above the median'), math.floor(d * 100 + 0.5))
+                else note = string.format(LANG.t('%d%% under the median'), math.floor(-d * 100 + 0.5)) end
+                text(dl, x + w - S(22) - measure(note, F.text, T.tiny), y + S(82), note, P.dim, F.text, T.tiny)
+            end
+            local ly = fy + S(42)
+            for _, l in ipairs(wrap(LANG.t('It comes down now, and the house quotes the new fee before it goes back up: you confirm that as any listing. The old fee is not returned.'), F.text, T.tiny, w - S(44))) do
+                text(dl, x + S(22), ly, l, P.faint, F.text, T.tiny)
+                ly = ly + S(15)
+            end
+            local ok = np >= 1 and np <= 999999999 and may_trade() and st.cancel_pending == nil and st.relist == nil
+            local yes_pressed = button(dl, '##cyes', x + w - S(22) - S(136), y + h - S(50), S(136), S(34), LANG.t('Relist'), ok and GOLD or P.faint, ok and 'solid' or 'ghost', 'rotate-right')
+            if st.pad_mute then yes_pressed = false end
+            if yes_pressed and ok then
+                st.relist = { stage = 'cancel', id = c.item, stack = c.stack, old = c.price, price = np, key = c.key, at = clock() }
+                st.confirm = nil
+                do_cancel(c)
+            end
+            if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), LANG.t('Cancel'), P.dim, 'ghost') then
+                st.confirm = nil
+            end
+            return
+        end
         local title, body, yes, ic, col
         if c.kind == 'buy' then
             local r = I.get(c.item)
             title = 'Bid ' .. gil(c.price) .. ' gil?'
-            body = r.name .. (c.stack and ('  ·  ' .. U.t('stack of') .. ' ' .. r.stack) or '  ·  one') .. '\nThe house fills the cheapest listing at or under your bid; you pay what you bid.'
-            yes, ic, col = U.t('Bid'), 'gavel', GOLD
+            body = r.name .. (c.stack and ('  ·  ' .. LANG.t('stack of') .. ' ' .. r.stack) or '  ·  one') .. '\nThe house fills the cheapest listing at or under your bid; you pay what you bid.'
+            yes, ic, col = LANG.t('Bid'), 'gavel', GOLD
             item_icon(dl, c.item, x + w - S(22) - S(48), y + S(16), S(48), 1)
+            if c.stack then stack_badge(dl, x + w - S(22) - S(48), y + S(16), S(48), r.stack) end
         elseif c.kind == 'sell' then
             local a = st.sell.asked
             local r = I.get(a.item)
-            if U.lang() == 'ja' then
-                local what = a.stack and (r.name .. 'のスタック（' .. r.stack .. '個）') or r.name
-                title = what .. 'を' .. gil(a.price) .. 'ギルで出品しますか？'
-                body = '出品手数料は' .. gil(st.sell.fee or 0) .. 'ギルです。売れなくても戻りません。'
-                    .. '\nヴァナ・ディール時間で30週間以内に最低落札価格以上の入札者が現れない場合は、'
-                    .. '\n出品を取り消しモグハウスに返送します。'
-                    .. '\n落札された場合は、代金がモグハウスに送られます。'
-                    .. '\nまた銘入りアイテムの場合は落札後、銘が消されますのでご了承ください。'
+            local what = r.name .. (a.stack and (' (a stack of ' .. r.stack .. ')') or '')
+            local prior = st.relist and (string.format(LANG.t('It was up for %s gil and is in your bag now.'), gil(st.relist.old)) .. '\n') or ''
+            if LANG.ja() then
+                local named = a.stack and string.format(LANG.t('%s (a stack of %d)'), r.name, r.stack) or r.name
+                title = (st.relist and (LANG.t('Relist') .. '：') or '') .. string.format(LANG.t('%s for %s gil?'), named, gil(a.price))
+                body = prior
+                    .. string.format(LANG.t('Listing fee: %s gil. It is not returned even if the item does not sell.'), gil(st.sell.fee or 0))
+                    .. '\n' .. LANG.t('If no bid reaches the minimum within 30 Vana\'diel weeks, the listing is cancelled and the item returns to your Mog House.')
+                    .. '\n' .. LANG.t('When it sells, the payment is sent to your Mog House.')
+                    .. '\n' .. LANG.t('An inscribed item loses its inscription after it sells.')
             else
-                local what = r.name .. (a.stack and (' (a stack of ' .. r.stack .. ')') or '')
-                title = 'List ' .. what .. ' for ' .. gil(a.price) .. ' gil?'
-                body = 'Listing fee: ' .. gil(st.sell.fee or 0) .. ' gil, paid now and kept whether or not it sells.'
+                title = (st.relist and LANG.t('Relist') or 'List') .. ' ' .. what .. ' for ' .. gil(a.price) .. ' gil?'
+                body = prior .. 'Listing fee: ' .. gil(st.sell.fee or 0) .. ' gil, paid now and kept whether or not it sells.'
                     .. '\nWhen it sells, ' .. gil(a.price) .. ' gil goes to your delivery box.'
                     .. '\nUnsold, it waits at the house until you take it down.'
             end
-            yes, ic, col = U.t('List it'), 'tag', GOLD
+            yes, ic, col = LANG.t('List it'), 'tag', GOLD
             item_icon(dl, a.item, x + w - S(22) - S(48), y + S(16), S(48), 1)
+            if a.stack then stack_badge(dl, x + w - S(22) - S(48), y + S(16), S(48), r.stack) end
+        elseif c.kind == 'clear' then
+            title = LANG.t('Clear your activity?')
+            body = string.format(LANG.t('All %d entries go, and the gil totals with them. This cannot be undone.'), c.n or 0)
+                .. '\n' .. LANG.t('It only clears this record: nothing you have up at the house is touched.')
+            yes, ic, col = LANG.t('Clear'), 'trash-can', P.danger
         else
             title = 'Take it down?'
             body = I.name(c.item) .. ' comes back to your bag.\nThe listing fee is not returned.'
             if st.server_page ~= nil and st.server_page ~= c.page then
                 body = body .. '\nThe house needs a moment to find this one.'
             end
-            yes, ic, col = U.t('Take down'), 'xmark', P.danger
+            yes, ic, col = LANG.t('Take down'), 'xmark', P.danger
         end
         text(dl, x + S(22), y + S(18), title, P.text, F.disp, T.h1)
         local ly = y + S(50)
@@ -2670,11 +3185,12 @@ local function draw_confirm()
         if yes_pressed then
             if c.kind == 'buy' then do_buy(c.item, c.price, c.stack)
             elseif c.kind == 'sell' then do_list()
+            elseif c.kind == 'clear' then LEDGER.clear() st.act_page, st.act_top = 1, true
             else do_cancel(c) end
             st.confirm = nil
             if c.kind == 'buy' and PAD.shown() then st.pad_seat = 'bid' end -- the controller's focus comes back to the card
         end
-        if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), U.t('Cancel'), P.dim, 'ghost') then
+        if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), LANG.t('Cancel'), P.dim, 'ghost') then
             st.confirm = nil
             if c.kind == 'buy' and PAD.shown() then st.pad_seat = 'bid' end
         end
@@ -2688,187 +3204,46 @@ local TAB_ORDER = { 'buy', 'sell', 'sales', 'activity', 'watch' }
 local CAT_ORDER = {}
 for _, g in ipairs(I.GROUPS) do for _, c in ipairs(g.cats) do CAT_ORDER[#CAT_ORDER + 1] = { cat = c, group = g.id } end end
 
-local function seat_cats()
-    st.pad_first, st.pad_first_id, st.pad_cats, st.pad_close, st.pad_bag = 3, nil, true, nil, nil
-    st.pad_where, st.pad_card, st.pad_price_hold = 'cats', nil, nil
-    st.pad_cat_focus, st.pad_cat_keep = nil, nil
-end
-
-local function seat_close()
-    st.pad_close, st.pad_first, st.pad_bag = 3, nil, nil
-    st.pad_where = 'close'
-end
-
--- both clients can move onto the search box. Typing stays with the mouse; Confirm there returns to the results the text already found.
-local function search_pad() return true end
-
-local function enter_search()
-    st.pad_search_from = st.tab
-    st.pad_search_seated = nil
-    st.tab = 'buy'
-    st.settings_open = false
-    st.pad_where = 'search'
-    st.pad_strip_from, st.pad_strip_i = nil, nil
-    st.pad_card, st.pad_close, st.pad_seat, st.pad_price_hold, st.pad_sell_part = nil, nil, nil, nil, nil
-    st.pad_mute = 'held'
-    return true
-end
-
-local function leave_search()
-    -- back to where the search box was opened from. Confirm is what returns to the results.
-    local tab = st.pad_search_from or 'buy'
-    st.pad_search_from, st.pad_search_seated = nil, nil
-    st.tab = tab
-    if tab == 'buy' then seat_cats()
-    elseif tab == 'sell' then seat_bag()
-    else st.pad_where, st.pad_card, st.pad_first, st.pad_close = nil, nil, 3, nil end
-end
-
-local function cycle_act_filter()
-    local f = { all = 'bought', bought = 'sold', sold = 'all' }
-    st.act_filter, st.act_page, st.act_top = f[st.act_filter] or 'all', 1, true
-end
-
-local STRIP_SORT = { 'name', 'level', 'stock' }
-
-local function enter_strip(kind)
-    st.pad_strip_from = st.pad_where
-    st.pad_where = kind
-    st.pad_price_hold, st.pad_seat = nil, nil -- the price box must not pull the ring back off the strip
-    if kind == 'sort' then
-        local cur = settings.sort or 'name'
-        st.pad_strip_i = cur == 'level' and 2 or cur == 'stock' and 3 or 1
-    else
-        st.pad_strip_i = 1 -- 比較, then 在庫あり, then 装備可能
-    end
-end
-
-local function leave_strip()
-    local back = st.pad_strip_from or (st.pad_where == 'sort' and 'items' or 'cats')
-    st.pad_strip_from, st.pad_strip_i = nil, nil
-    if back == 'items' then
-        st.pad_first, st.pad_first_id, st.pad_cats, st.pad_close, st.pad_where = 3, st.pad_row or st.selected, false, nil, 'items'
-        st.pad_card, st.pad_price_hold = nil, nil
-    elseif back == 'cats' then
-        seat_cats()
-    else
-        st.pad_where = back
-        if back == 'price' then st.pad_seat, st.pad_card, st.pad_price_hold = 'price', 'price', 4 end
-    end
-end
-
--- the active-window button, on the bid card: single, stack, watch, history, then the price and Bid
-local function cycle_card()
-    local r = st.selected and I.get(st.selected)
-    local order = {}
-    if r and (r.stack or 0) > 1 then order[#order + 1] = 'single' order[#order + 1] = 'stack' end
-    order[#order + 1] = 'watch'
-    order[#order + 1] = 'hist'
-    order[#order + 1] = 'price'
-    local cur = st.pad_card or 'price'
-    if cur == 'bid' then cur = 'price' end
-    local at = 0
-    for i, name in ipairs(order) do if name == cur then at = i end end
-    local nxt = order[at % #order + 1]
-    st.pad_card = nxt
-    st.pad_price_hold = nil
-    if nxt == 'single' then st.stack, st.buy.price[1] = false, '' end
-    if nxt == 'stack' then st.stack, st.buy.price[1] = true, '' end
-    if nxt == 'price' then
-        st.pad_seat, st.pad_where, st.pad_price_hold = 'price', 'price', 4
-    else
-        st.pad_where = 'card'
-        st.pad_seat = nil
-    end
-end
-
-local function move_strip(dir)
-    st.pad_strip_i = ((st.pad_strip_i or 1) - 1 + dir) % 3 + 1
-    if st.pad_where ~= 'sort' then return end
-    local id = STRIP_SORT[st.pad_strip_i]
-    if id ~= (settings.sort or 'name') then
-        settings.sort, settings.sort_desc = id, SORT_DESC[id]
-        save_settings()
-    end
-end
-
-local function reopen_results()
-    local q = st.query[1] or ''
-    if #q >= 2 and not (st.results and #st.results > 0) then
-        st.results, st.result_total = I.search(q, 80)
-        fetch_result_lists()
-    end
-    if not (st.results and #st.results > 0) then return false end
-    st.pad_search_from, st.pad_search_seated = nil, nil
-    st.tab = 'buy'
-    st.pad_mute = 'held'
-    st.pad_first, st.pad_first_id, st.pad_cats, st.pad_close = 3, nil, false, nil
-    st.pad_where, st.pad_row, st.pad_card, st.pad_seat, st.pad_price_hold = 'items', nil, nil, nil, nil
-    return true
-end
-
 local function pad_buttons()
-    if st.pad_leave then seat_results() end
-    if st.pad_where == 'search' and PAD.pressed('confirm') and not st.pad_mute then
-        reopen_results()
-        return
-    end
-    -- a price being typed still answers Cancel here: it leaves the whole card, it does not stop on the history
-    if PAD.pressed('cancel') and (on_bid_card() or st.pad_where == 'search' or not imgui.IsAnyItemActive()) then
+    if st.pad_editing then return end -- a price box has the pad (pad_price_box)
+    if PAD.pressed('cancel') and not imgui.IsAnyItemActive() then
         st.pad_cancels = (st.pad_cancels or 0) + 1
-        local on_close = st.pad_where == 'close'
-        if st.pad_where == 'search' then
-            leave_search()
-        elseif st.confirm then
+        if st.confirm then
             st.confirm = nil
             if st.confirm_kind_buy then st.pad_seat = 'bid' end
         elseif st.settings_open then st.settings_open = false
-        elseif st.pad_where == 'filters' or st.pad_where == 'sort' then
-            leave_strip()
-        elseif on_close then
-            -- already on Close: back into the page. Confirm on Close is what shuts the window
-            if st.tab == 'sell' then
-                st.pad_first, st.pad_first_id, st.pad_cats, st.pad_bag, st.pad_close, st.pad_where = 3, st.sell.slot, false, true, nil, 'bag'
-            elseif st.tab == 'buy' then seat_cats()
-            else st.pad_close, st.pad_first, st.pad_where = nil, 3, nil end
-        elseif on_bid_card() then
-            if st.pad_editing then st.pad_leave = true end -- the price box puts the old number back as it draws
-            seat_results()
-        elseif st.tab == 'buy' and st.pad_where == 'items' then
-            seat_cats()
-        elseif st.tab == 'sell' and (st.pad_where == 'sell_box' or st.pad_editing) then
-            if st.pad_editing then st.pad_leave = true end -- the price box puts the old number back as it draws
-            seat_bag()
-        else
-            seat_close() -- Cancel moves onto Close; it does not shut the window
-        end
+        elseif st.tab == 'buy' and st.card_focus then st.pad_first, st.pad_first_id, st.pad_cats = 3, st.selected, false -- from the card back to its row
+        elseif st.tab == 'buy' and st.pad_where == 'items' then st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, true -- from the list back to its category
+        else st.open = false end
         return
     end
-    -- the active-window button, on the asking price, moves onto List. It does not press it.
-    -- from the bag or the List button, on an English client, it also reaches the search box.
-    if st.tab == 'sell' and not st.settings_open and not st.confirm and PAD.pressed('options') then
-        if (st.pad_editing or st.pad_where == 'sell_box') and st.pad_sell_part ~= 'list' then
-            local ask = field_state['##ask']
-            if ask then ask.pad_on = false end
-            st.pad_editing = false
-            st.pad_seat, st.pad_where, st.pad_sell_part, st.pad_price_hold, st.pad_mute = 'list', 'sell_box', 'list', nil, 'held'
-        else enter_search() end
-    end
-    if st.pad_editing then return end -- a price box has the pad (pad_price_box)
     st.confirm_kind_buy = st.confirm ~= nil and st.confirm.kind == 'buy'
     if st.confirm then return end
     local turn = (PAD.pressed('r1') and 1 or 0) - (PAD.pressed('l1') and 1 or 0)
-    if turn ~= 0 and st.pad_where ~= 'search' then
+    if turn ~= 0 then
         local i = 1
         for k, tab in ipairs(TAB_ORDER) do if tab == st.tab then i = k end end
         st.tab = TAB_ORDER[(i - 1 + turn) % #TAB_ORDER + 1]
         st.settings_open = false
         st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, st.tab == 'buy' and st.results == nil -- Buy starts in the sidebar
-        if st.tab == 'buy' then st.pad_where = st.pad_cats and 'cats' or 'items' else st.pad_where = nil end
     end
     if st.tab == 'buy' and not st.settings_open then
+        -- Left and Right walk the three panes: the sidebar, the list (its last row) and the card (its price box);
+        -- Confirm goes deeper and Cancel comes back the same way. (ImGui moves on the same press, by geometry; the
+        -- seat asked for here lands a frame or two later and is what stays.)
+        if st.pad_where == 'cats' and PAD.pressed('right') then
+            st.pad_first, st.pad_first_id, st.pad_cats = 3, st.pad_row, false
+        elseif st.pad_where == 'items' and PAD.pressed('left') then
+            st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, true
+        elseif st.pad_where == 'items' and PAD.pressed('right') then
+            local id = st.selected or st.pad_row -- no card yet: the highlighted item's
+            if id then
+                if id ~= st.selected then select_item(id) end
+                st.pad_seat = 'price'
+            end
+        end
         local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
-        if step ~= 0 and st.pad_where ~= 'filters' and st.pad_where ~= 'sort' and st.pad_where ~= 'search' then
+        if step ~= 0 then
             local i = 1
             for k, e in ipairs(CAT_ORDER) do if e.cat == st.category then i = k end end
             local e = CAT_ORDER[(i - 1 + step) % #CAT_ORDER + 1]
@@ -2880,188 +3255,129 @@ local function pad_buttons()
             st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, st.pad_where == 'cats'
             fetch_list(e.cat)
         end
-        -- the game's active-window button moves onto a strip. It does not press the focused row.
-        if PAD.pressed('options') then
-            local on_card = st.pad_card or st.pad_where == 'price' or st.pad_where == 'bid' or st.pad_where == 'card' or st.pad_where == 'hist'
-            local at_price = st.pad_where == 'price' or st.pad_where == 'bid' or st.pad_card == 'price' or st.pad_card == 'bid'
-            if st.pad_where == 'search' then leave_search()
-            elseif st.pad_where == 'sort' then leave_strip() -- the result list and its sort strip, and nothing past them
-            elseif st.pad_where == 'filters' then
-                if not enter_search() then leave_strip() end
-            elseif on_card and at_price and enter_search() then
-                -- English: the price stop of the bid card continues on to the search box
-            elseif on_card then cycle_card()
-            elseif st.pad_where == 'items' then enter_strip('sort')
-            elseif st.pad_where == 'cats' then enter_strip('filters')
-            elseif st.pad_where == 'close' then enter_search() end
-        end
-        if st.pad_where == 'filters' or st.pad_where == 'sort' then
-            local dir = (PAD.pressed('right') and 1 or 0) - (PAD.pressed('left') and 1 or 0)
-            if dir ~= 0 then move_strip(dir) end
-            if PAD.pressed('confirm') then
-                if st.pad_where == 'sort' then settings.sort_desc = not sort_desc()
-                elseif st.pad_strip_i == 2 then settings.in_stock = not settings.in_stock
-                elseif st.pad_strip_i == 3 then settings.usable = not settings.usable
-                else settings.compare = not settings.compare end
+        -- X and Y go by the pane the ring is in: the list's filters there, the picked item's own switches on its card
+        if st.pad_where == 'card' then
+            if PAD.pressed('options') and st.selected then toggle_watch(st.selected, st.stack) end
+            if PAD.pressed('menu') and st.selected and I.get(st.selected).stack > 1 then
+                st.stack = not st.stack
+                st.buy.price[1] = ''
+            end
+        else
+            if PAD.pressed('options') then settings.in_stock = not settings.in_stock save_settings() end
+            if PAD.pressed('menu') then settings.usable = not settings.usable save_settings() end
+            -- the sort sits above the list, where the ring doesn't go: the stick buttons turn it and flip it
+            if PAD.pressed('l3') then
+                local next_sort = { name = 'level', level = 'stock', stock = 'name' }
+                settings.sort = next_sort[settings.sort or 'name'] or 'name'
+                settings.sort_desc = SORT_DESC[settings.sort]
                 save_settings()
-                -- ImGui's own click on the focused chip arrives a frame later and would flip it straight back
-                st.pad_mute = 'held'
+            end
+            if PAD.pressed('r3') then settings.sort_desc = not sort_desc() save_settings() end
+        end
+        if PAD.pressed('back') then settings.compare = not settings.compare save_settings() end
+    end
+    if st.tab == 'sell' and not st.settings_open then
+        if PAD.pressed('options') then settings.sellable_only = not settings.sellable_only save_settings() end
+        if PAD.pressed('menu') and st.sell.item then
+            local r = I.get(st.sell.item)
+            if r.stack > 1 then -- stack prices show with any count; listing one waits for a full stack
+                st.sell.stack = not st.sell.stack
+                st.sell.price[1], st.sell.fee, st.sell.asked = '', nil, nil
             end
         end
-        if PAD.pressed('menu') and st.pad_where ~= 'filters' and st.pad_where ~= 'search' then settings.usable = not settings.usable save_settings() end
-        if PAD.pressed('back') and st.pad_where ~= 'filters' and st.pad_where ~= 'search' then settings.compare = not settings.compare save_settings() end
-        if st.pad_where == 'cats' or st.pad_where == 'items' then
-            local page = (PAD.repeating('right', 0.28, 0.28) and 1 or 0) - (PAD.repeating('left', 0.28, 0.28) and 1 or 0)
-            if page ~= 0 then st.pad_page_dir = page end
+        -- Right from the bag is the price box; Left from the price box is the picked item (pad_price_box)
+        local fo = U.anim.focus
+        if PAD.pressed('right') and st.sell.item and fo and fo.key:sub(1, 5) == '##bag' and now_t - fo.at < 0.1 then st.pad_seat = 'price' end
+    end
+    if st.tab == 'sales' and not st.settings_open then
+        -- the row the ring is on (any of its three buttons), or the first
+        local fo = U.anim.focus
+        local k = fo and now_t - fo.at < 0.1 and sales_row_key(fo.key) or nil
+        local row = k and st.sales_rows and st.sales_rows[k] or (st.sales_rows and st.sales_rows[1])
+        if row and PAD.pressed('options') then
+            if st.sales_hist == row.key then st.sales_hist = nil else st.sales_hist = row.key fetch_history(row.id, row.stack) end
         end
-        if st.pad_where == 'cats' then
-            local dir = (PAD.repeating('down', 0.28, 0.08) and 1 or 0) - (PAD.repeating('up', 0.28, 0.08) and 1 or 0)
-            local order = st.pad_cat_order
-            if dir ~= 0 and order and #order > 0 then
-                local i = st.pad_cat_i or 1
-                if st.pad_cat_keep == nil then st.pad_cat_keep = order[i] end
-                st.pad_cat_i = (i - 1 + dir) % #order + 1
-                st.pad_cat_focus = order[st.pad_cat_i]
-            end
+        if row and PAD.pressed('menu') and may_trade() and st.cancel_pending == nil and st.sweep == nil and st.relist == nil and not st.sell.pending then
+            fetch_history(row.id, row.stack)
+            st.confirm = { kind = 'relist', slot = row.slot, item = row.id, page = row.page, key = row.key, price = row.price, stack = row.stack }
+        end
+    end
+    if st.tab == 'watch' and not st.settings_open then
+        local fo = U.anim.focus
+        local k = fo and now_t - fo.at < 0.1 and watch_row_key(fo.key) or nil
+        local e = k and st.watch_rows and st.watch_rows[k] or (st.watch_rows and st.watch_rows[1])
+        if e and PAD.pressed('options') then toggle_watch(e.id, e.stack) end
+        if e and PAD.pressed('menu') then -- its price, straight into the digit editor
+            local id = '##under' .. watch_key(e.id, e.stack)
+            st.pad_seat, st.pad_edit_now = id, id
         end
     end
     if st.tab == 'activity' and not st.settings_open then
         local step = (PAD.repeating('r2', 0.45, 0.12) and 1 or 0) - (PAD.repeating('l2', 0.45, 0.12) and 1 or 0)
         if step ~= 0 then st.act_page, st.act_top, st.pad_first, st.pad_first_id = st.act_page + step, true, 3, nil end -- (clamped where it's drawn)
         if PAD.pressed('options') then
-            if search_pad() then enter_search() else cycle_act_filter() end
+            local f = { all = 'bought', bought = 'sold', sold = 'all' }
+            st.act_filter, st.act_page, st.act_top = f[st.act_filter] or 'all', 1, true
         end
-        if search_pad() and PAD.pressed('menu') then cycle_act_filter() end
+        if PAD.pressed('menu') then st.act_page, st.act_top = 1, true end
     end
-    if (st.tab == 'watch' or st.tab == 'sales') and not st.settings_open and not st.confirm and PAD.pressed('options') then
-        enter_search()
+    if st.settings_open then
+        -- Y the next theme, X the next bell (or none), the way the dropdowns go
+        if PAD.pressed('options') then
+            local i = 1
+            for n, th in ipairs(U.THEMES) do if th.id == (settings.theme or 'aurora') then i = n end end
+            set_theme(U.THEMES[i % #U.THEMES + 1].id)
+        end
+        if PAD.pressed('menu') then
+            if not settings.open_sound then
+                settings.open_sound, settings.open_sound_id = true, OPEN_SOUNDS[1].id
+                play_open_sound()
+            else
+                local i = 0
+                for n, o in ipairs(OPEN_SOUNDS) do if o.id == settings.open_sound_id then i = n end end
+                if i >= #OPEN_SOUNDS then settings.open_sound = false
+                else settings.open_sound_id = OPEN_SOUNDS[i + 1].id play_open_sound() end
+            end
+            save_settings()
+        end
     end
     if PAD.pressed('start') then st.settings_open = not st.settings_open end
 end
 
+local LEGEND = {
+    -- Buy: the list's pane and the card each have their own (built in draw_legend)
+    buy_list = { { 'left right', 'Panes' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Category' }, { 'l3', 'Sort' }, { 'r3', 'Flip' },
+        { 'options', 'In stock' }, { 'menu', 'Usable' }, { 'back', 'Compare' } },
+    buy_card = { { 'left right', 'Panes' }, { 'l1 r1', 'Tabs' }, { 'updown', 'Price' },
+        { 'options', 'Watch' }, { 'menu', 'Single / stack' }, { 'start', 'Settings' } },
+    sell = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'left right', 'Panes' }, { 'l1 r1', 'Tabs' }, { 'updown', 'Price' },
+        { 'options', 'Sellable only' }, { 'menu', 'Single / stack' }, { 'start', 'Settings' } },
+    sales = { { 'confirm', 'Press' }, { 'cancel', 'Close' }, { 'l1 r1', 'Tabs' }, { 'options', 'History' }, { 'menu', 'Relist' }, { 'start', 'Settings' } },
+    watch = { { 'confirm', 'Open' }, { 'cancel', 'Close' }, { 'l1 r1', 'Tabs' }, { 'options', 'Unwatch' }, { 'menu', 'Tell me under' }, { 'start', 'Settings' } },
+    activity = { { 'cancel', 'Close' }, { 'l1 r1', 'Tabs' }, { 'l2 r2', 'Page' }, { 'options', 'Filter' }, { 'menu', 'Newest' }, { 'start', 'Settings' } },
+    settings = { { 'confirm', 'Toggle' }, { 'cancel', 'Close' }, { 'options', 'Theme' }, { 'menu', 'Sound' }, { 'start', 'Close' } },
+    other = { { 'confirm', 'Select' }, { 'cancel', 'Back' }, { 'l1 r1', 'Tabs' }, { 'start', 'Settings' } },
+    edit = { { 'updown', 'Digit' }, { 'left right', 'Column' }, { 'confirm', 'Keep' }, { 'cancel', 'Undo' } },
+}
 local function draw_legend(dl, x, y, w)
     dl:AddLine({ x + S(16), y }, { x + w - S(16), y }, u32(P.line, 0.8), 1)
-    local function add(items, key, label) items[#items + 1] = { key, U.t(label) } end
-    local function buy_tail(items, where)
-        add(items, 'l1 r1', 'Tabs')
-        if where ~= 'filters' and where ~= 'sort' and where ~= 'search' then add(items, 'l2 r2', 'Category') end
-        if where ~= 'filters' and where ~= 'sort' and where ~= 'search' then
-            add(items, 'menu', 'Usable')
-            add(items, 'back', 'Compare')
-        end
-        add(items, 'start', 'Settings')
-    end
     local items
-    local where = st.pad_where
-    if where == 'search' then
-        items = {}
-        if (st.query[1] or '') ~= '' or (st.results and #st.results > 0) then add(items, 'confirm', 'Results') end
-        add(items, 'options', 'Return')
-        add(items, 'cancel', 'Return')
-        add(items, 'start', 'Settings')
-    elseif st.pad_editing and st.tab == 'sell' then
-        items = {}
-        add(items, 'updown', 'Digit')
-        add(items, 'left right', 'Column')
-        add(items, 'confirm', 'List it')
-        add(items, 'cancel', 'Bag')
-    elseif st.pad_editing then
-        items = {}
-        add(items, 'updown', 'Digit')
-        add(items, 'left right', 'Column')
-        add(items, 'confirm', 'Keep')
-        add(items, 'cancel', 'Results')
-    elseif st.tab == 'sell' then
-        items = {}
-        if where == 'sell_box' and st.pad_sell_part == 'list' then
-            add(items, 'confirm', 'List it')
-            add(items, 'cancel', 'Bag')
-            add(items, 'up', 'Price')
-            if search_pad() then add(items, 'options', 'Search') end
-        elseif where == 'sell_box' then
-            add(items, 'confirm', 'Amount')
-            add(items, 'cancel', 'Bag')
-            add(items, 'options', 'List it')
-        else
-            add(items, 'confirm', 'Price')
-            add(items, 'updown', 'Move')
-            add(items, 'cancel', 'To close')
-            if search_pad() then add(items, 'options', 'Search') end
-        end
-        add(items, 'l1 r1', 'Tabs')
-        add(items, 'start', 'Settings')
-    elseif st.tab == 'buy' and (where == 'filters' or where == 'sort') then
-        items = {}
-        add(items, 'left right', 'Move')
-        add(items, 'confirm', where == 'sort' and 'Direction' or 'On or off')
-        add(items, 'options', where == 'sort' and 'Results' or (search_pad() and 'Search' or 'Return'))
-        add(items, 'cancel', 'Return')
-        buy_tail(items, where)
+    if st.pad_editing then items = LEGEND.edit
+    elseif st.settings_open then items = LEGEND.settings
     elseif st.tab == 'buy' then
-        items = {}
-        if where == 'close' then
-            add(items, 'confirm', 'Close')
-            add(items, 'cancel', 'Categories')
-            if search_pad() then add(items, 'options', 'Search') end
-        elseif where == 'cats' then
-            add(items, 'confirm', 'Open category')
-            add(items, 'updown', 'Move')
-            add(items, 'left right', 'Page')
-            add(items, 'cancel', 'To close')
-            add(items, 'options', 'Filter')
-        elseif where == 'items' then
-            add(items, 'confirm', 'Pick item')
-            add(items, 'updown', 'Move')
-            add(items, 'left right', 'Page')
-            add(items, 'cancel', 'Categories')
-            add(items, 'options', 'Sort')
-        elseif where == 'price' then
-            add(items, 'confirm', 'Amount')
-            add(items, 'left right', 'Bid')
-            add(items, 'cancel', 'Results')
-            add(items, 'options', search_pad() and 'Search' or 'Switch')
-        elseif where == 'bid' then
-            add(items, 'confirm', 'Bid')
-            add(items, 'left right', 'Amount')
-            add(items, 'cancel', 'Results')
-            add(items, 'options', search_pad() and 'Search' or 'Switch')
-        elseif where == 'hist' then
-            add(items, 'updown', 'Scroll')
-            add(items, 'cancel', 'Results')
-            add(items, 'options', 'Switch')
-        elseif where == 'card' and st.pad_card == 'watch' then
-            add(items, 'confirm', 'Watch')
-            add(items, 'cancel', 'Results')
-            add(items, 'options', 'Switch')
-        elseif where == 'card' then
-            add(items, 'confirm', 'Select')
-            add(items, 'cancel', 'Results')
-            add(items, 'options', 'Switch')
-        else
-            add(items, 'confirm', 'Pick item')
-            add(items, 'cancel', 'Categories')
+        -- Confirm and Cancel say what they do in the pane the ring is in, and X and Y what they do there
+        local where = st.pad_where -- (held over a move: 'cats', 'items' or 'card')
+        items = { { 'confirm', where == 'cats' and 'Open category' or where == 'card' and 'Price, then Bid' or 'Pick item' },
+            { 'cancel', where == 'cats' and 'Close' or 'Back' } }
+        local rest = where == 'card' and LEGEND.buy_card or LEGEND.buy_list
+        for _, it in ipairs(rest) do
+            if where == 'card' and it[1] == 'options' and st.selected and is_watched(st.selected, st.stack) then items[#items + 1] = { 'options', 'Unwatch' }
+            else items[#items + 1] = it end
         end
-        buy_tail(items, where)
-    elseif st.tab == 'activity' then
-        items = {}
-        add(items, 'cancel', 'To close')
-        add(items, 'l1 r1', 'Tabs')
-        add(items, 'l2 r2', 'Page')
-        if search_pad() then
-            add(items, 'options', 'Search')
-            add(items, 'menu', 'Filter')
-        else
-            add(items, 'options', 'Filter')
-        end
-        add(items, 'start', 'Settings')
-    else
-        items = {}
-        add(items, 'confirm', 'Select')
-        add(items, 'cancel', 'To close')
-        add(items, 'l1 r1', 'Tabs')
-        if search_pad() then add(items, 'options', 'Search') end
-        add(items, 'start', 'Settings')
-    end
+    else items = LEGEND[st.tab] or LEGEND.other end
+    local shown = {}
+    for _, it in ipairs(items) do shown[#shown + 1] = { it[1], LANG.t(it[2]) } end
+    items = shown
     -- measured by drawing off screen once, then centred
     local lw = PAD.legend(dl, -10000, -10000, items, 0)
     PAD.legend(dl, x + (w - lw) / 2, y + S(14), items, 1)
@@ -3091,14 +3407,8 @@ local function draw_main(t)
         shadow(dl, x, y, w, h, S(16), fade)
         panel(dl, x, y, w, h, P.bg, fade, S(16), P.line)
         st.hover_id = nil
-        U.anim.ring_key = nil
         -- the controller's buttons are the focused window's (RootAndChildWindows): two open windows never both answer
         st.pad_focused = imgui.IsWindowFocused(3)
-        -- the active-window button is also delivered to ImGui as a click on the focused row: drop that click for this
-        -- frame and the next, so it only moves to the filter strip
-        if PAD.pressed('options') then st.pad_suppress = 2
-        elseif (st.pad_suppress or 0) > 0 then st.pad_suppress = st.pad_suppress - 1 end
-        U.anim.suppress_press = (st.pad_suppress or 0) > 0
         -- (or a confirmation's, a window of its own that takes the focus: Cancel there closes it)
         if PAD.capturing() and (st.pad_focused or st.confirm) then pad_buttons() end
         -- ImGui keeps its navigation cursor hidden after a focus it didn't move there itself (the window opening, a
@@ -3106,20 +3416,16 @@ local function draw_main(t)
         -- shown while the pad is in use, Confirm works wherever the focus was put
         if PAD.shown() and st.pad_focused and imgui.SetNavCursorVisible then imgui.SetNavCursorVisible(true) end
         st.pad_editing = false -- set again by a price box being edited, drawn below
-        st.pad_where_now = nil -- which pane has the focus, found as it's drawn below
-        if st.settings_open or st.confirm or not PAD.shown() then st.pad_scope = nil
-        elseif st.pad_where == 'search' then st.pad_scope = 'search'
-        elseif st.tab == 'buy' and (st.pad_where == 'filters' or st.pad_where == 'sort') then st.pad_scope = st.pad_where
-        elseif st.pad_close or st.pad_where == 'close' then st.pad_scope = 'close'
-        elseif st.tab == 'buy' and (st.pad_card or st.pad_where == 'card' or st.pad_where == 'price' or st.pad_where == 'bid') then st.pad_scope = 'card'
-        elseif st.tab == 'buy' and st.pad_where == 'items' then st.pad_scope = 'items'
-        elseif st.tab == 'buy' then st.pad_scope = 'cats'
-        elseif st.tab == 'sell' then st.pad_scope = 'sell'
-        else st.pad_scope = 'page' end
-        U.set_nav_filter(st.pad_scope and pad_nav_allows or nil)
+        st.pad_where_now = nil -- which Buy pane has the focus ('cats', 'items'), found as it's drawn below
+        if PAD.capturing() then PAD.claim() end -- X and Y are the window's, never ImGui's activate or window switcher
+        -- the header (search box, buttons) and the tab row are out of the pad's reach: the bumpers and buttons do
+        -- their jobs, and the ring never wanders up there from a list's top (ImGuiItemFlags_NoNav)
+        local pad_nav = PAD.shown() and imgui.PushItemFlag ~= nil
+        if pad_nav then imgui.PushItemFlag(2, true) end
         local hy = draw_header(dl, x, y, w, t)
         local ty = y + hy + S(10)
         draw_tabs(dl, x, ty, w)
+        if pad_nav then imgui.PopItemFlag() end
         local by = ty + S(50)
         local bh = y + h - by - S(16) - legend_h
         if legend_h > 0 then draw_legend(dl, x, y + h - legend_h, w) end
@@ -3153,38 +3459,11 @@ local function draw_main(t)
         end
         -- a move between rows leaves nothing focused for a frame, and the legend's words (and width) followed it, so
         -- the row jittered on every press: the pane holds until nothing has had the focus for a moment
-        if st.tab ~= 'buy' then st.card_focus = false end
-        local where = st.pad_where_now or (st.card_focus and 'card' or nil)
-        -- a Cancel that just sent the focus somewhere keeps that pane until the move has landed
-        if st.pad_where == 'filters' or st.pad_where == 'sort' or st.pad_where == 'close' or st.pad_where == 'cats' or st.pad_where == 'search' then
-            -- held: Close and the category list keep the cursor. A D-pad press must not follow the history scroller
-            -- or another button that happened to take the highlight
-        elseif st.tab == 'sell' and st.pad_editing then
-            st.pad_where, st.pad_sell_part = 'sell_box', 'price'
-        elseif st.tab == 'sell' and (st.pad_price_hold or 0) > 0 then
-            st.pad_where, st.pad_sell_part = 'sell_box', st.pad_sell_part or 'price'
-            st.pad_price_hold = st.pad_price_hold - 1
-        elseif st.tab == 'sell' and st.pad_seat == 'list' then
-            st.pad_where, st.pad_sell_part = 'sell_box', 'list'
-        elseif st.tab == 'buy' and (st.pad_price_hold or 0) > 0 then
-            st.pad_where, st.pad_card = 'price', 'price'
-            st.pad_price_hold = st.pad_price_hold - 1
-        elseif st.pad_card and not st.pad_first and not st.pad_close then
-            if st.pad_card == 'hist' then st.pad_where = 'hist'
-            elseif st.pad_card == 'price' or st.pad_card == 'bid' then st.pad_where = (where == 'bid') and 'bid' or 'price'
-            else st.pad_where = 'card' end
-        elseif not st.pad_first and not st.pad_close then
-            if where then st.pad_where, st.pad_where_at = where, now_t
-            elseif now_t - (st.pad_where_at or -1) > 0.25 then st.pad_where = nil end
-        end
-        -- left and right scroll a page on a list; on the bid card the D-pad is the card's, not ImGui's
-        if st.pad_where == 'filters' or st.pad_where == 'sort' or st.pad_where == 'close' or st.pad_where == 'search' then st.pad_hold = 'all'
-        elseif st.tab == 'sell' and st.pad_where == 'sell_box' and PAD.shown() then st.pad_hold = 'all'
-        elseif st.pad_card and PAD.shown() then st.pad_hold = 'all'
-        elseif PAD.shown() and (st.pad_where == 'cats' or st.pad_where == 'items') and not st.pad_editing then st.pad_hold = 'x' end
-        st.pad_leave = nil
+        local where = st.card_focus and 'card' or st.pad_where_now
+        if where then st.pad_where, st.pad_where_at = where, now_t
+        elseif now_t - (st.pad_where_at or -1) > 0.25 then st.pad_where = nil end
         -- RootAndChildWindows (3): the lists, the bag and the sidebar are child windows, and a click there focuses them
-        if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and imgui.GetFrameCount() - FIELD.active_frame > 1 then
+        if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and imgui.GetFrameCount() - FIELD.active_frame > 1 and not st.bind_capture then
             if st.confirm then st.confirm = nil elseif st.settings_open then st.settings_open = false else st.open = false end
         end
         end)
@@ -3192,7 +3471,6 @@ local function draw_main(t)
     end
     imgui.End()
     if not open[1] then st.open = false end
-    U.set_nav_filter(nil)
     draw_confirm()
     U.pop_theme()
     U.set_window_alpha(1)
@@ -3202,38 +3480,21 @@ end
 -- The frame
 -------------------------------------------------------------------------------
 
--- FancyChatJP reads this on each button. The window being open with the pad switched on is enough:
--- capturing() also wants a fresh poll, and a missed poll for two seconds used to publish "released",
--- so the next press was FancyChat's. The number is fixed width and written over the old one, so a
--- reader never sees an empty file in the middle of the update.
-local function note_pad_hold()
-    local hold = st.open and PAD.enabled()
-    local stamp = hold and os.time() or 0
-    if stamp == st.pad_hold_note then return end
-    local ok = pcall(function()
-        vana.fs.create_dir(settings_dir())
-        local path = settings_dir() .. '\\pad_hold'
-        local text = string.format('%010d\n', stamp)
-        local f = io.open(path, 'r+')
-        if f == nil then f = io.open(path, 'w') end
-        if f == nil then return end
-        f:seek('set', 0)
-        f:write(text)
-        f:flush()
-        f:close()
-        st.pad_hold_note = stamp
-    end)
-    if not ok then st.pad_hold_note = nil end
-end
-
 local function tick()
     local io = imgui.GetIO()
     dt = math.max(0.001, math.min(0.1, io.DeltaTime or 0.016))
     local scale = math.max(0.5, math.min(3, (settings.scale or 100) / 100))
     local t = imgui.GetTime()
     now_t = t
-    note_pad_hold()
     if not U.frame(dt, scale, t) then return end
+    -- Japanese wanted but no Japanese font on this PC (Meiryo, Yu Gothic, MS Gothic: Windows has them; Wine may not):
+    -- the text would be boxes, so the window stays English this session, and says so once
+    if LANG.ja() and not F.japanese_font and not st.said_no_jp_font then
+        st.said_no_jp_font = true
+        LANG.set('en')
+        I.forget_records()
+        U.toast('warn', 'No Japanese font', 'Meiryo, Yu Gothic or MS Gothic is needed in C:\\Windows\\Fonts; the window stays English', 8, 'triangle-exclamation')
+    end
     -- the controller: its reads since the last frame become ImGui's keys, while the window has it
     PAD.frame(t, { id = 'auctionhouse', capture = function () return st.open end, hold = st.pad_hold or false })
     st.pad_hold = false
@@ -3245,20 +3506,20 @@ local function tick()
     end
     U.anim.pad_shown = PAD.shown()
     local fo = U.anim.focus
-    st.pad_dbg = string.format('text box active %s, focus on %s (%.1fs ago), card focus %s, seat %s, window focused %s, cancels %d',
+    local boxes = {}
+    for id, f in pairs(field_state) do if f.focused or f.pad_on then boxes[#boxes + 1] = id .. (f.pad_on and '*' or '') end end
+    local rowdbg = ''
+    if st.pad_row and st.list_ids then
+        for i, id in ipairs(st.list_ids) do if id == st.pad_row then rowdbg = string.format('row %d/%d %s, walk %s; ', i, #st.list_ids, I.name(id), tostring(st.walk_i)) break end end
+    end
+    st.pad_dbg = rowdbg .. string.format('boxes [%s] ', table.concat(boxes, ' ')) .. string.format('text box active %s, focus on %s (%.1fs ago), card focus %s, seat %s, window focused %s, cancels %d',
         tostring(imgui.IsAnyItemActive()), tostring(fo and fo.key), fo and (t - fo.at) or -1, tostring(st.card_focus), tostring(st.pad_seat),
         tostring(st.pad_focused), st.pad_cancels or 0) .. string.format(', seats %d, first %s/%s%s, pane %s', st.pad_seats or 0, tostring(st.pad_first), tostring(st.pad_first_id), st.pad_cats and ' (cats)' or '', tostring(st.pad_where))
-    if st.pad_first and st.open then
-        st.pad_first = st.pad_first - 1
-        if st.pad_first <= 0 then st.pad_first, st.pad_first_id, st.pad_cats, st.pad_bag = nil, nil, nil, nil end
-    end
-    if st.pad_close and st.open then
-        st.pad_close = st.pad_close - 1
-        if st.pad_close <= 0 then st.pad_close = nil end
-    end
+    if st.pad_first and st.open then st.pad_first = st.pad_first - 1 if st.pad_first <= 0 then st.pad_first, st.pad_first_id, st.pad_cats = nil, nil, nil end end
     SEARCH.poll()
     PRICES.save()
     LEDGER.save()
+    I.save_index()
     -- the watch list, checked in the background
     -- a character logged in (or switched to) since the settings were read: its own settings, search host and key
     local name = my_name()
@@ -3278,14 +3539,45 @@ local function tick()
     end
     if st.sell.pending and clock() - st.sell.at > LIMITS.reply then
         st.sell.pending = false
-        U.toast('danger', 'No answer', U.t('The house did not answer'), 5, 'hourglass-end')
+        U.toast('danger', 'No answer', LANG.t('The house did not answer'), 5, 'hourglass-end')
     end
     if st.cancel_pending ~= nil and clock() - (st.cancel_at or 0) > LIMITS.reply then
         st.cancel_pending = nil
         U.toast('danger', 'No answer', 'The house did not answer the take-down: refresh My Sales to see where it stands', 6, 'hourglass-end')
     end
+    relist_step()
     if st.open then
+        -- what the house lists is asked a category at a time as you open them, as the game's own window does. Only when
+        -- you ask a search to include the categories never opened on this server (the button under the results) are
+        -- those asked, one at a time and spaced out; the answers are kept, so that's once per server
+        if st.sweep_wanted and logged_in() and clock() - (st.sweep_at or 0) > 0.25 then
+            local busy = false
+            for k in pairs(st.fetching) do if tostring(k):sub(1, 3) == 'cat' then busy = true break end end
+            if not busy then
+                st.sweep_at = clock()
+                st.sweep_tries = st.sweep_tries or {}
+                local next_cat = nil
+                for _, cat in ipairs(I.all_categories()) do
+                    if not I.answered(cat) and (st.sweep_tries[cat] or 0) < 2 then next_cat = cat break end
+                end
+                if next_cat then
+                    st.sweep_tries[next_cat] = (st.sweep_tries[next_cat] or 0) + 1
+                    fetch_list(next_cat)
+                else
+                    st.sweep_wanted = false
+                    I.save_index(true)
+                    -- the search again, over everything now
+                    local q = st.query[1] or ''
+                    if st.results and #q >= 2 then st.results, st.result_total = I.search(q, 80) fetch_result_lists() end
+                end
+            end
+        end
         if clock() - st.counter.at > LIMITS.scan then scan_counter() end
+        -- walked away from the counter: the house closes, as the game's menu would
+        if st.open and not settings.view_anywhere and not st.counter.near and st.counter.dist ~= nil then
+            st.open = false
+            say(LANG.t('You have left the auction counter'))
+        end
         -- the bag and the gil, kept current (a purchase or a fee changes the gil a moment after the house replies)
         if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
         if st.sweep and not st.sales_wait and clock() - st.sales_at >= SWEEP_GAP then
@@ -3313,6 +3605,7 @@ end
 
 vana.events.on('load', function ()
     load_settings()
+    apply_language()
     U.load_theme_files()
     U.apply_theme(settings.theme or 'aurora')
     configure_search()
@@ -3326,8 +3619,10 @@ vana.events.on('unload', function ()
     save_settings()
     PRICES.save(true)
     LEDGER.save(true)
+    I.save_index(true)
     SEARCH.cancel_all()
     I.release_icons()
+    U.release_texture('badge')
     U.release_textures()
 end)
 
@@ -3405,12 +3700,6 @@ vana.events.on('command', function (e)
         st.query[1] = I.client_text(table.concat(words, ' ', 3))
         st.results, st.result_total = I.search(st.query[1], 80)
         fetch_result_lists()
-        -- open_window seated the categories before these results existed. A Confirm there would
-        -- open that category and throw the search away, so a hit moves the cursor onto the list.
-        if st.results and #st.results > 0 then
-            st.pad_first, st.pad_first_id, st.pad_cats, st.pad_close = 3, nil, false, nil
-            st.pad_where, st.pad_row, st.pad_card, st.pad_seat, st.pad_price_hold = 'items', nil, nil, nil, nil
-        end
     elseif what == 'server' then
         local arg = words[3] or ''
         if arg == '' then say('Search server: ' .. tostring(st.search_where))
@@ -3477,6 +3766,14 @@ vana.events.on('command', function (e)
             end
             if id and I.rows[id] then toggle_watch(id, false) else say('No such item in the house') end
         end
+    elseif what == 'lang' or what == 'language' then
+        local pick = (words[3] or ''):lower()
+        if pick == 'auto' or pick == 'en' or pick == 'ja' then
+            settings.language = pick
+            apply_language()
+            save_settings()
+        end
+        say('Language: ' .. (settings.language or 'auto') .. ' (in use: ' .. LANG.lang() .. ') - /ah lang auto|en|ja')
     elseif what == 'theme' then
         local id = (words[3] or ''):lower()
         if U.THEME_BY_ID[id] then
@@ -3487,6 +3784,12 @@ vana.events.on('command', function (e)
             for _, th in ipairs(U.THEMES) do names[#names + 1] = th.id end
             say('Themes: ' .. table.concat(names, ', '))
         end
+    elseif what == 'bind' then
+        -- /ah bind: the key; /ah bind <key> sets it (^ Ctrl, ! Alt, + Shift, then a letter, digit or F key); /ah bind off
+        local arg = words[3] or ''
+        if arg:lower() == 'off' then set_keybind('') say('No key opens the house')
+        elseif arg ~= '' then set_keybind(arg) say(arg .. ' opens the house')
+        else say(((settings.keybind or '') ~= '' and (settings.keybind .. ' opens the house') or 'No key opens the house') .. '. /ah bind <key> (^ Ctrl, ! Alt, + Shift), or /ah bind off') end
     elseif what == 'sound' then
         -- /ah sound: which bell; /ah sound off|on; /ah sound <name> picks one ('small bell', small_bell or small) and plays it
         local arg = table.concat(words, ' ', 3):lower():gsub('[%s_]+', ' '):gsub('^ ', ''):gsub(' $', '')
@@ -3546,7 +3849,7 @@ vana.events.on('command', function (e)
         if st.lists[st.category] then for _ in pairs(st.lists[st.category].items) do listed = listed + 1 end end
         say(string.format('category %d: %d items, %d up, %d known zero, %d unknown, %d rows in the list reply, in_stock %s', st.category, #ids, up, zero, unknown, listed, tostring(settings.in_stock)))
     else
-        say('/ah [show|hide|buy|sell|listings|activity|watch [<id or name>]|s|search <name>|pick <id or name>|settings|theme <name>|server <host[:port]|auto>|scale <percent>|opacity <percent>|refresh|debug]')
+        say('/ah [show|hide|buy|sell|listings|activity|watch [<id or name>]|search <name>|pick <id or name>|settings|theme <name>|server <host[:port]|auto>|scale <percent>|opacity <percent>|refresh|debug]')
     end
     return true
 end)

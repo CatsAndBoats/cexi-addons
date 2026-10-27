@@ -329,6 +329,8 @@ function PAD.frame(t, host)
     if frame_no == st.frame_no then return end
     st.frame_no = frame_no
     local now = clock()
+    -- the game's button map (padsin000, or VanaCore's bindings) can change while this stays loaded
+    if now - (st.bound_at or -1e9) > 2 then st.bound_at = now read_bindings() end
     -- a synthetic read stands in for the controller's
     if st.fake then
         take(st.fake.raw)
@@ -404,6 +406,16 @@ function PAD.down(name)
     name = st.map[name] or name
     return st.now[name] == true
 end
+-- Called each frame inside the window while it has the pad: X and Y are the window's, not ImGui's. With VanaCore
+-- feeding every button, ImGui read Y (FaceUp) as its "input" key, which activates the focused item like Confirm,
+-- and X (FaceLeft) held as its window switcher. A global route makes the window the keys' owner at the next frame,
+-- and ImGui's navigation only reads keys nobody owns.
+local ROUTE_GLOBAL = 4096 -- ImGuiInputFlags_RouteGlobal
+function PAD.claim()
+    if not imgui.Shortcut then return end
+    pcall(imgui.Shortcut, KEY.x, ROUTE_GLOBAL)
+    pcall(imgui.Shortcut, KEY.y, ROUTE_GLOBAL)
+end
 -- pressed, or held past `delay` and repeating every `every`
 function PAD.repeating(name, delay, every)
     name = st.map[name] or name
@@ -437,7 +449,8 @@ function PAD.glyph(dl, x, cy, name, size, alpha)
         local r = S(size or 9)
         dl:AddCircleFilled({ x + r, cy }, r, U.u32(face[2], 0.22 * alpha), 20)
         dl:AddCircle({ x + r, cy }, r, U.u32(face[2], 0.95 * alpha), 20, 1.2)
-        U.text_center(dl, x, cy, r * 2, face[1], face[2], F.bold, T.tiny - 1, alpha)
+        -- (on whole pixels: a half-pixel position smears the letter and reads as off-centre)
+        U.text_center(dl, math.floor(x + 0.5), math.floor(cy + 0.5), r * 2, face[1], face[2], F.bold, T.tiny - 1, alpha)
         return r * 2
     end
     local label = PILL[name] or name:upper()
@@ -445,7 +458,7 @@ function PAD.glyph(dl, x, cy, name, size, alpha)
     local w, h = tw + S(10), S((size or 9) * 2)
     dl:AddRectFilled({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.12 * alpha), S(5))
     dl:AddRect({ x, cy - h / 2 }, { x + w, cy + h / 2 }, U.u32(P.text, 0.5 * alpha), S(5), 15, 1)
-    U.text_center(dl, x, cy, w, label, P.text, F.semi, T.tiny - 1, alpha)
+    U.text_center(dl, math.floor(x + 0.5), math.floor(cy + 0.5), w, label, P.text, F.semi, T.tiny - 1, alpha)
     return w
 end
 
