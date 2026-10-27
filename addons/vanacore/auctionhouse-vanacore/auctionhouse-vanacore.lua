@@ -3427,7 +3427,7 @@ local function draw_main(t)
         if PAD.capturing() then PAD.claim() end -- X and Y are the window's, never ImGui's activate or window switcher
         -- the header (search box, buttons) and the tab row are out of the pad's reach: the bumpers and buttons do
         -- their jobs, and the ring never wanders up there from a list's top (ImGuiItemFlags_NoNav)
-        local pad_nav = PAD.shown() and imgui.PushItemFlag ~= nil
+        local pad_nav = PAD.capturing() and imgui.PushItemFlag ~= nil -- (connected, not only lately pressed: ImGui's first focus on opening went to the header)
         if pad_nav then imgui.PushItemFlag(2, true) end
         local hy = draw_header(dl, x, y, w, t)
         local ty = y + hy + S(10)
