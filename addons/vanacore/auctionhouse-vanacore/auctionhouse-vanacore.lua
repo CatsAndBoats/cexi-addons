@@ -1715,13 +1715,20 @@ local function draw_sidebar(dl, x, y, w, h)
             for _, cat in ipairs(g.cats) do
                 local n = #I.category(cat)
                 if n > 0 or not I.answered(cat) then -- (one the house hasn't answered for yet shows, empty)
+                    -- a sub-section's header (Weapons' Ammo & Misc.), and its rows indented under it
+                    local sub = g.sub and g.sub.cats[cat]
+                    if g.sub and cat == g.sub.first then
+                        text_mid(cdl, x + S(26), cy + S(10), LANG.t(g.sub.name):upper(), P.faint, F.disp, T.tiny - 1)
+                        cy = cy + S(20)
+                    end
+                    local ind = sub and S(10) or 0
                     imgui.SetCursorScreenPos({ x, cy })
                     local seat = seating and cat == st.category
                     if seat and st.pad_first == 1 then imgui.SetKeyboardFocusHere() end
                     keys[#keys + 1] = '##cat' .. cat
                     if st.stick_seat_key == keys[#keys] then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end
                     edge_seat('##cat' .. cat, false, '##cat' .. cat == last_key)
-                    local cp, _, chv = hit('##cat' .. cat, w, S(24), S(7), { x = x + S(12), y = cy + S(1), w = w - S(18), h = S(22) })
+                    local cp, _, chv = hit('##cat' .. cat, w, S(24), S(7), { x = x + S(12) + ind, y = cy + S(1), w = w - S(18) - ind, h = S(22) })
                     if seat then imgui.SetItemDefaultFocus() end
                     if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
                     local on = st.category == cat and st.results == nil
@@ -1733,8 +1740,8 @@ local function draw_sidebar(dl, x, y, w, h)
                         -- a controller: Confirm on a category goes on to its list's first row
                         if PAD.shown() then st.pad_first, st.pad_first_id, st.pad_cats = 3, nil, false end
                     end
-                    if on then cdl:AddRectFilled({ x + S(12), cy + S(1) }, { x + w - S(6), cy + S(23) }, u32(GOLD, 0.14), S(7)) end
-                    text_mid(cdl, x + S(26), cy + S(12), LANG.t(I.CATEGORY_NAME[cat] or ('Category ' .. cat)), on and GOLD or mix(P.dim, P.text, 0.5 + 0.5 * chv), F.text, T.small)
+                    if on then cdl:AddRectFilled({ x + S(12) + ind, cy + S(1) }, { x + w - S(6), cy + S(23) }, u32(GOLD, 0.14), S(7)) end
+                    text_mid(cdl, x + S(26) + ind, cy + S(12), LANG.t(I.CATEGORY_NAME[cat] or ('Category ' .. cat)), on and GOLD or mix(P.dim, P.text, 0.5 + 0.5 * chv), F.text, T.small)
                     -- how many are up, once known
                     local list = st.lists[cat]
                     if list then

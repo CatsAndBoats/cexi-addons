@@ -72,7 +72,7 @@ local JA = {
         ['Shields'] = '盾', ['Hand-to-Hand'] = '格闘', ['Daggers'] = '短剣', ['Swords'] = '片手剣',
         ['Great Swords'] = '両手剣', ['Axes'] = '片手斧', ['Great Axes'] = '両手斧', ['Scythes'] = '両手鎌',
         ['Polearms'] = '両手槍', ['Katana'] = '片手刀', ['Great Katana'] = '両手刀', ['Clubs'] = '片手棍',
-        ['Staves'] = '両手杖', ['Ranged'] = '射撃', ['Instruments'] = '楽器', ['Ammo & Misc'] = '矢・弾',
+        ['Staves'] = '両手杖', ['Ranged'] = '射撃', ['Instruments'] = '楽器', ['Ammo & Misc'] = '矢・弾', ['Ammo & Misc.'] = '矢弾・他', ['Ammunition'] = '矢・弾',
         ['White Magic'] = '白魔法', ['Black Magic'] = '黒魔法', ['Summoning'] = '召喚',
         ['Ninjutsu'] = '忍術', ['Songs'] = '歌', ['Medicines'] = '薬品', ['Furnishings'] = '調度品',
         ['Crystals'] = 'クリスタル', ['Cards'] = 'カード', ['Cursed Items'] = '呪物',

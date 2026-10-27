@@ -233,7 +233,7 @@ function I.forget_records() records = {} end
 I.CATEGORY_NAME = {
     [1] = 'Hand-to-Hand', [2] = 'Daggers', [3] = 'Swords', [4] = 'Great Swords', [5] = 'Axes', [6] = 'Great Axes',
     [7] = 'Scythes', [8] = 'Polearms', [9] = 'Katana', [10] = 'Great Katana', [11] = 'Clubs', [12] = 'Staves',
-    [13] = 'Ranged', [14] = 'Instruments', [15] = 'Ammo & Misc', [16] = 'Shields', [17] = 'Head', [18] = 'Body',
+    [13] = 'Ranged', [14] = 'Instruments', [15] = 'Ammunition', [16] = 'Shields', [17] = 'Head', [18] = 'Body',
     [19] = 'Hands', [20] = 'Legs', [21] = 'Feet', [22] = 'Neck', [23] = 'Waist', [24] = 'Earrings', [25] = 'Rings',
     [26] = 'Back', [28] = 'White Magic', [29] = 'Black Magic', [30] = 'Summoning', [31] = 'Ninjutsu', [32] = 'Songs',
     [33] = 'Medicines', [34] = 'Furnishings', [35] = 'Crystals', [36] = 'Cards', [37] = 'Cursed Items',
@@ -247,11 +247,13 @@ I.CATEGORY_NAME = {
 
 -- the sidebar's groups, in the order the house shows them
 I.GROUPS = {
-    { id = 'weapons', name = 'Weapons', icon = 'khanda', cats = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 } },
+    -- (Weapons ends in the game's Ammo & Misc. menu: its own sub-section, a header and indented rows)
+    { id = 'weapons', name = 'Weapons', icon = 'khanda', cats = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 47, 48, 62 },
+        sub = { name = 'Ammo & Misc.', cats = { [15] = true, [47] = true, [48] = true, [62] = true }, first = 15 } },
     { id = 'armor', name = 'Armor', icon = 'shield-halved', cats = { 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26 } },
-    { id = 'scrolls', name = 'Scrolls', icon = 'scroll', cats = { 28, 29, 30, 31, 32 } },
-    { id = 'items', name = 'Items', icon = 'flask', cats = { 33, 34, 35, 36, 37, 47, 48, 49, 50, 60, 61, 62 } },
-    { id = 'materials', name = 'Materials', icon = 'gem', cats = { 38, 39, 40, 41, 42, 43, 44, 45, 63 } },
+    { id = 'scrolls', name = 'Scrolls', icon = 'scroll', cats = { 28, 29, 30, 31, 32, 45 } }, -- (45: Geomancy, the Indi- scrolls)
+    { id = 'items', name = 'Items', icon = 'flask', cats = { 33, 34, 35, 36, 37, 49, 50, 60, 61 } },
+    { id = 'materials', name = 'Materials', icon = 'gem', cats = { 38, 39, 40, 41, 42, 43, 44, 63 } },
     { id = 'food', name = 'Food', icon = 'utensils', cats = { 51, 52, 53, 54, 55, 56, 57, 58, 59 } },
     { id = 'others', name = 'Others', icon = 'box', cats = { 46, 64, 65, 99, 255 } },
 }
