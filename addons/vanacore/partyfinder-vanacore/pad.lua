@@ -415,6 +415,9 @@ function PAD.claim()
     if not imgui.Shortcut then return end
     pcall(imgui.Shortcut, KEY.x, ROUTE_GLOBAL)
     pcall(imgui.Shortcut, KEY.y, ROUTE_GLOBAL)
+    -- and the sticks: ImGui reads the left one as a second D-pad, which carried the ring out of a list's ends while
+    -- the window's own stick walk held it; the window does its own stick work (PAD.stick)
+    for k = KEY.ls_left, KEY.rs_down do pcall(imgui.Shortcut, k, ROUTE_GLOBAL) end
 end
 -- pressed, or held past `delay` and repeating every `every`
 function PAD.repeating(name, delay, every)

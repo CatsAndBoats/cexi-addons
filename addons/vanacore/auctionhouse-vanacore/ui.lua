@@ -455,7 +455,12 @@ local function hit(key, w, h, r, ring)
     -- the controller's focus (ImGui's navigation), drawn as a ring by draw_toasts while the controller is in use
     if A.pad_shown and imgui.IsItemFocused() then
         local fx, fy = imgui.GetItemRectMin()
-        A.focus = { x = ring and ring.x or fx, y = ring and ring.y or fy, w = math.max(1, ring and ring.w or w), h = math.max(1, ring and ring.h or h), r = r, at = now_t, key = key }
+        -- (with the panel it's drawn in: the ring is drawn over everything, clipped to that, so a row scrolled out of
+        -- its list doesn't show its ring outside the window)
+        local cx0, cy0 = imgui.GetWindowPos()
+        local cw, ch = imgui.GetWindowSize()
+        A.focus = { x = ring and ring.x or fx, y = ring and ring.y or fy, w = math.max(1, ring and ring.w or w), h = math.max(1, ring and ring.h or h), r = r, at = now_t, key = key,
+            clip = { cx0, cy0, cx0 + cw, cy0 + ch } }
     end
     return pressed, hovered, v
 end
@@ -759,11 +764,17 @@ local function draw_toasts(t)
         -- the halo spreads with the size of the thing: three soft rings round a card, one tight ring round a small
         -- row or a pill has the ring alone (the halo turned a 22 px row into a blob)
         local steps = fo.h >= S(44) and 3 or 0
+        local cl, pad = fo.clip, S(6)
+        local seen = cl == nil or (fo.y + fo.h > cl[2] and fo.y < cl[4] and fo.x + fo.w > cl[1] and fo.x < cl[3])
+        if seen and cl then fdl:PushClipRect({ cl[1] - pad, cl[2] - pad }, { cl[3] + pad, cl[4] + pad }, false) end
+        if seen then
         for i = steps, 1, -1 do
             fdl:AddRect({ fo.x - S(i) - 1, fo.y - S(i) - 1 }, { fo.x + fo.w + S(i) + 1, fo.y + fo.h + S(i) + 1 }, u32(P.accent, 0.07 * pulse * (4 - i)), r + S(i), 15, S(2))
         end
         fdl:AddRect({ fo.x - 1, fo.y - 1 }, { fo.x + fo.w + 1, fo.y + fo.h + 1 }, u32(P.accent, 0.95), r + 1, 15, math.max(1.5, S(1.5)))
         if steps > 1 then fdl:AddRect({ fo.x, fo.y }, { fo.x + fo.w, fo.y + fo.h }, u32('#FFFFFF', 0.25 * pulse), r, 15, 1) end
+        end
+        if seen and cl then fdl:PopClipRect() end
     end
     local sw = vana.ui.screen()
     local y = S(96)
