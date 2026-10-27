@@ -567,7 +567,12 @@ local function on_packet(e)
         local item, price, qty = u16(d, 0x0C), rd32(d, 0x08), rd32(d, 0x10)
         if result == RESULT.Ok then
             -- (the game says it in chat too: "You buy the ... for ... gil")
-            U.toast('ok', 'Bought ' .. I.name(item), (qty > 1 and (qty .. ' for ') or '') .. gil(price) .. ' gil', 5, 'cart-shopping')
+            if LANG.ja() then
+                local what = (qty > 1 and (I.name(item) .. LANG.t(' (stack)')) or I.name(item))
+                U.toast('ok', LANG.t('Bought'), string.format(LANG.t('%s bought for %s gil'), what, gil(price)), 5, 'cart-shopping')
+            else
+                U.toast('ok', 'Bought ' .. I.name(item), (qty > 1 and (qty .. ' for ') or '') .. gil(price) .. ' gil', 5, 'cart-shopping')
+            end
             LEDGER.add({ kind = 'bought', id = item, stack = qty > 1, price = price })
             forget_history(item)
             st.inv_at = 0 -- the gil changes a moment after this reply: read the bag again on the next frame or two
@@ -578,9 +583,14 @@ local function on_packet(e)
             end
             refresh_inventory()
         elseif result == RESULT.Full then
-            U.toast('danger', "Couldn't buy", 'Your inventory is full, or you already hold that rare item', 6, 'triangle-exclamation')
+            U.toast('danger', LANG.t("Couldn't buy"), LANG.t('Your inventory is full, or you already hold that rare item'), 6, 'triangle-exclamation')
         else
-            U.toast('danger', 'Bid failed', 'Nobody is selling ' .. I.name(b and b.item or item) .. ' at that price', 6, 'hand-holding-dollar')
+            local missed = I.name(b and b.item or item)
+            if LANG.ja() then
+                U.toast('danger', LANG.t('Bid failed'), string.format(LANG.t('%s is not listed at that price'), missed), 6, 'hand-holding-dollar')
+            else
+                U.toast('danger', 'Bid failed', 'Nobody is selling ' .. missed .. ' at that price', 6, 'hand-holding-dollar')
+            end
             forget_history(b and b.item or item)
         end
     end
@@ -1001,7 +1011,12 @@ local function on_sold(name, buyer, price)
         fetch_history(id, stack, true)
     end
     local what = id and I.name(id) or name
-    U.toast('ok', 'Sold!', what .. (stack and ' (stack)' or '') .. '  ·  ' .. gil(price) .. ' gil from ' .. buyer, 8, 'sack-dollar')
+    if LANG.ja() then
+        local sold = stack and (what .. LANG.t(' (stack)')) or what
+        U.toast('ok', LANG.t('Sold!'), string.format(LANG.t('%s sold for %s gil (to %s)'), sold, gil(price), buyer), 8, 'sack-dollar')
+    else
+        U.toast('ok', 'Sold!', what .. (stack and ' (stack)' or '') .. '  ·  ' .. gil(price) .. ' gil from ' .. buyer, 8, 'sack-dollar')
+    end
 end
 
 -- ask the house about every watched item
@@ -3042,6 +3057,7 @@ local function draw_confirm()
     local w, h = S(420), (c.kind == 'sell' or c.kind == 'clear') and S(206) or S(176)
     if c.kind == 'relist' then w, h = S(470), S(338) end
     if c.kind == 'sell' and st.relist then h = h + S(18) end
+    if c.kind == 'sell' and LANG.ja() then h = S(320) + (st.relist and S(18) or 0) end
     if c.kind == 'cancel' and st.server_page ~= nil and st.server_page ~= c.page then h = h + S(18) end -- a line about the wait
     U.dialog('##ah_confirm', w, h, 0, function (dl, x, y)
         shadow(dl, x, y, w, h, S(16), 1.5)
@@ -3107,7 +3123,7 @@ local function draw_confirm()
                 st.confirm = nil
                 do_cancel(c)
             end
-            if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), 'Cancel', P.dim, 'ghost') then
+            if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), LANG.t('Cancel'), P.dim, 'ghost') then
                 st.confirm = nil
             end
             return
@@ -3124,10 +3140,21 @@ local function draw_confirm()
             local a = st.sell.asked
             local r = I.get(a.item)
             local what = r.name .. (a.stack and (' (a stack of ' .. r.stack .. ')') or '')
-            title = (st.relist and LANG.t('Relist') or 'List') .. ' ' .. what .. ' for ' .. gil(a.price) .. ' gil?'
-            body = (st.relist and (string.format(LANG.t('It was up for %s gil and is in your bag now.'), gil(st.relist.old)) .. '\n') or '') .. 'Listing fee: ' .. gil(st.sell.fee or 0) .. ' gil, paid now and kept whether or not it sells.'
-                .. '\nWhen it sells, ' .. gil(a.price) .. ' gil goes to your delivery box.'
-                .. '\nUnsold, it waits at the house until you take it down.'
+            local prior = st.relist and (string.format(LANG.t('It was up for %s gil and is in your bag now.'), gil(st.relist.old)) .. '\n') or ''
+            if LANG.ja() then
+                local named = a.stack and string.format(LANG.t('%s (a stack of %d)'), r.name, r.stack) or r.name
+                title = (st.relist and (LANG.t('Relist') .. '：') or '') .. string.format(LANG.t('%s for %s gil?'), named, gil(a.price))
+                body = prior
+                    .. string.format(LANG.t('Listing fee: %s gil. It is not returned even if the item does not sell.'), gil(st.sell.fee or 0))
+                    .. '\n' .. LANG.t('If no bid reaches the minimum within 30 Vana\'diel weeks, the listing is cancelled and the item returns to your Mog House.')
+                    .. '\n' .. LANG.t('When it sells, the payment is sent to your Mog House.')
+                    .. '\n' .. LANG.t('An inscribed item loses its inscription after it sells.')
+            else
+                title = (st.relist and LANG.t('Relist') or 'List') .. ' ' .. what .. ' for ' .. gil(a.price) .. ' gil?'
+                body = prior .. 'Listing fee: ' .. gil(st.sell.fee or 0) .. ' gil, paid now and kept whether or not it sells.'
+                    .. '\nWhen it sells, ' .. gil(a.price) .. ' gil goes to your delivery box.'
+                    .. '\nUnsold, it waits at the house until you take it down.'
+            end
             yes, ic, col = LANG.t('List it'), 'tag', GOLD
             item_icon(dl, a.item, x + w - S(22) - S(48), y + S(16), S(48), 1)
             if a.stack then stack_badge(dl, x + w - S(22) - S(48), y + S(16), S(48), r.stack) end
@@ -3163,7 +3190,7 @@ local function draw_confirm()
             st.confirm = nil
             if c.kind == 'buy' and PAD.shown() then st.pad_seat = 'bid' end -- the controller's focus comes back to the card
         end
-        if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), 'Cancel', P.dim, 'ghost') then
+        if button(dl, '##cno', x + w - S(22) - S(136) - S(8) - S(96), y + h - S(50), S(96), S(34), LANG.t('Cancel'), P.dim, 'ghost') then
             st.confirm = nil
             if c.kind == 'buy' and PAD.shown() then st.pad_seat = 'bid' end
         end
