@@ -1667,6 +1667,14 @@ local function draw_tabs(dl, x, y, w)
     return h
 end
 
+-- a group's sub-section is open when opened, and starts open when the category in use is one of its own
+local function sub_open(g)
+    if st.sub_open == nil then st.sub_open = {} end
+    local o = st.sub_open[g.id]
+    if o == nil then o = g.sub.cats[st.category] == true st.sub_open[g.id] = o end
+    return o
+end
+
 -- the categories, grouped
 local function draw_sidebar(dl, x, y, w, h)
     panel(dl, x, y, w, h, P.glass, 0.92, S(12))
@@ -1677,7 +1685,9 @@ local function draw_sidebar(dl, x, y, w, h)
     -- focused window, then the row seated in it the frame after, as the list does
     local seating = st.pad_first and st.pad_cats and PAD.capturing()
     if seating then
-        st.group_open[I.group_of(st.category).id] = true
+        local gg = I.group_of(st.category)
+        st.group_open[gg.id] = true
+        if gg.sub and gg.sub.cats[st.category] then st.sub_open = st.sub_open or {} st.sub_open[gg.id] = true end
         if st.pad_first == 2 then imgui.SetWindowFocus() end
     end
     local cy = y + S(8) - imgui.GetScrollY() -- drawn where the scroll puts it
@@ -1687,7 +1697,12 @@ local function draw_sidebar(dl, x, y, w, h)
         last_key = '##grp' .. g.id
         local open = st.group_open[g.id]
         if open == nil then open = g.id == st.group end
-        if open then for _, cat in ipairs(g.cats) do if #I.category(cat) > 0 then last_key = '##cat' .. cat end end end
+        if open then
+            for _, cat in ipairs(g.cats) do
+                if g.sub and g.sub.cats[cat] and not sub_open(g) then last_key = '##sub' .. g.id -- (its row, closed)
+                elseif #I.category(cat) > 0 or not I.answered(cat) then last_key = '##cat' .. cat end
+            end
+        end
     end
     -- a stick with the ring in the sidebar walks its rows (in last frame's order; the row scrolls into view itself)
     if st.pad_where == 'cats' and st.cat_keys then
@@ -1714,13 +1729,26 @@ local function draw_sidebar(dl, x, y, w, h)
         if open then
             for _, cat in ipairs(g.cats) do
                 local n = #I.category(cat)
-                if n > 0 or not I.answered(cat) then -- (one the house hasn't answered for yet shows, empty)
-                    -- a sub-section's header (Weapons' Ammo & Misc.), and its rows indented under it
-                    local sub = g.sub and g.sub.cats[cat]
-                    if g.sub and cat == g.sub.first then
-                        text_mid(cdl, x + S(26), cy + S(10), LANG.t(g.sub.name):upper(), P.faint, F.disp, T.tiny - 1)
-                        cy = cy + S(20)
-                    end
+                local sub = g.sub and g.sub.cats[cat]
+                -- a sub-section (Weapons' Ammo & Misc.) is a row of its own, opened like a group: its categories
+                -- show under it, indented, only while it's open
+                if sub and cat == g.sub.first then
+                    local skey = '##sub' .. g.id
+                    imgui.SetCursorScreenPos({ x, cy })
+                    keys[#keys + 1] = skey
+                    if st.stick_seat_key == skey then imgui.SetKeyboardFocusHere() st.stick_seat_key = nil end
+                    edge_seat(skey, false, skey == last_key)
+                    local sp, _, shv = hit(skey, w, S(24), S(7), { x = x + S(12), y = cy + S(1), w = w - S(18), h = S(22) })
+                    if imgui.IsItemFocused() then st.pad_where_now = 'cats' end
+                    local so = sub_open(g)
+                    if sp then st.sub_open[g.id] = not so so = not so end
+                    local holds = g.sub.cats[st.category] and st.results == nil -- (the category in use is in it)
+                    text_mid(cdl, x + S(26), cy + S(12), LANG.t(g.sub.name), holds and GOLD or mix(P.dim, P.text, 0.5 + 0.5 * shv), F.text, T.small)
+                    icon(cdl, x + w - S(18), cy + S(12), so and 'chevron-down' or 'chevron-right', P.faint, T.tiny)
+                    cy = cy + S(24)
+                end
+                if sub and not sub_open(g) then n, sub = -1, nil end -- (closed: its categories aren't drawn)
+                if n > 0 or (n == 0 and not I.answered(cat)) then -- (one the house hasn't answered for yet shows, empty)
                     local ind = sub and S(10) or 0
                     imgui.SetCursorScreenPos({ x, cy })
                     local seat = seating and cat == st.category
@@ -3256,6 +3284,8 @@ local function pad_buttons()
             local e = CAT_ORDER[(i - 1 + step) % #CAT_ORDER + 1]
             st.category, st.group = e.cat, e.group
             st.group_open[e.group] = true
+            local gg = I.group_of(e.cat) -- (and its sub-section, should the category be in one)
+            if gg.sub and gg.sub.cats[e.cat] then st.sub_open = st.sub_open or {} st.sub_open[gg.id] = true end
             st.query[1], st.results = '', nil
             st.list_at = clock()
             -- the focus follows: in the sidebar it moves to the new category, anywhere else to the list's first row
