@@ -35,7 +35,7 @@ local imgui  = require('imgui');
 local sounds = require('sounds');
 
 local function pfprint(msg)
-    AshitaCore:GetChatManager():AddChatMessage(29, false, '[PartyFinder] ' .. msg);
+    AshitaCore:GetChatManager():AddChatMessage(142, false, '[PartyFinder] ' .. msg);
 end
 
 ------------------------------------------------------------

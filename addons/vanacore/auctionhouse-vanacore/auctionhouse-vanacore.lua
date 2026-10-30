@@ -101,7 +101,7 @@ local function fail(where, err)
 end
 
 local function say(text)
-    vana.chat.write('[Auction] ' .. text, 29)
+    vana.chat.write('[Auction] ' .. text, 142)
 end
 
 local function clock() return vana.time.clock() end
