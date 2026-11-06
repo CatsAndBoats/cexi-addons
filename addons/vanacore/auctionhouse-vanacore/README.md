@@ -27,7 +27,7 @@ beside each category is how many of its items are up right now. The list shows e
 how many singles and stacks are up, and the last sale once it's known; sort it by name, level or stock (names A to Z, level and stock highest first; click the sort in use again
 to turn it round, and its arrow shows which way it runs), and the
 **In stock** chip hides everything with nothing up, and the **Usable** chip hides gear your current main job,
-at its level, and your race can't wear, and spell scrolls neither your main job nor your sub job can learn at
+at its level, and your race can't wear, and spell scrolls (and Geomancy's Indi- plates) neither your main job nor your sub job can learn at
 their current levels (the server's own rule when a scroll is used); anything else (food, medicines, materials) stays
 listed (both chips at the right of the tab row, both remembered). Gear you can wear and scrolls you can learn have a
 yellow name in the list, and the rest of those are dimmed. The search box in the header finds any listed item by

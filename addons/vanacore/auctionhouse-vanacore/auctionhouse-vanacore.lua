@@ -14,7 +14,7 @@
 
 addon.name    = 'auctionhouse-vanacore'
 addon.author  = 'Carver'
-addon.version = '1.1.2'
+addon.version = '1.2'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -777,7 +777,7 @@ end
 
 -- whether you can learn the spell a scroll teaches, as you are: your main job at its level, or your sub job at its
 -- level, has it (the server's own check when the scroll is used). nil for anything that isn't a spell's scroll
-local SCROLL_CATS = { [28] = true, [29] = true, [30] = true, [31] = true, [32] = true }
+local SCROLL_CATS = { [28] = true, [29] = true, [30] = true, [31] = true, [32] = true, [45] = true } -- 45: Geomancy plates
 local function can_learn(id)
     if not SCROLL_CATS[I.category_of(id) or 0] then return nil end
     local lv = I.scroll_levels(id)

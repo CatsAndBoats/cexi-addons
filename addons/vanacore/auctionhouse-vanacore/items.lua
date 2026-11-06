@@ -78,7 +78,7 @@ function I.scroll_levels(id)
     -- the English name: slot 2 on a Japanese client, slot 0 (the default) on an English one
     local name = cstr(it.Name[2])
     if name == '' or name:find('[\128-\255]') then name = cstr(it.Name[0]) end
-    name = name:gsub('^[Ss]croll of ', '')
+    name = name:gsub('^[Ss]croll of ', ''):gsub('^[Pp]late of ', '') -- a scroll, or a Geomancy plate
     if name == '' or name:find('[\128-\255]') then return nil end
     local ok, p = pcall(get_spell, name)
     if not ok or p == nil then return nil end
