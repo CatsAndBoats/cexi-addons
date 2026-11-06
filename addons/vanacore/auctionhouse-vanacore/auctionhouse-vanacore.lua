@@ -6,14 +6,16 @@
     you have up. It speaks the game's own auction packets (0x04E / 0x04C) for buying, selling and your sales, and asks
     the search server directly, the way the game does, for categories, stock and history. Nothing server-side.
 
-    /ah opens it. Talk to an auction clerk, as you would: whatever the clerk is called, in a city or an outpost, the
-    server answers with the house's Open packet, and that is what lets you bid and sell (and where you stood is kept,
-    so /ah there later can trade as well).
+    /ah opens it at an auction counter, as the game's own window does. Bidding, listing and taking down work only in
+    a zone that has a counter (the cities, Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Whitegate, Nashmau,
+    Adoulin) and within a few yalms of a clerk, whose spots the addon knows (clerks.lua): nowhere else, whatever the
+    server would allow, and no setting changes that. View the Auction House anywhere (Settings) opens it elsewhere
+    for browsing only.
 ]]
 
 addon.name    = 'auctionhouse-vanacore'
 addon.author  = 'Carver'
-addon.version = '1.1'
+addon.version = '1.1.1'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -30,6 +32,7 @@ local PRICES = require('prices')
 local LEDGER = require('ledger')
 local COMPARE = require('compare')
 local PAD = require('pad')
+local CLERKS = require('clerks') -- where the auction clerks stand, per zone
 local LANG = require('lang') -- the window's language (English, or Japanese on a Japanese client; Hando's strings)
 local P = U.P
 local S = U.S
@@ -44,9 +47,10 @@ local PKT = { out = 0x04E, inc = 0x04C, size = 60 }
 local CMD = { Open = 0x02, AskCommit = 0x04, Info = 0x05, WorkCheck = 0x0A, LotIn = 0x0B, LotCancel = 0x0C, LotCheck = 0x0D, Bid = 0x0E }
 local RESULT = { Ok = 1, Fail = 197, Wait = 246, Unable = 0xC5, Full = 0xE5 }
 
--- how far from a spot the house was opened at it still serves you (yalms), how long fetched lists and histories stay fresh (s),
--- how often the sales list may be asked for (the server says 5 s), how long to wait on the server before saying so
-local LIMITS = { counter = 5.5, list = 90, history = 45, sales = 5.5, reply = 6, scan = 0.5, inventory = 2, retry = 8 }
+-- how far from a clerk the house serves you (yalms; the game's own window wants you about as close), how long fetched
+-- lists and histories stay fresh (s), how often the sales list may be asked for (the server says 5 s), how long to
+-- wait on the server before saying so
+local LIMITS = { counter = 6, list = 90, history = 45, sales = 5.5, reply = 6, scan = 0.5, inventory = 2, retry = 8 }
 
 -------------------------------------------------------------------------------
 -- State and settings
@@ -56,7 +60,7 @@ local st = {
     open = false, tab = 'buy', group = 'armor', category = 17, selected = nil, stack = false,
     query = { '' }, results = nil, result_total = 0,
     lists = {}, hist = {}, fetching = {},
-    counter = { near = false, dist = nil, at = 0 }, zone_ok = nil, work_at = 0,
+    counter = { near = false, here = false, dist = nil, zone = nil, at = 0 }, zone_ok = nil, work_at = 0,
     sales = {}, sales_at = 0, sales_open = false, sales_wait = false, -- rows keyed (page - 1) * 6 + slot + 1
     sweep = nil, server_page = nil, page_n = nil, reply_page = nil, sales_total = nil, -- the server's pages (its ah_pagination module)
     sell = { slot = nil, stack = false, price = { '' }, fee = nil, asked = nil, pending = false, at = 0 },
@@ -69,12 +73,12 @@ local st = {
 }
 
 local settings = {
-    scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, take_over = true, spots = {}, search_host = '', search_port = 54002,
+    scale = 100, opacity = 1.0, keybind = '^A', confirm_buy = true, take_over = true, search_host = '', search_port = 54002,
     sort = 'name', in_stock = false, remember = {},
     chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false, compare = false,
     sellable_only = false, -- the Sell tab hides what the house won't take
     open_sound = true, open_sound_id = 'small_bell', -- a bell as the window opens (sounds\<id>.wav)
-    view_anywhere = false, -- the window opens away from a counter too (browsing; bids and sales still need one)
+    view_anywhere = false, -- the window opens away from a counter too, for browsing only (bids, listings and take-downs still need one)
     language = 'auto', -- 'auto' (the client's), 'en' or 'ja'
     sell_view = 'grid', -- the Sell tab's bag: 'grid' (icons) or 'list' (rows with names)
     icon = 'cat', -- the header's badge: 'cat' (images\badge_cat.png) or 'coin' (the glass gil, drawn)
@@ -383,7 +387,6 @@ local function u16(d, off) return u8(d, off) + u8(d, off + 1) * 256 end
 local function rd32(d, off) return u16(d, off) + u16(d, off + 2) * 65536 end
 
 local open_window -- defined with the actions below; the packet handler needs it first
-local remember_spot -- the same, with the counter below
 
 local function refresh_inventory()
     local ok, inv = pcall(vana.game.container, 0)
@@ -477,14 +480,15 @@ local function on_packet(e)
     local cmd, work, result, status = u8(d, 0x04), u8(d, 0x05), u8(d, 0x06), u8(d, 0x07)
     if work >= 128 then work = work - 256 end
     if cmd == CMD.Open then
-        -- a clerk was talked to (or a GM's !ah): this is the house's own word that you may trade here
+        -- a clerk was talked to (or a GM's !ah): the server's menu, which this window replaces. Not its word that you
+        -- may trade: that goes by where you stand (a clerk within reach, in a zone that has them), and !ah works away
+        -- from any counter (for everyone on the test server)
         st.zone_ok = true
         st.server_opened = true
-        pcall(remember_spot)
         st.counter.at = 0 -- look again next frame, should the window be up already
         if settings.take_over then
-            -- the counter was talked to: this window opens in place of the game's menu
-            if not st.open then open_window() end
+            -- the clerk was talked to: this window opens in place of the game's menu, wherever the menu was asked for
+            if not st.open then open_window(true) end
             st.settings_open = false
             return true
         end
@@ -789,44 +793,35 @@ local function can_learn(id)
 end
 
 -------------------------------------------------------------------------------
--- Where you are: the counter, the zone
+-- Where you are: the zone, the counter
 --
 -- No NPC names: clerks are called many things (Auction Counter in the cities, people in Jeuno, Rabao, Norg,
--- Tavnazia, Nashmau and the rest), but talking to any of them makes the server send 0x04C Open. Each time it does,
--- the spot you stand on is kept for that zone, and being within a few yalms of a kept spot is being at the counter.
+-- Tavnazia, Nashmau and the rest), and a Japanese client names them differently again. Where they stand is known
+-- instead (clerks.lua, from the server's NPC table), per zone: being within LIMITS.counter yalms of one is being at
+-- the counter, and a zone with none in the table has no auction house, whatever the server's flags say.
 -------------------------------------------------------------------------------
 
+-- your entity and your zone: the zone from the zone-in itself where VanaCore gives it, since the party list's zone
+-- lags a zone-in by the seconds the new zone takes to load
 local function here()
-    local e = me()
-    if e == nil or type(e.x) ~= 'number' then return nil, nil end
     local okp, party = pcall(vana.game.party)
     local m = okp and type(party) == 'table' and type(party.members) == 'table' and party.members[1] or nil
-    return e, m and tonumber(m.zone) or nil
-end
-
-remember_spot = function ()
-    local e, zone = here()
-    if e == nil or zone == nil then return end
-    if type(settings.spots) ~= 'table' then settings.spots = {} end
-    local list = type(settings.spots[zone]) == 'table' and settings.spots[zone] or {}
-    local near = LIMITS.counter / 2
-    for _, p in ipairs(list) do
-        local dx, dy, dz = p[1] - e.x, p[2] - e.y, p[3] - e.z
-        if dx * dx + dy * dy + dz * dz <= near * near then return end -- known already
-    end
-    if #list >= 16 then table.remove(list, 1) end
-    local r = function (v) return math.floor(v * 10 + 0.5) / 10 end
-    list[#list + 1] = { r(e.x), r(e.y), r(e.z) }
-    settings.spots[zone] = list
-    save_settings()
+    local zone = m and tonumber(m.zone) or nil
+    local okz, z = pcall(function () return vana.game.player_zone(zone) end)
+    if okz and type(z) == 'number' and z > 0 then zone = z end
+    local e = me()
+    if e == nil or type(e.x) ~= 'number' then return nil, zone end
+    return e, zone
 end
 
 local function scan_counter()
     st.counter.at = clock()
     local e, zone = here()
-    local list = e and zone and type(settings.spots) == 'table' and settings.spots[zone] or nil
+    local list = zone and CLERKS[zone] or nil
+    st.counter.zone = zone
+    st.counter.here = list ~= nil -- this zone has an auction counter
     local best = nil
-    if type(list) == 'table' then
+    if e and list then
         for _, p in ipairs(list) do
             local dx, dy, dz = p[1] - e.x, p[2] - e.y, p[3] - e.z
             local d = math.sqrt(dx * dx + dy * dy + dz * dz)
@@ -834,15 +829,30 @@ local function scan_counter()
         end
     end
     st.counter.dist = best
-    -- where you are can't be read: the server's word alone
-    if e == nil then st.counter.near = st.server_opened == true return end
+    -- where you stand can't be read: in a zone with a counter, the server's Open (a clerk talked to) is the word
+    if e == nil then st.counter.near = list ~= nil and st.server_opened == true return end
     st.counter.near = best ~= nil and best <= LIMITS.counter
 end
 
--- bidding, listing and taking down need you at a clerk, always: the server only checks that the zone has an auction
--- house, so this is what keeps trading at the counter, as the game's own window does (browsing works anywhere)
+-- bidding, listing and taking down need you at a clerk, always: in a zone that has one, within reach of it, as the
+-- game's own window does. The server checks the zone's flag only (and the test server lets anyone open the menu
+-- anywhere with !ah), so this is the addon's own rule, and no setting turns it off; browsing is another matter
 local function may_trade()
     return st.counter.near
+end
+
+-- why a trade is refused where you are (nil when it isn't): no counter in this zone, or the nearest one too far
+local function trade_block()
+    if not logged_in() then return LANG.t('Not logged in') end
+    if not st.counter.here then return LANG.t('No auction counter here') end
+    if st.counter.near then return nil end
+    if st.counter.dist then return string.format(LANG.t('Counter %.0f yalms away'), st.counter.dist) end
+    return LANG.t('Walk up to an auction counter')
+end
+
+-- a bid, a listing or a take-down asked for away from a counter: the reason, as a notice
+local function refuse_trade()
+    U.toast('danger', trade_block() or LANG.t('Talk to an auction clerk'), LANG.t('Bidding, listing and taking down need an auction counter within reach'), 5, 'gavel')
 end
 
 -------------------------------------------------------------------------------
@@ -850,7 +860,7 @@ end
 -------------------------------------------------------------------------------
 
 local function do_buy(item, price, stack)
-    if not may_trade() then say('Talk to an auction clerk to buy.') return end
+    if not may_trade() then refuse_trade() return end
     if price <= 0 then return end
     if price > 999999999 then U.toast('danger', 'Too high', 'The house takes bids up to 999,999,999 gil', 4, 'ban') return end
     if price > st.gil then U.toast('danger', 'Not enough gil', 'You have ' .. gil(st.gil) .. ' gil', 4, 'coins') return end
@@ -859,7 +869,7 @@ local function do_buy(item, price, stack)
 end
 
 local function do_ask(slot, item, price, stack)
-    if not may_trade() then say('Talk to an auction clerk to sell.') return end
+    if not may_trade() then refuse_trade() return end
     if price > 999999999 then U.toast('danger', 'Too high', 'The house takes prices up to 999,999,999 gil', 4, 'ban') return end
     st.sell.pending = true
     st.sell.at = clock()
@@ -878,7 +888,7 @@ end
 
 -- take a listing down: straight away while the house is showing its page, else by turning the pages to it first
 local function do_cancel(c)
-    if not may_trade() then say('Talk to an auction clerk.') return end
+    if not may_trade() then refuse_trade() return end
     if st.server_page == nil or st.server_page == c.page then
         st.cancel_pending = c.key
         st.cancel_at = clock()
@@ -1034,14 +1044,16 @@ local function play_open_sound(force)
     if vana.fs.exists(path) then pcall(vana.system.play_sound, path) end
 end
 
-open_window = function ()
-    -- as the game's own, unless View anywhere is on: only at an auction counter (within 5.5 yalms of where a clerk
-    -- was talked to), and the window closes on walking away from it (tick)
+open_window = function (by_server)
+    -- as the game's own, unless View anywhere is on: only at an auction counter (within reach of a clerk), and the
+    -- window closes on walking away from it (tick). The server's own Open (a clerk talked to, or !ah) opens it
+    -- wherever it comes, since that is the game's menu, replaced: for browsing there, not trading
     scan_counter()
-    if not st.counter.near and not settings.view_anywhere then
-        if not st.open then U.toast('danger', LANG.t('Talk to an auction clerk'), LANG.t("The house opens at its counter, as the game's own does"), 5, 'gavel') end
+    if not by_server and not st.counter.near and not settings.view_anywhere then
+        if not st.open then U.toast('danger', trade_block() or LANG.t('Talk to an auction clerk'), LANG.t("The house opens at its counter, as the game's own does; View anywhere in Settings opens it for browsing"), 5, 'gavel') end
         return
     end
+    st.open_away = (by_server and not st.counter.near) or nil -- opened by the server away from any counter: no counter to walk away from
     if not st.open then play_open_sound() end -- (not again for /ah buy and the like on a window already open)
     st.open = true
     -- the controller's focus starts on the category in the sidebar (on a search's first result when one is up)
@@ -1518,8 +1530,7 @@ local function draw_header(dl, x, y, w, t)
     local where
     if not logged_in() then where = LANG.t('Not logged in')
     elseif st.counter.near then where = LANG.t('At the counter')
-    elseif st.counter.dist then where = string.format('Counter %.0f yalms away', st.counter.dist)
-    else where = LANG.t('Talk to an auction clerk to trade') end
+    else where = trade_block() or LANG.t('Talk to an auction clerk to trade') end
     local sub = where
     if st.lists[st.category] then
         local n = 0
@@ -2299,7 +2310,7 @@ local function draw_detail(dl, x, y, w, h, t)
         end
     end
     if not may_trade() then
-        text(dl, cx, by + S(40), 'Talk to an auction clerk to bid', P.warn, F.text, T.tiny)
+        text(dl, cx, by + S(40), (trade_block() or LANG.t('Talk to an auction clerk to trade')) .. '  ·  ' .. LANG.t('bids need one'), P.warn, F.text, T.tiny)
     elseif price > st.gil then
         text(dl, cx, by + S(40), "That's more gil than you have", P.warn, F.text, T.tiny)
     elseif hs and hs.stats and price > 0 and price < hs.stats.low then
@@ -2571,7 +2582,7 @@ local function draw_sell(dl, x, y, w, h, t)
     -- transaction (the price, the fee paid now, the payout) to say yes to; a fee already known opens it at once
     local known = st.sell.asked and st.sell.asked.price == price and st.sell.asked.stack == st.sell.stack
     if not may_trade() then
-        text(dl, sx, sy, LANG.t('Talk to an auction clerk to sell'), P.warn, F.text, T.small)
+        text(dl, sx, sy, (trade_block() or LANG.t('Talk to an auction clerk to trade')) .. '  ·  ' .. LANG.t('listing needs one'), P.warn, F.text, T.small)
     elseif short then
         text(dl, sx, sy, string.format(LANG.t('You have %d of %d: a stack lists once you have a full one'), st.sell.count, r.stack), P.warn, F.text, T.small)
     elseif known then
@@ -2619,7 +2630,7 @@ local function draw_sales(dl, x, y, w, h, t)
             text_center(dl, x, y + h / 2 + S(54), w, 'The house hands them out a page at a time; a few seconds', P.dim, F.text, T.small)
         else
             text_center(dl, x, y + h / 2 + S(30), w, st.sales_open and LANG.t('Nothing up for sale') or LANG.t('Ask the house'), P.text, F.disp, T.h1)
-            text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and LANG.t('Sell something from your bag') or (may_trade() and LANG.t('Refresh lists what you have up') or LANG.t('Talk to an auction clerk')), P.dim, F.text, T.small)
+            text_center(dl, x, y + h / 2 + S(54), w, st.sales_open and LANG.t('Sell something from your bag') or (may_trade() and LANG.t('Refresh lists what you have up') or trade_block() or LANG.t('Talk to an auction clerk')), P.dim, F.text, T.small)
         end
         return
     end
@@ -3069,15 +3080,18 @@ local function draw_settings(dl, x, y, w, h)
     end
     if button(dl, '##bind_change', bx, cy, S(96), S(30), LANG.t(st.bind_capture and 'Cancel' or 'Change'), P.accent, 'ghost', nil, F.semi, T.small) then st.bind_capture = not st.bind_capture or nil end
     if st.bind_capture then capture_keybind() end
-    -- browsing away from a counter: at the bottom, in a warning box that can't be missed
+    -- browsing away from a counter: at the bottom, in a warning box that can't be missed. Browsing is all it is:
+    -- bids, listings and take-downs go by where you stand, and no setting changes that
     do
-        local bx, bw, bh = x + S(20), w - S(40), S(56)
+        local bx, bw = x + S(20), w - S(40)
+        local lines = wrap(LANG.t('Browsing only: bidding, listing and taking down still need you at an auction counter, in a zone that has one. Using the Auction House outside of normal areas is generally against the rules on most servers and can be easily tracked. Use at your own risk, you have been warned.'), F.text, T.tiny, bw - S(70))
+        local bh = S(30) + #lines * S(13)
         local by_ = y + h - S(12) - bh
         panel(dl, bx, by_, bw, bh, P.warn, settings.view_anywhere and 0.16 or 0.08, S(10), P.warn)
         icon(dl, bx + S(18), by_ + S(14), 'triangle-exclamation', P.warn, T.body)
         v, ch = U.toggle(dl, '##t_anywhere', bx + S(34), by_ + S(14), LANG.t('View the Auction House anywhere'), settings.view_anywhere) settings.view_anywhere = v changed = changed or ch
         local ty = by_ + S(28)
-        for _, l in ipairs(wrap(LANG.t('Using the Auction House outside of normal areas is generally against the rules on most servers and can be easily tracked. Use at your own risk, you have been warned.'), F.text, T.tiny, bw - S(70))) do
+        for _, l in ipairs(lines) do
             text(dl, bx + S(34), ty, l, P.warn, F.text, T.tiny)
             ty = ty + S(13)
         end
@@ -3610,8 +3624,9 @@ local function tick()
             end
         end
         if clock() - st.counter.at > LIMITS.scan then scan_counter() end
-        -- walked away from the counter: the house closes, as the game's menu would
-        if st.open and not settings.view_anywhere and not st.counter.near and st.counter.dist ~= nil then
+        -- walked away from the counter: the house closes, as the game's menu would (not one the server opened away
+        -- from any counter: there was none to leave)
+        if st.open and not settings.view_anywhere and not st.open_away and not st.counter.near and st.counter.dist ~= nil then
             st.open = false
             say(LANG.t('You have left the auction counter'))
         end
@@ -3711,7 +3726,7 @@ vana.events.on('packet_in', function (e)
         st.sweep, st.server_page, st.page_n, st.reply_page = nil, nil, nil, nil -- the house starts at page 1 again
         st.cancel_pending = nil -- the server drops a take-down with the zone, without a reply
         st.lists = {}
-        st.counter.near = false
+        st.counter.near, st.counter.here, st.counter.dist, st.open_away = false, false, nil, nil
         st.server_opened = false
     end
 end)
@@ -3868,8 +3883,8 @@ vana.events.on('command', function (e)
         else PAD.inject({ [arg] = true }, tonumber(words[4]) or 3) end
     elseif what == 'debug' then
         scan_counter() -- measured now, not when the window last looked
-        say(string.format('in %d, out %d, search %s pending %d, counter %s (%s), zone ok %s, lists %d, gil %s',
-            st.counts.pin, st.counts.pout, tostring(st.search_where), SEARCH.pending(), tostring(st.counter.near), tostring(st.counter.dist and string.format('%.1f', st.counter.dist)), tostring(st.zone_ok),
+        say(string.format('in %d, out %d, search %s pending %d, zone %s (counter %s), at counter %s (nearest %s), zone ok %s, lists %d, gil %s',
+            st.counts.pin, st.counts.pout, tostring(st.search_where), SEARCH.pending(), tostring(st.counter.zone), st.counter.here and 'yes' or 'none', tostring(st.counter.near), tostring(st.counter.dist and string.format('%.1f', st.counter.dist)), tostring(st.zone_ok),
             (function () local n = 0 for _ in pairs(st.lists) do n = n + 1 end return n end)(), gil(st.gil)))
         say('last error: ' .. tostring(st.last_error))
         say('bid box: "' .. tostring(st.buy.price[1]) .. '"  query: "' .. tostring(st.query[1]) .. '"')

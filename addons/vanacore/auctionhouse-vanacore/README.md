@@ -13,7 +13,7 @@ when asked (on a stock server that tab stays empty), and sold notices come from 
 
 Talking to any auction clerk opens it in place of the game's menu (a setting; off, the game's menu comes back):
 the city Auction Counters and the outpost clerks of Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Nashmau and the
-rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default; change the key or turn it off in Settings, or `/ah bind`) opens it too, but only within 5.5 yalms of a counter you've talked to, as the game's own house only opens at its counter, and it closes when you walk away. Settings has **View the Auction House anywhere** for browsing from anywhere, with a warning: that's against the rules on most servers and easily tracked. Bidding, selling and taking down always need you at the counter: the server only checks that the zone has an auction house, so the addon keeps the rule itself.
+rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default; change the key or turn it off in Settings, or `/ah bind`) opens it too, but only within 6 yalms of a clerk, as the game's own house only opens at its counter, and it closes when you walk away. Settings has **View the Auction House anywhere** for browsing from anywhere, with a warning: that's against the rules on most servers and easily tracked. Bidding, selling and taking down go by where you stand, and nothing in Settings changes that: only in a zone that has an auction counter (the three cities, Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Whitegate, Nashmau, Adoulin), within reach of a clerk. Where the clerks stand is built in (`clerks.lua`, from the server's NPC table), so no clerk need have been talked to first; elsewhere (Eastern Altepa, say) the Bid, List and Take down buttons are greyed and the header says why: **No auction counter here**, or how far the nearest one is. The server itself checks only the zone's flag, and its `!ah` command (anyone's on the test server) opens the menu anywhere, so the addon keeps the rule itself.
 
 ## Install
 
@@ -112,7 +112,7 @@ addon's own bridge (`pad.lua`) does the same from the game's controller reads. `
 state, `/ah pad off` turns it off (a setting), and `/ah pad <button>` presses a button as a controller would, for
 trying it without one.
 
-**Settings** (the gear): the theme, View the Auction House anywhere (with its warning), talking to a clerk opens this window, confirm before
+**Settings** (the gear): the theme, View the Auction House anywhere (browsing only, with its warning), talking to a clerk opens this window, confirm before
 bidding, the price graph, background checks of watched items, opacity and scale, and the sound as it opens: a small
 bell by default, or Counter bell, Door chime, Chapel bell, Crystal chime, Tiny bell, or Off (picking one plays it, and
 the speaker beside it plays it again; `/ah sound <name>` and `/ah sound off` do the same). The search server isn't shown
@@ -154,7 +154,7 @@ The Japanese localization is Hando's work (cexi-addons PR #11) — thank you.
 | `/ah scale <percent>` | Window size, 50 to 300 |
 | `/ah opacity <percent>` | Window opacity, 40 to 100 |
 | `/ah refresh` | Forget fetched lists and histories |
-| `/ah debug` | Counters, the search server, whether you're at a clerk, the last error |
+| `/ah debug` | Counters, the search server, the zone and whether it has a counter, the nearest clerk, the last error |
 | `/ah pad [on\|off\|<button>]` | The controller: its state, the setting, or a press of `a`, `b`, `x`, `y`, `up`, `down`, `left`, `right`, `l1`, `r1`, `l2`, `r2`, `start`, `back`; `/ah pad stick <x> <y> [frames]` a stick |
 
 Settings and the watch list are kept per character in `Vanacore\config\addons\auctionhouse-vanacore\<name>.lua`; the
@@ -172,13 +172,17 @@ dropped.
 
 - **The counter:** talking to any auction clerk makes the server send `0x04C` with command `Open`
   (`sendMenu(AUCTION)`), nothing more; the addon swallows that packet and opens its window, so the game never draws
-  its menu and nothing is left waiting server-side. No NPC names are looked at. The Open is the server's word that
-  this is an auction house, and where you stood when it came is kept in your settings, per zone (`spots`): within 5.5 yalms of a kept spot counts as at the counter, so `/ah` there later can bid and sell too.
+  its menu and nothing is left waiting server-side. No NPC names are looked at. Whether you may trade doesn't come
+  from that packet (the server's `!ah` sends it anywhere): `clerks.lua` has where every auction clerk stands, per
+  zone, taken from the server's `npc_list` for the NPC scripts that open the auction menu, in VanaCore's entity axes;
+  within 6 yalms of one is at the counter, and a zone with no entry has no auction house. Older settings files still
+  carry a `spots` table from when the addon learned the counters by talking to them; it isn't read anymore.
 - **Buying, selling, your sales:** packet `0x04E` out and `0x04C` in (`map/packets/c2s/0x04e_auc.h`): WorkCheck when
   the window opens, Bid, AskCommit then LotIn to sell (both carry an auction work slot 0–6 at 0x05; the server refuses
   −1 there without a word), Info for the sales list (the server's AH pagination module
   pages it six at a time; its chat lines are hidden while the window is asking), LotCancel to take one down. The
-  server checks the zone has an auction house; standing at a clerk is the addon's own rule (settings).
+  server checks only that the zone's flag allows an auction house; standing at a clerk, in a zone that has one, is
+  the addon's own rule, and no setting turns it off.
 - **Categories, stock, history:** the search server (`src/search`), over TCP on the login host, port 54002. The
   addon speaks its protocol itself (`search.lua`): a length-prefixed packet, Blowfish over the body with a key made
   from 16 fixed bytes, 4 random bytes sent in the clear and, for the reply, 4 more carried inside the request; an
@@ -195,6 +199,7 @@ dropped.
 
 - `auctionhouse-vanacore.lua` — the addon: state, the game packets, the window
 - `search.lua`, `bf_tables.lua` — the search-server client and LandSandBoat's Blowfish boxes
+- `clerks.lua` — where the auction clerks stand, per zone, from the server's NPC table: what lets the house trade
 - `items.lua` — the game's item data through the resource manager, icon textures, what the house lists (from its
   own answers, kept per server) and the name search
 - `prices.lua` — the price record (every sale seen, per server) and the graphs drawn from it
