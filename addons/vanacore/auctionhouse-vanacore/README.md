@@ -13,7 +13,7 @@ when asked (on a stock server that tab stays empty), and sold notices come from 
 
 Talking to any auction clerk opens it in place of the game's menu (a setting; off, the game's menu comes back):
 the city Auction Counters and the outpost clerks of Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Nashmau and the
-rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default; change the key or turn it off in Settings, or `/ah bind`) opens it too, but only within 6 yalms of a clerk, as the game's own house only opens at its counter, and it closes when you walk away. Settings has **View the Auction House anywhere** for browsing from anywhere, with a warning: that's against the rules on most servers and easily tracked. Bidding, selling and taking down go by where you stand, and nothing in Settings changes that: only in a zone that has an auction counter (the three cities, Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Whitegate, Nashmau, Adoulin), within reach of a clerk. Where the clerks stand is built in (`clerks.lua`, from the server's NPC table), so no clerk need have been talked to first; elsewhere (Eastern Altepa, say) the Bid, List and Take down buttons are greyed and the header says why: **No auction counter here**, or how far the nearest one is. The server itself checks only the zone's flag, and its `!ah` command (anyone's on the test server) opens the menu anywhere, so the addon keeps the rule itself.
+rest alike, since it goes by the server's answer, not the clerk's name. `/ah` (Ctrl+A by default; change the key or turn it off in Settings, or `/ah bind`) opens it too, anywhere, for browsing: prices, history, search and your listings are always there to look at. Bidding, selling and taking down go by where you stand, and nothing in Settings changes that: only in a zone that has an auction counter (the three cities, Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Whitegate, Nashmau, Adoulin), within reach of a clerk. Where the clerks stand is built in (`clerks.lua`, from the server's NPC table), so no clerk need have been talked to first; elsewhere (Eastern Altepa, say) the Bid, List and Take down buttons are greyed and the header says why: **No auction counter here**, or how far the nearest one is (walk away from a counter and the window stays open, the buttons grey, and the log says so once). The server itself checks only the zone's flag, and its `!ah` command (anyone's on the test server) opens the menu anywhere, so the addon keeps the rule itself.
 
 ## Install
 
@@ -112,7 +112,7 @@ addon's own bridge (`pad.lua`) does the same from the game's controller reads. `
 state, `/ah pad off` turns it off (a setting), and `/ah pad <button>` presses a button as a controller would, for
 trying it without one.
 
-**Settings** (the gear): the theme, View the Auction House anywhere (browsing only, with its warning), talking to a clerk opens this window, confirm before
+**Settings** (the gear): the theme, talking to a clerk opens this window, confirm before
 bidding, the price graph, background checks of watched items, opacity and scale, and the sound as it opens: a small
 bell by default, or Counter bell, Door chime, Chapel bell, Crystal chime, Tiny bell, or Off (picking one plays it, and
 the speaker beside it plays it again; `/ah sound <name>` and `/ah sound off` do the same). The search server isn't shown

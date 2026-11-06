@@ -6,16 +6,15 @@
     you have up. It speaks the game's own auction packets (0x04E / 0x04C) for buying, selling and your sales, and asks
     the search server directly, the way the game does, for categories, stock and history. Nothing server-side.
 
-    /ah opens it at an auction counter, as the game's own window does. Bidding, listing and taking down work only in
-    a zone that has a counter (the cities, Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Whitegate, Nashmau,
-    Adoulin) and within a few yalms of a clerk, whose spots the addon knows (clerks.lua): nowhere else, whatever the
-    server would allow, and no setting changes that. View the Auction House anywhere (Settings) opens it elsewhere
-    for browsing only.
+    /ah opens it anywhere, for browsing. Bidding, listing and taking down work only in a zone that has a counter
+    (the cities, Jeuno, Rabao, Norg, Kazham, Tavnazia, Al Zahbi, Whitegate, Nashmau, Adoulin) and within a few yalms
+    of a clerk, whose spots the addon knows (clerks.lua): nowhere else, whatever the server would allow, and no
+    setting changes that.
 ]]
 
 addon.name    = 'auctionhouse-vanacore'
 addon.author  = 'Carver'
-addon.version = '1.1.1'
+addon.version = '1.1.2'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -78,7 +77,6 @@ local settings = {
     chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false, compare = false,
     sellable_only = false, -- the Sell tab hides what the house won't take
     open_sound = true, open_sound_id = 'small_bell', -- a bell as the window opens (sounds\<id>.wav)
-    view_anywhere = false, -- the window opens away from a counter too, for browsing only (bids, listings and take-downs still need one)
     language = 'auto', -- 'auto' (the client's), 'en' or 'ja'
     sell_view = 'grid', -- the Sell tab's bag: 'grid' (icons) or 'list' (rows with names)
     icon = 'cat', -- the header's badge: 'cat' (images\badge_cat.png) or 'coin' (the glass gil, drawn)
@@ -488,7 +486,7 @@ local function on_packet(e)
         st.counter.at = 0 -- look again next frame, should the window be up already
         if settings.take_over then
             -- the clerk was talked to: this window opens in place of the game's menu, wherever the menu was asked for
-            if not st.open then open_window(true) end
+            if not st.open then open_window() end
             st.settings_open = false
             return true
         end
@@ -1044,16 +1042,10 @@ local function play_open_sound(force)
     if vana.fs.exists(path) then pcall(vana.system.play_sound, path) end
 end
 
-open_window = function (by_server)
-    -- as the game's own, unless View anywhere is on: only at an auction counter (within reach of a clerk), and the
-    -- window closes on walking away from it (tick). The server's own Open (a clerk talked to, or !ah) opens it
-    -- wherever it comes, since that is the game's menu, replaced: for browsing there, not trading
+open_window = function ()
+    -- anywhere, for browsing: where you stand only decides whether you may trade (scan_counter, may_trade), and
+    -- the window says so itself. The server's own Open (a clerk talked to, or !ah) opens it the same way
     scan_counter()
-    if not by_server and not st.counter.near and not settings.view_anywhere then
-        if not st.open then U.toast('danger', trade_block() or LANG.t('Talk to an auction clerk'), LANG.t("The house opens at its counter, as the game's own does; View anywhere in Settings opens it for browsing"), 5, 'gavel') end
-        return
-    end
-    st.open_away = (by_server and not st.counter.near) or nil -- opened by the server away from any counter: no counter to walk away from
     if not st.open then play_open_sound() end -- (not again for /ah buy and the like on a window already open)
     st.open = true
     -- the controller's focus starts on the category in the sidebar (on a search's first result when one is up)
@@ -3080,22 +3072,6 @@ local function draw_settings(dl, x, y, w, h)
     end
     if button(dl, '##bind_change', bx, cy, S(96), S(30), LANG.t(st.bind_capture and 'Cancel' or 'Change'), P.accent, 'ghost', nil, F.semi, T.small) then st.bind_capture = not st.bind_capture or nil end
     if st.bind_capture then capture_keybind() end
-    -- browsing away from a counter: at the bottom, in a warning box that can't be missed. Browsing is all it is:
-    -- bids, listings and take-downs go by where you stand, and no setting changes that
-    do
-        local bx, bw = x + S(20), w - S(40)
-        local lines = wrap(LANG.t('Browsing only: bidding, listing and taking down still need you at an auction counter, in a zone that has one. Using the Auction House outside of normal areas is generally against the rules on most servers and can be easily tracked. Use at your own risk, you have been warned.'), F.text, T.tiny, bw - S(70))
-        local bh = S(30) + #lines * S(13)
-        local by_ = y + h - S(12) - bh
-        panel(dl, bx, by_, bw, bh, P.warn, settings.view_anywhere and 0.16 or 0.08, S(10), P.warn)
-        icon(dl, bx + S(18), by_ + S(14), 'triangle-exclamation', P.warn, T.body)
-        v, ch = U.toggle(dl, '##t_anywhere', bx + S(34), by_ + S(14), LANG.t('View the Auction House anywhere'), settings.view_anywhere) settings.view_anywhere = v changed = changed or ch
-        local ty = by_ + S(28)
-        for _, l in ipairs(lines) do
-            text(dl, bx + S(34), ty, l, P.warn, F.text, T.tiny)
-            ty = ty + S(13)
-        end
-    end
     text(dl, cx, cy + S(30), LANG.t('Japanese localization: thanks to Hando'), P.faint, F.text, T.tiny)
     if changed then save_settings() end
 end
@@ -3624,12 +3600,9 @@ local function tick()
             end
         end
         if clock() - st.counter.at > LIMITS.scan then scan_counter() end
-        -- walked away from the counter: the house closes, as the game's menu would (not one the server opened away
-        -- from any counter: there was none to leave)
-        if st.open and not settings.view_anywhere and not st.open_away and not st.counter.near and st.counter.dist ~= nil then
-            st.open = false
-            say(LANG.t('You have left the auction counter'))
-        end
+        -- walked away from the counter: the house stays open for browsing, and says once that trading is off
+        if st.open and st.was_near and not st.counter.near then say(LANG.t('You have left the auction counter')) end
+        st.was_near = st.counter.near
         -- the bag and the gil, kept current (a purchase or a fee changes the gil a moment after the house replies)
         if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
         if st.sweep and not st.sales_wait and clock() - st.sales_at >= SWEEP_GAP then
@@ -3726,7 +3699,7 @@ vana.events.on('packet_in', function (e)
         st.sweep, st.server_page, st.page_n, st.reply_page = nil, nil, nil, nil -- the house starts at page 1 again
         st.cancel_pending = nil -- the server drops a take-down with the zone, without a reply
         st.lists = {}
-        st.counter.near, st.counter.here, st.counter.dist, st.open_away = false, false, nil, nil
+        st.counter.near, st.counter.here, st.counter.dist, st.was_near = false, false, nil, false
         st.server_opened = false
     end
 end)
