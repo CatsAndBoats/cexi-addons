@@ -28,6 +28,10 @@ Whichever it is, the window or the beacon, is kept: zoning, a reload or the next
 During a cutscene or a conversation with an NPC the finder and its beacon step aside, and come back as they were
 when it ends.
 
+Right-click a card for its menu. **Send tell** opens a tell that already says the right thing for that listing: to
+a recruiting party, that you'd like to join (your job, their category; or that you'd take the next open spot if
+it's full); to a player who's looking, an invitation into your party (how many you are, what for).
+
 ## Themes and looks
 
 Thirteen themes in settings (or `/pf theme`): each is a palette and a piece of art behind the listings, the art

@@ -2652,6 +2652,26 @@ end
 
 local function entry_menu(entry)
     local self = entry.name == my_name()
+    -- the tell's opening line: asking to join their party, or inviting them into mine
+    local function tell_text()
+        local m = me()
+        local mine = m and job_str(m.main_job, m.main_job_level, m.sub_job, m.sub_job_level) or nil
+        local cat = CATEGORY[entry.category or 0]
+        local theirs = cat and (' ' .. cat.name) or ''
+        if entry.type == 2 then
+            if SLOTS.full(entry) then
+                return string.format("[Party Finder] Hi! If a spot opens in your party, I'd like to join%s.", mine and (' (' .. mine .. ')') or '')
+            end
+            return string.format('[Party Finder] Hi! %s here, could I join your%s party?', mine or 'I am', theirs)
+        end
+        local rcat = st.registered and st.reg.type == 2 and CATEGORY[st.reg.category or 0] or nil
+        local for_ = rcat and (' for ' .. rcat.name) or (cat and (' for ' .. cat.name) or '')
+        local n = party_info()
+        if n > 1 then
+            return string.format("[Party Finder] Hi! We're %d so far%s, would you like to join us?", n, for_)
+        end
+        return string.format("[Party Finder] Hi! Want to team up%s? I'm %s.", for_, mine or 'looking too')
+    end
     if imgui.BeginPopup('##menu' .. entry.id) then
         with_font(F.text, T.body, function ()
             imgui.TextColored(rgba(P.accent), entry.name)
@@ -2671,7 +2691,7 @@ local function entry_menu(entry)
                     end
                 end
                 imgui.Separator()
-                if imgui.MenuItem('Send tell') then st.tell = { name = entry.name, text = { '[Party Finder] Would you like to join my party?' } } end
+                if imgui.MenuItem('Send tell') then st.tell = { name = entry.name, text = { tell_text() } } end
                 if imgui.MenuItem('Search') then vana.chat.run('/sea all ' .. entry.name, 1) end
                 imgui.Separator()
                 if settings.blacklist[entry.name:lower()] then
