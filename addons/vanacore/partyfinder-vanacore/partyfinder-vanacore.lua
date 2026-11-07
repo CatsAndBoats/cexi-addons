@@ -2530,6 +2530,7 @@ end
 
 -- the tooltip of a listing, drawn by hand so it can carry the sprites
 local function entry_tooltip(entry)
+    if st.menu then return end -- the menu is open: no tooltip over it
     local members = entry.type == 2 and (st.members[entry.id] or {}) or {}
     local rows = entry.category == 5 and venture_rows(entry) or nil
     local w = S(340)
@@ -2650,12 +2651,19 @@ local function entry_tooltip(entry)
     imgui.EndTooltip()
 end
 
-local function entry_menu(entry)
+-- the card's right-click menu: a glass sheet at the pointer, in the finder's own style. st.menu names the listing
+-- (by id: the entries are replaced on every refresh) and where it was opened.
+local function entry_menu()
+    local m = st.menu
+    if m == nil then return end
+    local entry = nil
+    for _, e in ipairs(st.entries) do if e.id == m.id then entry = e end end
+    if entry == nil or not (st.open and not st.mini) then st.menu = nil return end
     local self = entry.name == my_name()
     -- the tell's opening line: asking to join their party, or inviting them into mine
     local function tell_text()
-        local m = me()
-        local mine = m and job_str(m.main_job, m.main_job_level, m.sub_job, m.sub_job_level) or nil
+        local me_ = me()
+        local mine = me_ and job_str(me_.main_job, me_.main_job_level, me_.sub_job, me_.sub_job_level) or nil
         local cat = CATEGORY[entry.category or 0]
         local theirs = cat and (' ' .. cat.name) or ''
         if entry.type == 2 then
@@ -2672,39 +2680,103 @@ local function entry_menu(entry)
         end
         return string.format("[Party Finder] Hi! Want to team up%s? I'm %s.", for_, mine or 'looking too')
     end
-    if imgui.BeginPopup('##menu' .. entry.id) then
-        with_font(F.text, T.body, function ()
-            imgui.TextColored(rgba(P.accent), entry.name)
-            imgui.Separator()
-            if not self then
-                if not compatible(entry.mode) then
-                    imgui.TextDisabled('(Incompatible game mode)')
-                elseif entry.type == 2 and SLOTS.full(entry) then
-                    imgui.TextDisabled('(Party is full)')
-                elseif entry.type == 2 then
-                    if imgui.MenuItem(entry.auto == 1 and 'Join party' or 'Request to join') then do_join(entry, st.create and st.create.role or 0) end
-                else
-                    if leader_or_solo() then
-                        if imgui.MenuItem('Invite to party') then do_invite(entry) end
-                    else
-                        imgui.TextDisabled('Only the party leader can invite')
-                    end
-                end
-                imgui.Separator()
-                if imgui.MenuItem('Send tell') then st.tell = { name = entry.name, text = { tell_text() } } end
-                if imgui.MenuItem('Search') then vana.chat.run('/sea all ' .. entry.name, 1) end
-                imgui.Separator()
-                if settings.blacklist[entry.name:lower()] then
-                    if imgui.MenuItem('Unblock player') then set_block(entry.name, false) end
-                else
-                    if imgui.MenuItem('Block player') then set_block(entry.name, true) end
-                end
-            else
-                if imgui.MenuItem('Withdraw my listing') then do_withdraw() end
-            end
-        end)
-        imgui.EndPopup()
+    -- the rows: label, icon, colour, what it does; off = why it can't be done right now
+    local rows = {}
+    if self then
+        rows[#rows + 1] = { label = 'Withdraw my listing', ic = 'xmark', color = P.danger, run = do_withdraw }
+    else
+        if entry.type == 2 then
+            local r = { label = entry.auto == 1 and 'Join party' or 'Request to join', ic = entry.auto == 1 and 'right-to-bracket' or 'paper-plane',
+                color = P.accent, run = function () do_join(entry, st.create and st.create.role or 0) end }
+            if not compatible(entry.mode) then r.off = 'incompatible game mode'
+            elseif SLOTS.full(entry) then r.off = 'party is full' end
+            rows[#rows + 1] = r
+        else
+            local r = { label = 'Invite to party', ic = 'user-plus', color = P.accent, run = function () do_invite(entry) end }
+            if not compatible(entry.mode) then r.off = 'incompatible game mode'
+            elseif not leader_or_solo() then r.off = 'only the leader can invite' end
+            rows[#rows + 1] = r
+        end
+        rows[#rows + 1] = { gap = true }
+        rows[#rows + 1] = { label = 'Send tell', ic = 'comment', color = P.cyan, run = function () st.tell = { name = entry.name, entry = entry, text = { tell_text() }, at = now_t } end }
+        rows[#rows + 1] = { label = 'Search', ic = 'magnifying-glass', color = P.text, run = function () vana.chat.run('/sea all ' .. entry.name, 1) end }
+        rows[#rows + 1] = { gap = true }
+        if settings.blacklist[entry.name:lower()] then
+            rows[#rows + 1] = { label = 'Unblock player', ic = 'circle-check', color = P.ok, run = function () set_block(entry.name, false) end }
+        else
+            rows[#rows + 1] = { label = 'Block player', ic = 'ban', color = P.danger, run = function () set_block(entry.name, true) end }
+        end
     end
+    local w, row_h, gap_h, head_h, pad = S(240), S(32), S(9), S(46), S(6)
+    local h = head_h + pad * 2
+    for _, r in ipairs(rows) do h = h + (r.gap and gap_h or row_h) end
+    m.anim = math.min(1, (m.anim or 0) + dt * 9)
+    local a = ease(m.anim)
+    local sw, sh = vana.ui.screen()
+    local x = math.max(S(8), math.min(m.x, sw - w - S(8)))
+    local y = math.max(S(8), math.min(m.y, sh - h - S(8))) - S(6) * (1 - a)
+    imgui.SetNextWindowPos({ x, y }, ALWAYS)
+    imgui.SetNextWindowSize({ w, h }, ALWAYS)
+    m.frames = (m.frames or 0) + 1
+    if m.frames <= 3 then imgui.SetNextWindowFocus() end -- in front of the finder, whatever the click that opened it did to the focus
+    if imgui.Begin('##lfg_menu', nil, WINDOW_FLAGS + NO_SAVE) then
+        local dl = imgui.GetWindowDrawList()
+        local mg = S(40)
+        dl:PushClipRect({ x - mg, y - mg }, { x + w + mg, y + h + mg }, false)
+        local ok, err = pcall(function ()
+            local role = ROLES[entry.role or 0]
+            shadow(dl, x, y, w, h, S(14), 1.5 * a)
+            panel(dl, x, y, w, h, P.glass, a, S(14), P.line, false)
+            -- the head: who, in their role's colour, and what they're after
+            dl:AddRectFilled({ x + 1, y + 1 }, { x + w - 1, y + head_h }, u32(role.color, 0.08 * a), S(13), 48) -- 48: the top corners
+            text(dl, x + S(14), y + S(8), fit(entry.name, F.disp, T.body, w - S(104)), P.text, F.disp, T.body, a)
+            local jl = job_str(entry.job, entry.level, entry.sub, entry.sub_level)
+            local jw = measure(jl, F.semi, T.tiny)
+            text(dl, x + w - S(14) - jw, y + S(11), jl, role.color, F.semi, T.tiny, a)
+            local what = entry.type == 2 and 'Recruiting' or 'Looking for a group'
+            local cat = CATEGORY[entry.category or 0]
+            if cat then what = what .. '  ·  ' .. cat.name end
+            text(dl, x + S(14), y + S(27), fit(what, F.text, T.tiny, w - S(28)), P.dim, F.text, T.tiny, a)
+            dl:AddLine({ x + 1, y + head_h }, { x + w - 1, y + head_h }, u32(P.line, a), 1)
+            local cy = y + head_h + pad
+            for i, r in ipairs(rows) do
+                if r.gap then
+                    dl:AddLine({ x + S(14), cy + gap_h / 2 }, { x + w - S(14), cy + gap_h / 2 }, u32(P.line, 0.8 * a), 1)
+                    cy = cy + gap_h
+                else
+                    local key, rx, rw = '##menu' .. i, x + pad, w - pad * 2
+                    imgui.SetCursorScreenPos({ rx, cy })
+                    local pressed, _, hv = hit(key, rw, row_h, S(8))
+                    if r.off then hv = 0 end
+                    if hv > 0 then
+                        dl:AddRectFilled({ rx, cy }, { rx + rw, cy + row_h }, u32(r.color, (0.06 + 0.1 * hv) * a), S(8))
+                        dl:AddRectFilled({ rx, cy + S(9) }, { rx + S(3), cy + row_h - S(9) }, u32(r.color, hv * a), S(1.5))
+                    end
+                    draw_ripples(dl, key, rx, cy, rw, row_h, r.color)
+                    icon(dl, rx + S(18), cy + row_h / 2, r.ic, r.off and P.faint or r.color, T.small, a)
+                    text_mid(dl, rx + S(36), cy + row_h / 2, r.label, r.off and P.faint or mix(P.text, r.color, 0.3 + 0.7 * hv), F.semi, T.small, a)
+                    if r.off then
+                        local ow = measure(r.off, F.text, T.tiny)
+                        text_mid(dl, rx + rw - S(10) - ow, cy + row_h / 2, r.off, P.warn, F.text, T.tiny, a)
+                    elseif pressed then
+                        ripple_at(key)
+                        r.run()
+                        st.menu = nil
+                    end
+                    cy = cy + row_h
+                end
+            end
+            -- a click anywhere else, or Escape, closes it (not on the frame it opened on: the window isn't hovered yet)
+            if now_t - (m.at or 0) > 0.15 and (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1)) then
+                local mx, my = imgui.GetMousePos()
+                if mx < x or mx > x + w or my < y or my > y + h then st.menu = nil end
+            end
+            if imgui.IsKeyPressed(PAD.KEY.escape) then st.menu = nil end
+        end)
+        dl:PopClipRect()
+        if not ok then fail('menu', err) end
+    end
+    imgui.End()
 end
 
 local CARD_H, CARD_H_COMPACT = 72, 54
@@ -2776,9 +2848,11 @@ local function draw_card_compact(dl, entry, x, y, w, t, alpha, ghost)
             elseif leader_or_solo() then st.confirm = { entry = entry, kind = 'invite' }
             else say('Only the party leader can invite.') end
         end
-        if imgui.IsMouseClicked(1) then imgui.OpenPopup('##menu' .. entry.id) end
+        if imgui.IsMouseReleased(1) then -- on the release: a press makes ImGui bring the pressed window to the front next frame, over anything opened then
+            local mx, my = imgui.GetMousePos()
+            st.menu = { id = entry.id, x = mx - S(10), y = my - S(10), at = now_t, anim = 0 } -- under the pointer, so it has the hover from the start
+        end
     end
-    if not ghost then entry_menu(entry) end
     return h
 end
 
@@ -2919,9 +2993,11 @@ local function draw_card(dl, entry, x, y, w, t, alpha, ghost)
                 say('Only the party leader can invite.')
             end
         end
-        if imgui.IsMouseClicked(1) then imgui.OpenPopup('##menu' .. entry.id) end
+        if imgui.IsMouseReleased(1) then -- on the release: a press makes ImGui bring the pressed window to the front next frame, over anything opened then
+            local mx, my = imgui.GetMousePos()
+            st.menu = { id = entry.id, x = mx - S(10), y = my - S(10), at = now_t, anim = 0 } -- under the pointer, so it has the hover from the start
+        end
     end
-    if not ghost then entry_menu(entry) end
     return h
 end
 
@@ -3601,26 +3677,32 @@ end
 local function draw_tell()
     local tl = st.tell
     if tl == nil then return end
-    local w, h = S(480), S(136)
+    local w, h = S(500), S(160)
     dialog('##lfg_tell', w, h, S(120), function (dl, x, y)
         shadow(dl, x, y, w, h, S(16), 1.5)
         panel(dl, x, y, w, h, P.glass, 1, S(16), P.cyan, true)
         icon(dl, x + S(32), y + S(28), 'comment', P.cyan, T.h2)
         text(dl, x + S(48), y + S(16), 'Tell ' .. tl.name, P.text, F.disp, T.h1)
-        imgui.SetCursorScreenPos({ x + S(22), y + S(48) })
+        local e = tl.entry
+        if e then
+            local cat = CATEGORY[e.category or 0]
+            local line = job_str(e.job, e.level, e.sub, e.sub_level) .. '  ·  ' .. (e.type == 2 and 'recruiting' or 'looking for a group') .. (cat and (' for ' .. cat.name) or '')
+            text(dl, x + S(48), y + S(40), fit(line, F.text, T.tiny, w - S(70)), P.dim, F.text, T.tiny)
+        end
+        imgui.SetCursorScreenPos({ x + S(22), y + S(64) })
         imgui.SetNextItemWidth(w - S(44))
-        local sent = with_font(F.text, T.body, imgui.InputText, '##tellmsg', tl.text, 200, 32) -- EnterReturnsTrue
-        if sent then
-            vana.chat.run('/tell ' .. tl.name .. ' ' .. (tl.text[1] or ''), 1)
+        if not tl.focused then imgui.SetKeyboardFocusHere() tl.focused = true end
+        local sent = with_font(F.text, T.body, imgui.InputText, '##tellmsg', tl.text, 200, 64) -- 64: EnterReturnsTrue
+        if sent or button(dl, '##tsend', x + w - S(22) - S(100), y + h - S(46), S(100), S(32), 'Send', P.cyan, 'solid', 'paper-plane') then
+            if (tl.text[1] or '') ~= '' then
+                vana.chat.run('/tell ' .. tl.name .. ' ' .. tl.text[1], 1)
+                play('sent_tell')
+            end
             st.tell = nil
             return
         end
-        if button(dl, '##tsend', x + w - S(22) - S(100), y + h - S(46), S(100), S(32), 'Send', P.cyan, 'solid', 'paper-plane') then
-            vana.chat.run('/tell ' .. tl.name .. ' ' .. (tl.text[1] or ''), 1)
-            play('sent_tell')
-            st.tell = nil
-        end
-        if button(dl, '##tcancel', x + w - S(22) - S(100) - S(8) - S(86), y + h - S(46), S(86), S(32), 'Cancel', P.dim, 'ghost') then st.tell = nil end
+        text_mid(dl, x + S(22), y + h - S(30), 'Enter sends  ·  Esc closes', P.faint, F.text, T.tiny)
+        if button(dl, '##tcancel', x + w - S(22) - S(100) - S(8) - S(86), y + h - S(46), S(86), S(32), 'Cancel', P.dim, 'ghost') or imgui.IsKeyPressed(PAD.KEY.escape) then st.tell = nil end
     end)
 end
 
@@ -4201,6 +4283,7 @@ local function tick()
     if shown then draw_main(t) end
     if st.open and st.mini then draw_orb(t) end
     draw_requests(t)
+    entry_menu()
     draw_confirm()
     draw_tell()
     draw_mission_select()
