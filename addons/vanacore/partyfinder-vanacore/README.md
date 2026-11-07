@@ -40,7 +40,7 @@ settings or `/pf export` puts it on the clipboard; **Paste look** or `/pf import
 
 ## Slots
 
-When recruiting, the new-listing sheet has a chip per open slot. Each starts as the role you picked; click a chip to say exactly what that slot wants — a role glyph, or any set of jobs from the badge grid — or use a preset (Standard, Manaburn, TP burn) and "apply to all". On a v2 server the slots travel with the listing: cards and tooltips show what is genuinely still needed as members fill them, the join confirm tells you which slot you'd fill (or that your job isn't on the list — you can still ask), the request card tells the leader where a requester fits, auto-accept turns away jobs with no open slot, and "Only listings I can join" uses them.
+When recruiting, the new-listing sheet has a chip per open slot. Each starts as the role you picked; click a chip to say exactly what that slot wants — a role glyph, or any set of jobs from the badge grid — or use a preset (Standard, Manaburn, TP burn) and "apply to all". On a v2 server the slots travel with the listing: cards and tooltips show what is genuinely still needed as members fill them, the join confirm tells you which slot you'd fill (or that your job isn't on the list — you can still ask), the request card tells the leader where a requester fits, auto-accept turns away jobs with no open slot, and "Only listings I can join" uses them. A party that is already full (6/6) can't be asked at all: the card says so, its menu entry is greyed, the server refuses a request to it, and a leader's auto-accept turns requests away once their party has filled.
 
 ## Pins and the roster
 

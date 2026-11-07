@@ -29,7 +29,7 @@ Settings and the block list are kept per character in config\addons\partyfinder-
 
 addon.name    = 'partyfinder-vanacore'
 addon.author  = 'Carver'
-addon.version = '2.2'
+addon.version = '2.2.1'
 addon.desc    = "CatsEyeXI's Party Finder: listings, join requests, Duty Roulette and Mission Help."
 
 local imgui = vana.imgui
@@ -163,6 +163,10 @@ function SLOTS.open(entry)
     local room = math.max(0, (entry.max_players or 6) - (entry.party_size or 1))
     while #out > room do table.remove(out) end
     return out
+end
+-- a listing whose party has no room left: nobody can join it, whatever the slots say
+function SLOTS.full(entry)
+    return (entry.party_size or 1) >= (entry.max_players or 6)
 end
 -- the first open slot a job fits, or nil
 function SLOTS.fit(entry, job)
@@ -1020,7 +1024,10 @@ local function on_join_request(d)
         req.fits = sl ~= nil
     end
     if st.registered and st.reg.type == 2 and st.reg.auto then
-        if st.reg.min > 0 and req.level < st.reg.min then
+        if party_info() >= 6 then
+            send_join_respond(req.name, false, 3, 'The party is full')
+            say(string.format('Denied %s: the party is full', req.name))
+        elseif st.reg.min > 0 and req.level < st.reg.min then
             send_join_respond(req.name, false, 1, string.format('Level too low (minimum: %d)', st.reg.min))
             say(string.format('Denied %s: level %d below minimum %d', req.name, req.level, st.reg.min))
         elseif req.fits == false then
@@ -1279,6 +1286,11 @@ local function do_withdraw()
 end
 
 local function do_join(entry, role)
+    if SLOTS.full(entry) then
+        say(entry.name .. "'s party is full.")
+        toast('warn', 'Party full', entry.name .. ' has no room left', 4, 'users')
+        return
+    end
     send_join_request(entry.name, role or 0)
     st.pending_join = { name = entry.name:lower(), display = entry.name, at = clock(), seen = nil, anim = 0 }
     local m = me()
@@ -2647,6 +2659,8 @@ local function entry_menu(entry)
             if not self then
                 if not compatible(entry.mode) then
                     imgui.TextDisabled('(Incompatible game mode)')
+                elseif entry.type == 2 and SLOTS.full(entry) then
+                    imgui.TextDisabled('(Party is full)')
                 elseif entry.type == 2 then
                     if imgui.MenuItem(entry.auto == 1 and 'Join party' or 'Request to join') then do_join(entry, st.create and st.create.role or 0) end
                 else
@@ -2737,6 +2751,7 @@ local function draw_card_compact(dl, entry, x, y, w, t, alpha, ghost)
         if imgui.IsMouseClicked(0) then ripple_at(key) end
         if imgui.IsMouseDoubleClicked(0) and not self then
             if not compatible(entry.mode) then say('Cannot join: incompatible game mode.')
+            elseif entry.type == 2 and SLOTS.full(entry) then say(entry.name .. "'s party is full.")
             elseif entry.type == 2 then st.confirm = { entry = entry, kind = 'join' }
             elseif leader_or_solo() then st.confirm = { entry = entry, kind = 'invite' }
             else say('Only the party leader can invite.') end
@@ -2874,6 +2889,8 @@ local function draw_card(dl, entry, x, y, w, t, alpha, ghost)
         if imgui.IsMouseDoubleClicked(0) and not self then
             if not compatible(entry.mode) then
                 say('Cannot join: incompatible game mode.')
+            elseif entry.type == 2 and SLOTS.full(entry) then
+                say(entry.name .. "'s party is full.")
             elseif entry.type == 2 then
                 st.confirm = { entry = entry, kind = 'join' }
             elseif leader_or_solo() then
