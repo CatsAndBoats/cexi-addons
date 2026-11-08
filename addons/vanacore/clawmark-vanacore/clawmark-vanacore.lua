@@ -867,8 +867,8 @@ local function draw_world()
             local want, cap = v.unit * 0.8, VIEW.h * 0.055
             local r = math.max(9, math.min(cap, want)) * (1 + 0.6 * pop * pop)
             if want > cap then alpha = alpha * math.max(0.3, math.min(1, 2 * cap / want)) end
-            -- over the screen with no depth: thinned while your own character stands between the camera and it (their
-            -- feet to their top on the screen, about a third as wide as tall)
+            -- over the screen with no depth: not drawn while your own character stands between the camera and it (their
+            -- feet to their top on the screen, about a third as wide as tall), as a sign in the world would be hidden
             if me and ME.index then
                 local fx, fy = to_screen(me.x, me.z, me.y)
                 local _, ty = to_screen(me.x, top_of(ME.index, me), me.y)
@@ -876,12 +876,12 @@ local function draw_world()
                     local hw = math.max(VIEW.h / 1080 * 30, (fy - ty) * 0.35)
                     if v.sx + r > fx - hw and v.sx - r < fx + hw and v.sy + r > ty and v.sy - r < fy
                         and depth_of(me.x, me.z, me.y) < depth_of(v.w.x, v.top, v.w.y) then
-                        alpha = alpha * 0.22
+                        alpha = 0
                     end
                 end
             end
             local breath = 0.75 + 0.25 * math.sin(now * 2.2 + v.n * 1.3)
-            draw_glyph(dl, v.n, v.sx, v.sy, r, alpha, 0, breath)
+            if alpha > 0 then draw_glyph(dl, v.n, v.sx, v.sy, r, alpha, 0, breath) end
         end
     end
     for _, v in ipairs(shown) do
