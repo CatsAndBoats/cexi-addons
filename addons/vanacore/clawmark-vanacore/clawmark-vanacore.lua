@@ -416,8 +416,9 @@ local function way_spot(where)
     local ahead = tonumber(where)
     if ahead and ahead > 0 then
         ahead = math.min(ahead, 50)
-        -- the facing from the heading: x north, y east here, and heading -pi/2 faces +x (measured in game)
-        local x, y, z = me.x - math.sin(me.heading) * ahead, me.y + math.cos(me.heading) * ahead, me.z
+        -- the facing from the heading, as the server has it (nearPosition: the client's heading is the server's rotation in
+        -- radians, in front is cos along x and -sin along y; checked in game against the server's !pos)
+        local x, y, z = me.x + math.cos(me.heading) * ahead, me.y - math.sin(me.heading) * ahead, me.z
         -- the ground there, picked through the screen when the spot is on it (vana.world.pick: the zone's collision), so a
         -- spot up a slope isn't buried at your own height; your height when it can't be
         if vana.world.pick and VIEW.ok then
