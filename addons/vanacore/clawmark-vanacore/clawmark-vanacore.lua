@@ -23,6 +23,7 @@ In game (/claw works as well as /mark):
   /wp clear [<waymark>]     takes one waymark off, or all of them
   /wp bar                   the waymarks' row in the bar on or off
   /wp column <yalms>        how tall the column of light over a waymark is, 0 (none) to 15
+  /wp glyph <yalms>         how high over the ground its letter or number floats, 1 to 15
   /wp width <yalms>         how wide a waymark is, 0.5 to 4
 
 <mark> is 1 to 8 or a name: star, circle, diamond, triangle, moon, square, cross, skull. <waymark> is A, B, C, D (round)
@@ -110,10 +111,11 @@ end
 -- bar at full opacity under the pointer; folded: the bar folded down to its paw; height: how far over a target's name
 -- its mark floats, in the mark's own sizes (0 to 3); settings_dx, settings_dy: where the settings were dragged to, from their
 -- place under the bar; ways: the waymarks' row in the bar; beam: the column of light over a waymark, in yalms (0 none);
--- way_radius: a waymark's radius (a square's half-width), in yalms
+-- way_radius: a waymark's radius (a square's half-width), in yalms; glyph_height: how high over the ground its letter or
+-- number floats, in yalms (its own setting: the column's height is one choice, where the letter reads best another)
 local DEFAULTS = { bar = true, size = 100, chat = true, right_click = true, theme = 'aurora', scale = 0, opacity = 100,
     solid = true, folded = false, glow = true, in_target = true, height = 0.3, settings_dx = 0, settings_dy = 0,
-    ways = true, beam = 6, way_radius = 1.5 }
+    ways = true, beam = 6, way_radius = 1.5, glyph_height = 5 }
 local config = vana.settings.register({ defaults = DEFAULTS })
 local cfg = config.data
 if U.apply_theme(cfg.theme) == nil then U.apply_theme('aurora') end -- the menu's colours: one of Party Finder's themes
@@ -763,7 +765,7 @@ local function send_rings(shown, ways, now)
         local pop = math.max(0, 1 - (now - v.w.at) / 0.4)
         list[#list + 1] = { x = v.w.x, y = v.w.y, z = v.w.z, color = WAYS[v.n].hex, radius = cfg.way_radius,
             shape = WAYS[v.n].square and 'square' or 'round', height = cfg.beam * (1 - 0.6 * pop * pop), strength = 1.1,
-            glyph = full and WAYS[v.n].name or nil, glyph_size = 0.8 * (1 + 0.5 * pop * pop) }
+            glyph = full and WAYS[v.n].name or nil, glyph_size = 0.8 * (1 + 0.5 * pop * pop), glyph_height = cfg.glyph_height }
     end
     if #list > 0 or RINGS.sent then pcall(vana.world.marks, list) end
     RINGS.sent = #list > 0
@@ -819,14 +821,14 @@ local function draw_world()
             end
         end
     end
-    -- the waymarks within sight, each with how far off it is and where its glyph goes: over the column's top (a yalm and
-    -- a half over the ring when there's no column), the glyph's size from a yalm's length on the screen there
+    -- the waymarks within sight, each with how far off it is and where its glyph goes (the Glyph setting's height over the
+    -- ring), the glyph's size from a yalm's length on the screen there
     local me = my_entity()
     local ways = {}
     for n, w in pairs(st.ways) do
         local d = me and math.sqrt((me.x - w.x) ^ 2 + (me.y - w.y) ^ 2 + (me.z - w.z) ^ 2) or 0
         if d < 60 then
-            local top = w.z - (cfg.beam > 0 and cfg.beam + 1.2 or 1.5) - 0.12 * math.sin(now * 1.7 + n)
+            local top = w.z - cfg.glyph_height - 0.12 * math.sin(now * 1.7 + n)
             local sx, sy = to_screen(w.x, top, w.y)
             local _, sy2 = to_screen(w.x, top - 1, w.y)
             ways[#ways + 1] = { n = n, w = w, d = d, sx = sx, sy = sy, top = top, unit = sx and sy2 and math.abs(sy2 - sy) or 0 }
@@ -1492,6 +1494,10 @@ local function settings_body(dl, x, y, w, h, a)
     v, _, released = slider_row(dl, '##cm_wayr', c1, cy, cw, 'Width', cfg.way_radius, 0.5, 4, '%.1f yalms')
     cfg.way_radius = math.floor(v * 2 + 0.5) / 2
     if released then changed = true end
+    cy = cy + S(32)
+    v, _, released = slider_row(dl, '##cm_gh', c1, cy, cw, 'Glyph', cfg.glyph_height, 1, 15, '%.1f yalms up')
+    cfg.glyph_height = math.floor(v * 2 + 0.5) / 2
+    if released then changed = true end
     cy = cy + S(26)
     local left_end = cy - S(4)
 
@@ -2020,6 +2026,7 @@ local WAY_HELP = {
     '/wp <waymark> <yalms>: so many yalms ahead of you',
     '/wp clear [<waymark>]: one waymark off, or all of them',
     '/wp bar: their row in the bar;  /wp column <yalms>: the column of light, 0 (none) to 15;  /wp width <yalms>: 0.5 to 4',
+    '/wp glyph <yalms>: how high the letter or number floats, 1 to 15',
     '/way and /waymark work the same as /wp',
     'Waymarks: A, B, C, D (round) and 1, 2, 3, 4 (square)',
 }
@@ -2051,6 +2058,13 @@ vana.events.on('command', function (e)
             config:save()
         end
         say(cfg.beam > 0 and ('The column of light over a waymark is %d yalms tall.'):format(cfg.beam) or 'Waymarks are rings alone, with no column.')
+    elseif sub == 'glyph' or sub == 'letter' then
+        local v = tonumber(args[3])
+        if v then
+            cfg.glyph_height = math.max(1, math.min(15, math.floor(v * 2 + 0.5) / 2))
+            config:save()
+        end
+        say(('A waymark\'s letter floats %.1f yalms up.'):format(cfg.glyph_height))
     elseif sub == 'width' or sub == 'radius' or sub == 'size' then
         local v = tonumber(args[3])
         if v then
