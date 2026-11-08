@@ -440,15 +440,6 @@ local function to_screen(x, h, y)
     return (cx / cw + 1) * 0.5 * VIEW.w, (1 - cy / cw) * 0.5 * VIEW.h
 end
 
--- How far in front of the camera a point of the world is (the same w as to_screen divides by)
-local function depth_of(x, h, y)
-    local v, p = VIEW.V.m, VIEW.P.m
-    local vx = x * v[0] + h * v[4] + y * v[8] + v[12]
-    local vy = x * v[1] + h * v[5] + y * v[9] + v[13]
-    local vz = x * v[2] + h * v[6] + y * v[10] + v[14]
-    return vx * p[3] + vy * p[7] + vz * p[11] + p[15]
-end
-
 -- The top of an entity: its actor's bounding box (8 corners from +0x918, the top four from +0x958) has it, so a mark
 -- sits over a rabbit's head as well as a dragon's. Two yalms over the feet if that can't be read.
 local function top_of(index, e)
@@ -867,21 +858,10 @@ local function draw_world()
             local want, cap = v.unit * 0.8, VIEW.h * 0.055
             local r = math.max(9, math.min(cap, want)) * (1 + 0.6 * pop * pop)
             if want > cap then alpha = alpha * math.max(0.3, math.min(1, 2 * cap / want)) end
-            -- over the screen with no depth: not drawn while your own character stands between the camera and it (their
-            -- feet to their top on the screen, about a third as wide as tall), as a sign in the world would be hidden
-            if me and ME.index then
-                local fx, fy = to_screen(me.x, me.z, me.y)
-                local _, ty = to_screen(me.x, top_of(ME.index, me), me.y)
-                if fx and ty then
-                    local hw = math.max(VIEW.h / 1080 * 30, (fy - ty) * 0.35)
-                    if v.sx + r > fx - hw and v.sx - r < fx + hw and v.sy + r > ty and v.sy - r < fy
-                        and depth_of(me.x, me.z, me.y) < depth_of(v.w.x, v.top, v.w.y) then
-                        alpha = 0
-                    end
-                end
-            end
+            -- (over the screen with no depth: a character in front of it is under it. VanaCore's glyph, where the rings
+            -- carry one, is cut by the scene's depth pixel by pixel, as the rings are)
             local breath = 0.75 + 0.25 * math.sin(now * 2.2 + v.n * 1.3)
-            if alpha > 0 then draw_glyph(dl, v.n, v.sx, v.sy, r, alpha, 0, breath) end
+            draw_glyph(dl, v.n, v.sx, v.sy, r, alpha, 0, breath)
         end
     end
     for _, v in ipairs(shown) do

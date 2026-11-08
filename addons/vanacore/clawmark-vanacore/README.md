@@ -54,7 +54,7 @@ A **waymark** is a ring of light on the ground too (a square for 1 to 4), as wid
 light rising from it as tall as the Column setting (6 yalms as shipped; 0 for the ring alone) and its glyph floating
 over the column's top, a yalm and a half tall there. Someone standing in the column is lit in front of it, it shows
 against the sky, and whoever stands between you and the glyph hides it (on an older VanaCore the addon draws the glyph
-itself over the screen, and hides it while your own character is in front of it). A waymark stays where it was put until it's taken off, moved, or the whole group has left the
+itself over the screen, where nothing hides it). A waymark stays where it was put until it's taken off, moved, or the whole group has left the
 zone.
 
 There are no modes: what a click does is in the mark itself, so a marker and a follower use the same bar the same
