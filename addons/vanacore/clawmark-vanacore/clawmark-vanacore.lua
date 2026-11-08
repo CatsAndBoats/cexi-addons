@@ -281,61 +281,6 @@ local function my_entity()
     return nil
 end
 
--- Where a waymark goes: your feet, your target's feet ('target') or so many yalms ahead of you (a number). x, y, z,
--- or nil and why not.
-local function way_spot(where)
-    local me = my_entity()
-    if me == nil then return nil, "Can't tell where you are." end
-    if where == 'target' then
-        local t = vana.game.target()
-        local e = t and t.index and t.index > 0 and vana.game.entity(t.index) or nil
-        if e == nil or e.id == 0 then return nil, 'Target something first.' end
-        return e.x, e.y, e.z
-    end
-    local ahead = tonumber(where)
-    if ahead and ahead > 0 then
-        ahead = math.min(ahead, 50)
-        return me.x + math.cos(me.heading) * ahead, me.y + math.sin(me.heading) * ahead, me.z
-    end
-    return me.x, me.y, me.z
-end
-
--- Puts waymark n down at (x, y, z) (moving it if it's out), within 60 yalms of you (the server's reach). Without the
--- server, locally.
-local WAY_REACH = 58
-local function put_way_at(n, x, y, z)
-    local now = clock()
-    if now - st.last_send < 0.1 then return end
-    st.last_send = now
-    local me = my_entity()
-    if me and (me.x - x) ^ 2 + (me.y - y) ^ 2 + (me.z - z) ^ 2 > WAY_REACH * WAY_REACH then
-        say('Too far: a waymark goes within 60 yalms of you.')
-        return
-    end
-    if st.server == false then
-        st.ways[n] = { x = x, y = y, z = z, setter = my_id() or 0, at = now }
-        return
-    end
-    send(C2S.WAY_SET, n, 0, 0, x, y, z)
-end
-
-local function put_way(n, where)
-    local x, y, z = way_spot(where)
-    if x == nil then
-        say(y)
-        return
-    end
-    put_way_at(n, x, y, z)
-end
-
-local function clear_way(n)
-    if st.server == false then
-        if n then st.ways[n] = nil else st.ways = {} end
-        return
-    end
-    if n then send(C2S.WAY_CLEAR, n) else send(C2S.WAY_CLEAR_ALL) end
-end
-
 local function on_ways(p)
     local reason, changed, actor = p[0x06], p[0x07], ffi.cast('uint32_t*', p + 0x08)[0]
     st.server, st.waiting_since = true, nil
@@ -455,6 +400,72 @@ local function top_of(index, e)
         end
     end
     return e.z - 2
+end
+
+-- Where a waymark goes: your feet, your target's feet ('target') or so many yalms ahead of you (a number). x, y, z,
+-- or nil and why not.
+local function way_spot(where)
+    local me = my_entity()
+    if me == nil then return nil, "Can't tell where you are." end
+    if where == 'target' then
+        local t = vana.game.target()
+        local e = t and t.index and t.index > 0 and vana.game.entity(t.index) or nil
+        if e == nil or e.id == 0 then return nil, 'Target something first.' end
+        return e.x, e.y, e.z
+    end
+    local ahead = tonumber(where)
+    if ahead and ahead > 0 then
+        ahead = math.min(ahead, 50)
+        -- the facing from the heading: x north, y east here, and heading -pi/2 faces +x (measured in game)
+        local x, y, z = me.x - math.sin(me.heading) * ahead, me.y + math.cos(me.heading) * ahead, me.z
+        -- the ground there, picked through the screen when the spot is on it (vana.world.pick: the zone's collision), so a
+        -- spot up a slope isn't buried at your own height; your height when it can't be
+        if vana.world.pick and VIEW.ok then
+            local sx, sy = to_screen(x, me.z, y)
+            if sx and sx >= 0 and sy >= 0 and sx < VIEW.w and sy < VIEW.h then
+                local gx, gy, gz = vana.world.pick(sx, sy)
+                if gx and math.abs(gx - x) + math.abs(gy - y) < 3 then x, y, z = gx, gy, gz end
+            end
+        end
+        return x, y, z
+    end
+    return me.x, me.y, me.z
+end
+
+-- Puts waymark n down at (x, y, z) (moving it if it's out), within 60 yalms of you (the server's reach). Without the
+-- server, locally.
+local WAY_REACH = 58
+local function put_way_at(n, x, y, z)
+    local now = clock()
+    if now - st.last_send < 0.1 then return end
+    st.last_send = now
+    local me = my_entity()
+    if me and (me.x - x) ^ 2 + (me.y - y) ^ 2 + (me.z - z) ^ 2 > WAY_REACH * WAY_REACH then
+        say('Too far: a waymark goes within 60 yalms of you.')
+        return
+    end
+    if st.server == false then
+        st.ways[n] = { x = x, y = y, z = z, setter = my_id() or 0, at = now }
+        return
+    end
+    send(C2S.WAY_SET, n, 0, 0, x, y, z)
+end
+
+local function put_way(n, where)
+    local x, y, z = way_spot(where)
+    if x == nil then
+        say(y)
+        return
+    end
+    put_way_at(n, x, y, z)
+end
+
+local function clear_way(n)
+    if st.server == false then
+        if n then st.ways[n] = nil else st.ways = {} end
+        return
+    end
+    if n then send(C2S.WAY_CLEAR, n) else send(C2S.WAY_CLEAR_ALL) end
 end
 
 -------------------------------------------------------------------------------
