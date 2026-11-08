@@ -1,7 +1,8 @@
 --[[
-clawmark-vanacore (Clawmark): raid-style target marks for CatsEyeXI. Put one of eight marks over a monster (or
-anything you can target) and everyone in your party or alliance sees it there, in the same zone, through the CatsEyeXI
-server's target_marks module (packet 0x1A6). Each mark sits on one target at a time, and each target carries one mark.
+clawmark-vanacore (Clawmark): raid-style target marks and waymarks for CatsEyeXI. Put one of eight marks over a
+monster (or anything you can target), or one of eight waymarks on the ground where people should stand, and everyone in
+your party or alliance sees it there, in the same zone, through the CatsEyeXI server's target_marks module (packet
+0x1A6). Each mark sits on one target at a time, and each target carries one mark; a waymark is one place.
 
 In game (/claw works as well as /mark):
   /mark                     the mark bar on or off
@@ -17,17 +18,29 @@ In game (/claw works as well as /mark):
   /mark rclick              the right-click menu on or off
   /mark theme <name>        the colours (Party Finder's themes)
   /mark help                this list
+  /wp <waymark>             puts the waymark down at your feet (/way and /waymark work the same)
+  /wp <waymark> target      at your target's feet;  /wp <waymark> <yalms>  so many yalms ahead of you
+  /wp clear [<waymark>]     takes one waymark off, or all of them
+  /wp bar                   the waymarks' row in the bar on or off
+  /wp column <yalms>        how tall the column of light over a waymark is, 0 (none) to 15
+  /wp width <yalms>         how wide a waymark is, 0.5 to 4
 
-<mark> is 1 to 8 or a name: star, circle, diamond, triangle, moon, square, cross, skull.
+<mark> is 1 to 8 or a name: star, circle, diamond, triangle, moon, square, cross, skull. <waymark> is A, B, C, D (round)
+or 1, 2, 3, 4 (square), as FFXIV has them: a ring of light on the ground, a column of light rising from it and its letter
+or number glowing over the top.
 
 The bar: click a free mark to put it on your target; click a mark that's out to target what carries it; click the
 mark your target carries to take it off. Shift-click moves a mark that's out onto your target, right-click takes it
 off, and the X held for a moment takes every mark off. A line under whatever the pointer is on says what a click
-will do. The gear opens the settings. Click the grip at the left end to fold the bar down to the marks in use; hold
-the grip and drag to move the bar.
+will do. Under the marks, the waymarks' row: click a free one to put it down at your feet, click one that's out to take
+it off, Shift-click to move it to your feet. The X held takes the waymarks off with the marks. The gear opens the
+settings. Click the grip at the left end to fold the bar down to the marks and waymarks in use; hold the grip and drag
+to move the bar.
 
 Right-click a target (or a mark over one) for a menu of the marks, Take its mark off, Target it and Take every mark off.
-A right-drag still turns the camera. /mark rclick turns the menu off and on.
+Right-click the ground for a menu of the waymarks: click one and it goes down on that spot (a VanaCore with
+vana.world.pick, the zone's collision under the pointer; on an older one the waymarks go where you stand). A right-drag
+still turns the camera. /mark rclick turns the menus off and on.
 
 Without the server module (no answer to the first sync), marks are kept for you alone and the bar says so.
 Settings: settings\addons\clawmark-vanacore\settings.json.
@@ -35,8 +48,8 @@ Settings: settings\addons\clawmark-vanacore\settings.json.
 
 addon.name    = 'clawmark-vanacore'
 addon.author  = 'Carver'
-addon.version = '1.0'
-addon.desc    = 'Clawmark: raid-style target marks shared with your party and alliance.'
+addon.version = '1.1'
+addon.desc    = 'Clawmark: raid-style target marks and waymarks shared with your party and alliance.'
 
 local imgui = vana.imgui
 if imgui == nil then
@@ -52,7 +65,8 @@ local P, F, T = U.P, U.fonts(), U.sizes()
 local PACKET  = 0x1A6
 local VERSION = 1
 
-local C2S = { SET = 1, CLEAR = 2, CLEAR_ALL = 3, SYNC = 4 }
+local C2S = { SET = 1, CLEAR = 2, CLEAR_ALL = 3, SYNC = 4, WAY_SET = 5, WAY_CLEAR = 6, WAY_CLEAR_ALL = 7 }
+local S2C = { STATE = 1, WAYMARKS = 2 }
 local REASON = { SYNC = 0, SET = 1, CLEARED = 2, ALL = 3, GONE = 4, REFUSED = 5 }
 
 -------------------------------------------------------------------------------
@@ -75,19 +89,39 @@ for i, m in ipairs(MARKS) do
     m.hex = string.format('#%02X%02X%02X', m.color[1] * 255 + 0.5, m.color[2] * 255 + 0.5, m.color[3] * 255 + 0.5)
 end
 
+-- The waymarks: places on the ground, A to D round and 1 to 4 square, in FFXIV's colours
+local WAYS = {
+    { key = 'a', name = 'A', color = { 1.00, 0.36, 0.44 } },
+    { key = 'b', name = 'B', color = { 1.00, 0.84, 0.32 } },
+    { key = 'c', name = 'C', color = { 0.36, 0.80, 1.00 } },
+    { key = 'd', name = 'D', color = { 0.80, 0.52, 1.00 } },
+    { key = '1', name = '1', color = { 1.00, 0.36, 0.44 }, square = true },
+    { key = '2', name = '2', color = { 1.00, 0.84, 0.32 }, square = true },
+    { key = '3', name = '3', color = { 0.36, 0.80, 1.00 }, square = true },
+    { key = '4', name = '4', color = { 0.80, 0.52, 1.00 }, square = true },
+}
+local WAY_BY_KEY = {}
+for i, w in ipairs(WAYS) do
+    WAY_BY_KEY[w.key] = i
+    w.hex = string.format('#%02X%02X%02X', w.color[1] * 255 + 0.5, w.color[2] * 255 + 0.5, w.color[3] * 255 + 0.5)
+end
+
 -- scale: the interface's, in percent (0 sizes it from the screen's height); opacity: the bar's, in percent; solid: the
 -- bar at full opacity under the pointer; folded: the bar folded down to its paw; height: how far over a target's name
 -- its mark floats, in the mark's own sizes (0 to 3); settings_dx, settings_dy: where the settings were dragged to, from their
--- place under the bar
+-- place under the bar; ways: the waymarks' row in the bar; beam: the column of light over a waymark, in yalms (0 none);
+-- way_radius: a waymark's radius (a square's half-width), in yalms
 local DEFAULTS = { bar = true, size = 100, chat = true, right_click = true, theme = 'aurora', scale = 0, opacity = 100,
-    solid = true, folded = false, glow = true, in_target = true, height = 0.3, settings_dx = 0, settings_dy = 0 }
+    solid = true, folded = false, glow = true, in_target = true, height = 0.3, settings_dx = 0, settings_dy = 0,
+    ways = true, beam = 6, way_radius = 1.5 }
 local config = vana.settings.register({ defaults = DEFAULTS })
 local cfg = config.data
 if U.apply_theme(cfg.theme) == nil then U.apply_theme('aurora') end -- the menu's colours: one of Party Finder's themes
 
--- marks[n] = { id, index, setter, at } for mark n, or nil
+-- marks[n] = { id, index, setter, at } for mark n, or nil; ways[n] = { x, y, z, setter, at } for waymark n, or nil
 local st = {
     marks = {},
+    ways = {},
     server = nil,          -- nil not known yet, true it answers, false it didn't (marks are yours alone)
     sync_task = nil,
     waiting_since = nil,   -- when the last sync went out with no answer yet
@@ -114,6 +148,11 @@ local function parse_mark(word)
     return BY_KEY[word]
 end
 
+local function parse_way(word)
+    if word == nil then return nil end
+    return WAY_BY_KEY[word:lower()]
+end
+
 -------------------------------------------------------------------------------
 -- Talking to the server
 -------------------------------------------------------------------------------
@@ -121,9 +160,13 @@ end
 local function u16(v) return string.char(v % 256, math.floor(v / 256) % 256) end
 local function u32(v) return u16(v % 65536) .. u16(math.floor(v / 65536) % 65536) end
 
-local function send(action, mark, index, id)
+local function f32(v) return ffi.string(ffi.new('float[1]', v or 0), 4) end
+
+-- 28 bytes: the action, the mark, a target's index and id (SET), the protocol version, and a place (WAY_SET)
+local function send(action, mark, index, id, x, y, z)
     vana.packets.inject(false, PACKET,
-        string.char(0, 0, 0, 0, action, mark or 0) .. u16(index or 0) .. u32(id or 0) .. string.char(VERSION, 0, 0, 0))
+        string.char(0, 0, 0, 0, action, mark or 0) .. u16(index or 0) .. u32(id or 0) .. string.char(VERSION, 0, 0, 0)
+        .. f32(x) .. f32(y) .. f32(z))
 end
 
 local function in_world()
@@ -217,6 +260,109 @@ local function target_mark(n)
     end
 end
 
+-- Your own entity (its index found once by your id, among the players')
+local ME = { index = nil }
+local function my_entity()
+    local id = my_id()
+    if id == nil or id == 0 then return nil end
+    if ME.index then
+        local e = vana.game.entity(ME.index)
+        if e and e.id == id then return e end
+    end
+    for i = 0x400, 0x7FF do
+        local e = vana.game.entity(i)
+        if e and e.id == id then
+            ME.index = i
+            return e
+        end
+    end
+    return nil
+end
+
+-- Where a waymark goes: your feet, your target's feet ('target') or so many yalms ahead of you (a number). x, y, z,
+-- or nil and why not.
+local function way_spot(where)
+    local me = my_entity()
+    if me == nil then return nil, "Can't tell where you are." end
+    if where == 'target' then
+        local t = vana.game.target()
+        local e = t and t.index and t.index > 0 and vana.game.entity(t.index) or nil
+        if e == nil or e.id == 0 then return nil, 'Target something first.' end
+        return e.x, e.y, e.z
+    end
+    local ahead = tonumber(where)
+    if ahead and ahead > 0 then
+        ahead = math.min(ahead, 50)
+        return me.x + math.cos(me.heading) * ahead, me.y + math.sin(me.heading) * ahead, me.z
+    end
+    return me.x, me.y, me.z
+end
+
+-- Puts waymark n down at (x, y, z) (moving it if it's out), within 60 yalms of you (the server's reach). Without the
+-- server, locally.
+local WAY_REACH = 58
+local function put_way_at(n, x, y, z)
+    local now = clock()
+    if now - st.last_send < 0.1 then return end
+    st.last_send = now
+    local me = my_entity()
+    if me and (me.x - x) ^ 2 + (me.y - y) ^ 2 + (me.z - z) ^ 2 > WAY_REACH * WAY_REACH then
+        say('Too far: a waymark goes within 60 yalms of you.')
+        return
+    end
+    if st.server == false then
+        st.ways[n] = { x = x, y = y, z = z, setter = my_id() or 0, at = now }
+        return
+    end
+    send(C2S.WAY_SET, n, 0, 0, x, y, z)
+end
+
+local function put_way(n, where)
+    local x, y, z = way_spot(where)
+    if x == nil then
+        say(y)
+        return
+    end
+    put_way_at(n, x, y, z)
+end
+
+local function clear_way(n)
+    if st.server == false then
+        if n then st.ways[n] = nil else st.ways = {} end
+        return
+    end
+    if n then send(C2S.WAY_CLEAR, n) else send(C2S.WAY_CLEAR_ALL) end
+end
+
+local function on_ways(p)
+    local reason, changed, actor = p[0x06], p[0x07], ffi.cast('uint32_t*', p + 0x08)[0]
+    st.server, st.waiting_since = true, nil
+    local now = clock()
+    local old = st.ways
+    st.ways = {}
+    for n = 1, #WAYS do
+        local at = 0x0C + (n - 1) * 16
+        local setter = ffi.cast('uint32_t*', p + at + 12)[0]
+        if setter ~= 0 then
+            local f = ffi.cast('float*', p + at)
+            local o = old[n]
+            local same = o and math.abs(o.x - f[0]) < 0.01 and math.abs(o.y - f[1]) < 0.01 and math.abs(o.z - f[2]) < 0.01
+            st.ways[n] = { x = f[0], y = f[1], z = f[2], setter = setter, at = same and o.at or now }
+        end
+    end
+    if reason == REASON.REFUSED then
+        say("That waymark can't go there.")
+        return
+    end
+    if not cfg.chat or actor == 0 or actor == my_id() then return end
+    local who = player_name(actor)
+    if reason == REASON.SET and st.ways[changed] then
+        say(('%s put waymark %s down.'):format(who, WAYS[changed].name))
+    elseif reason == REASON.ALL then
+        say(who .. ' took the waymarks off.')
+    end
+end
+
 local function on_state(p)
     local reason, changed, actor = p[0x06], p[0x07], ffi.cast('uint32_t*', p + 0x08)[0]
     if st.server == false then
@@ -292,6 +438,15 @@ local function to_screen(x, h, y)
     local cx = vx * p[0] + vy * p[4] + vz * p[8] + p[12]
     local cy = vx * p[1] + vy * p[5] + vz * p[9] + p[13]
     return (cx / cw + 1) * 0.5 * VIEW.w, (1 - cy / cw) * 0.5 * VIEW.h
+end
+
+-- How far in front of the camera a point of the world is (the same w as to_screen divides by)
+local function depth_of(x, h, y)
+    local v, p = VIEW.V.m, VIEW.P.m
+    local vx = x * v[0] + h * v[4] + y * v[8] + v[12]
+    local vy = x * v[1] + h * v[5] + y * v[9] + v[13]
+    local vz = x * v[2] + h * v[6] + y * v[10] + v[14]
+    return vx * p[3] + vy * p[7] + vz * p[11] + p[15]
 end
 
 -- The top of an entity: its actor's bounding box (8 corners from +0x918, the top four from +0x958) has it, so a mark
@@ -441,6 +596,48 @@ local function draw_mark(dl, n, cx, cy, r, alpha, dim)
     if g.detail then g.detail(dl, cx, cy, r, dark) end
 end
 
+-- A waymark's glyph, its letter or number as a rune: strokes in a box 2 across and 2 high (y down), drawn thick and
+-- angular with a dark outline, a light core and a glow round it in the waymark's colour, as FFXIV's hang over its column.
+local GLYPHS = {
+    a = { { { -0.8, 1 }, { 0, -1 }, { 0.8, 1 } }, { { -0.5, 0.3 }, { 0.5, 0.3 } } },
+    b = { { { -0.65, 1 }, { -0.65, -1 }, { 0.25, -1 }, { 0.7, -0.6 }, { 0.7, -0.35 }, { 0.3, -0.05 }, { -0.65, -0.05 } },
+          { { 0.3, -0.05 }, { 0.75, 0.3 }, { 0.75, 0.65 }, { 0.3, 1 }, { -0.65, 1 } } },
+    c = { { { 0.75, -0.6 }, { 0.3, -1 }, { -0.35, -1 }, { -0.8, -0.55 }, { -0.8, 0.55 }, { -0.35, 1 }, { 0.3, 1 }, { 0.75, 0.6 } } },
+    d = { { { -0.65, 1 }, { -0.65, -1 }, { 0.15, -1 }, { 0.8, -0.45 }, { 0.8, 0.45 }, { 0.15, 1 }, { -0.65, 1 } } },
+    ['1'] = { { { -0.45, -0.55 }, { 0.1, -1 }, { 0.1, 1 } }, { { -0.5, 1 }, { 0.7, 1 } } },
+    ['2'] = { { { -0.75, -0.6 }, { -0.35, -1 }, { 0.35, -1 }, { 0.75, -0.6 }, { 0.75, -0.2 }, { -0.75, 1 }, { 0.75, 1 } } },
+    ['3'] = { { { -0.7, -1 }, { 0.7, -1 }, { 0.05, -0.15 }, { 0.4, -0.15 }, { 0.75, 0.2 }, { 0.75, 0.6 }, { 0.35, 1 }, { -0.35, 1 }, { -0.75, 0.65 } } },
+    ['4'] = { { { 0.45, 1 }, { 0.45, -1 }, { -0.8, 0.45 }, { 0.8, 0.45 } } },
+}
+-- the glyph centred on (cx, cy), r half its height; glow 0 to 1 how much light round it (none in the bar)
+local function draw_glyph(dl, n, cx, cy, r, alpha, dim, glow)
+    local w = WAYS[n]
+    local color = w.color
+    if dim and dim > 0 then
+        color = { color[1] + (GREY[1] - color[1]) * dim, color[2] + (GREY[2] - color[2]) * dim, color[3] + (GREY[3] - color[3]) * dim }
+    end
+    local sw = math.max(1.5, r * 0.22)
+    local function stroke(col, width, grow)
+        for _, line in ipairs(GLYPHS[w.key]) do
+            dl:PathClear()
+            for _, pt in ipairs(line) do dl:PathLineTo({ cx + pt[1] * r * 0.82, cy + pt[2] * r }) end
+            dl:PathStroke(col, 0, width)
+            -- round joints and ends: discs at the corners (left out when it's drawn thin: translucent, they'd show as dots)
+            if alpha >= 0.95 then
+                for _, pt in ipairs(line) do dl:AddCircleFilled({ cx + pt[1] * r * 0.82, cy + pt[2] * r }, width / 2 + (grow or 0), col, 16) end
+            end
+        end
+    end
+    if glow and glow > 0 then
+        for k = 4, 1, -1 do
+            stroke(rgba(color, 0.07 * glow * alpha), sw * (1 + k * 1.6))
+        end
+    end
+    stroke(rgba({ 0.04, 0.04, 0.06 }, 0.9 * alpha), sw * 1.9)
+    stroke(rgba(shade(color, 0.15), alpha), sw)
+    stroke(rgba(shade(color, 0.6), 0.9 * alpha), sw * 0.42)
+end
+
 -- How wide a thing is on the ground: the game's hit box radius, else the farthest of its actor's bounding box corners from
 -- its middle across the map plane, a little in. Most of a yalm if neither can be read.
 local function ground_radius(index, e)
@@ -468,14 +665,17 @@ end
 -- it, breathing, and a ripple going out from it every 1.6 seconds. A circle on the ground at the target's feet, put on
 -- the screen point by point, so it lies flat in the world whatever the camera does.
 local RING_N = 56
-local function draw_ground_glow(dl, n, index, e, alpha, now, d)
-    local col = MARKS[n].color
-    local R = ground_radius(index, e)
+local function draw_ground_ring(dl, col, x, h, y, R, alpha, now, d, square)
     local function ring(rad)
         local pts = {}
         for k = 0, RING_N - 1 do
             local a = k / RING_N * 2 * math.pi
-            local sx, sy = to_screen(e.x + rad * math.cos(a), e.z, e.y + rad * math.sin(a))
+            local ox, oy = math.cos(a), math.sin(a)
+            if square then
+                local m = math.max(math.abs(ox), math.abs(oy))
+                ox, oy = ox / m, oy / m
+            end
+            local sx, sy = to_screen(x + rad * ox, h, y + rad * oy)
             if sx == nil then return nil end
             pts[k + 1] = { sx, sy }
         end
@@ -507,6 +707,9 @@ local function draw_ground_glow(dl, n, index, e, alpha, now, d)
         path(out)
         dl:PathStroke(rgba(col, 0.55 * (1 - t) * (1 - t) * alpha), 1, 2.2 * px)
     end
+end
+local function draw_ground_glow(dl, n, index, e, alpha, now, d)
+    draw_ground_ring(dl, MARKS[n].color, e.x, e.z, e.y, ground_radius(index, e), alpha, now, d, false)
 end
 
 -- Your target's mark in the game's Target window: the window glowing in the mark's colour, the mark in its top corner
@@ -541,6 +744,10 @@ end
 -- slope carries one and what stands in front of it hides it. The marked targets' rings go to it every frame they're
 -- shown (they move); none when there's nothing to show. False when this VanaCore can't: the ring is drawn here then.
 local RINGS = { able = nil, checked = -10, sent = false }
+-- a VanaCore whose rings take a shape, a column and a glyph (the one with vana.world.pick: they came together)
+local function rings_full()
+    return vana.world ~= nil and vana.world.pick ~= nil
+end
 local function rings_able()
     local now = clock()
     if RINGS.able == nil or now - RINGS.checked > 5 then
@@ -550,13 +757,22 @@ local function rings_able()
     end
     return RINGS.able
 end
-local function send_rings(shown, now)
+-- and the waymarks: a ring (a square for 1 to 4) with the column of light over it (a VanaCore with vana.world.marks's
+-- shape and height; an older one draws the ring alone)
+local function send_rings(shown, ways, now)
     if not rings_able() then return false end
     local list = {}
     for _, v in ipairs(shown) do
         local pop = math.max(0, 1 - (now - v.m.at) / 0.3)
         list[#list + 1] = { x = v.e.x, y = v.e.y, z = v.e.z, color = MARKS[v.n].hex,
             radius = ground_radius(v.m.index, v.e) * (1 + 0.35 * pop * pop) }
+    end
+    local full = rings_full()
+    for _, v in ipairs(ways or {}) do
+        local pop = math.max(0, 1 - (now - v.w.at) / 0.4)
+        list[#list + 1] = { x = v.w.x, y = v.w.y, z = v.w.z, color = WAYS[v.n].hex, radius = cfg.way_radius,
+            shape = WAYS[v.n].square and 'square' or 'round', height = cfg.beam * (1 - 0.6 * pop * pop), strength = 1.1,
+            glyph = full and WAYS[v.n].name or nil, glyph_size = 0.8 * (1 + 0.5 * pop * pop) }
     end
     if #list > 0 or RINGS.sent then pcall(vana.world.marks, list) end
     RINGS.sent = #list > 0
@@ -569,8 +785,8 @@ local DRAWN = {}
 local function draw_world()
     DRAWN = {}
     local _, _, _, _, _, _, _, status = vana.game.self()
-    if next(st.marks) == nil or status == 4 or not VIEW.ok or not VIEW.w or VIEW.w == 0 then -- (4: a cutscene)
-        send_rings({}, clock())
+    if (next(st.marks) == nil and next(st.ways) == nil) or status == 4 or not VIEW.ok or not VIEW.w or VIEW.w == 0 then -- (4: a cutscene)
+        send_rings({}, {}, clock())
         return
     end
 
@@ -612,13 +828,60 @@ local function draw_world()
             end
         end
     end
+    -- the waymarks within sight, each with how far off it is and where its glyph goes: over the column's top (a yalm and
+    -- a half over the ring when there's no column), the glyph's size from a yalm's length on the screen there
+    local me = my_entity()
+    local ways = {}
+    for n, w in pairs(st.ways) do
+        local d = me and math.sqrt((me.x - w.x) ^ 2 + (me.y - w.y) ^ 2 + (me.z - w.z) ^ 2) or 0
+        if d < 60 then
+            local top = w.z - (cfg.beam > 0 and cfg.beam + 1.2 or 1.5) - 0.12 * math.sin(now * 1.7 + n)
+            local sx, sy = to_screen(w.x, top, w.y)
+            local _, sy2 = to_screen(w.x, top - 1, w.y)
+            ways[#ways + 1] = { n = n, w = w, d = d, sx = sx, sy = sy, top = top, unit = sx and sy2 and math.abs(sy2 - sy) or 0 }
+        end
+    end
     -- the ring of light on the ground under each: VanaCore's where it has them, else drawn here over the screen, first,
     -- the marks over all of them
     if not cfg.glow then
-        send_rings({}, now)
-    elseif not send_rings(shown, now) then
+        send_rings({}, ways, now)
+    elseif not send_rings(shown, ways, now) then
         for _, v in ipairs(shown) do
             draw_ground_glow(dl, v.n, v.m.index, v.e, v.d > 50 and (60 - v.d) / 10 or 1, now, v.d)
+        end
+    end
+    if not rings_able() then
+        for _, v in ipairs(ways) do
+            draw_ground_ring(dl, WAYS[v.n].color, v.w.x, v.w.z, v.w.y, cfg.way_radius, v.d > 50 and (60 - v.d) / 10 or 1, now, v.d, WAYS[v.n].square)
+        end
+    end
+    -- the glyph over each: VanaCore's where its rings carry one (cut by the scene's depth, so a character in front of it
+    -- hides it), else drawn here over the screen
+    local own_glyphs = not (rings_able() and rings_full())
+    for _, v in ipairs(ways) do
+        if v.sx and own_glyphs then
+            local alpha = v.d > 50 and (60 - v.d) / 10 or 1
+            local pop = math.max(0, 1 - (now - v.w.at) / 0.4)
+            -- about a yalm and a half tall out in the world; no bigger than a twelfth of the screen, and thinner the
+            -- nearer the camera is to it past that, so one right over you doesn't blot out the scene
+            local want, cap = v.unit * 0.8, VIEW.h * 0.055
+            local r = math.max(9, math.min(cap, want)) * (1 + 0.6 * pop * pop)
+            if want > cap then alpha = alpha * math.max(0.3, math.min(1, 2 * cap / want)) end
+            -- over the screen with no depth: thinned while your own character stands between the camera and it (their
+            -- feet to their top on the screen, about a third as wide as tall)
+            if me and ME.index then
+                local fx, fy = to_screen(me.x, me.z, me.y)
+                local _, ty = to_screen(me.x, top_of(ME.index, me), me.y)
+                if fx and ty then
+                    local hw = math.max(VIEW.h / 1080 * 30, (fy - ty) * 0.35)
+                    if v.sx + r > fx - hw and v.sx - r < fx + hw and v.sy + r > ty and v.sy - r < fy
+                        and depth_of(me.x, me.z, me.y) < depth_of(v.w.x, v.top, v.w.y) then
+                        alpha = alpha * 0.22
+                    end
+                end
+            end
+            local breath = 0.75 + 0.25 * math.sin(now * 2.2 + v.n * 1.3)
+            draw_glyph(dl, v.n, v.sx, v.sy, r, alpha, 0, breath)
         end
     end
     for _, v in ipairs(shown) do
@@ -737,6 +1000,19 @@ local function click_mark(n, tgt, with_shift)
     else put(n, tgt) end
 end
 
+-- what a click on waymark n does: a free one goes down at your feet; one that's out comes off (Shift-click moves it here)
+local function act_way(n)
+    local w = st.ways[n]
+    if w == nil then return 'PLACE', P.ok, 'Put ' .. WAYS[n].name .. ' down at your feet' end
+    local me = my_entity()
+    local far = me and (' · %.0fy'):format(math.sqrt((me.x - w.x) ^ 2 + (me.y - w.y) ^ 2)) or ''
+    return 'OFF', P.danger, 'Take ' .. WAYS[n].name .. ' off' .. far .. '  ·  Shift-click: move it here'
+end
+
+local function click_way(n, with_shift)
+    if st.ways[n] and not with_shift then clear_way(n) else put_way(n) end
+end
+
 local HOLD_CLEAR = 0.7 -- seconds the X is held before every mark comes off
 
 local function draw_bar()
@@ -748,18 +1024,20 @@ local function draw_bar()
     local dt = frame_dt()
     local tile, gap, pad, grip = S(36), S(4), S(6), S(16)
     local small = tile * 0.9
-    local h = pad * 2 + tile
-    local used = {}
+    local wtile = S(26) -- the waymarks' row, under the marks
+    local used, wused = {}, {}
     for n = 1, #MARKS do if st.marks[n] then used[#used + 1] = n end end
+    for n = 1, #WAYS do if st.ways[n] then wused[#wused + 1] = n end end
     local mini = S(24)
     local full_w = pad + grip + gap + #MARKS * (tile + gap) + S(6) + small + pad
-    local fold_w = pad + grip + gap + (#used > 0 and #used * mini or tile) + pad
+    local fold_w = pad + grip + gap + (#used + #wused > 0 and (#used + #wused) * mini or tile) + pad
     local goal = cfg.folded and 0 or 1
     BAR.anim = BAR.anim or goal
     BAR.anim = U.lerp(BAR.anim, goal, math.min(1, dt * 11))
     if math.abs(BAR.anim - goal) < 0.003 then BAR.anim = goal end
     local a = BAR.anim
     local w = fold_w + (full_w - fold_w) * a
+    local h = pad * 2 + tile + (cfg.ways and (gap + wtile) * a or 0)
     local tgt = target_index()
     -- the opacity: the setting's, or whole under the pointer (and while it's dragged)
     local want = (cfg.solid and (BAR.hovered or BAR.drag ~= nil)) and 1 or cfg.opacity / 100
@@ -870,13 +1148,40 @@ local function draw_bar()
             if fa > 0.01 then
                 local ty = y + pad
                 local live = fa > 0.5
-                if #used == 0 then
+                if #used + #wused == 0 then
                     draw_paw(dl, cx0 + tile / 2, y + h / 2, tile * 0.3, u32(mix(P.faint, P.accent, 0.4), fa * fade))
                     if live then
                         imgui.SetCursorScreenPos({ cx0, ty })
                         local _, hovered = U.hit('##cm_paw', tile, tile, S(9))
                         if hovered and not quiet then hint = { cx0 + tile / 2, 'No marks out', P.dim } end
                     end
+                end
+                -- the waymarks that are out, after the marks: a click takes one off, Shift-click moves it here
+                for i, n in ipairs(wused) do
+                    local key, hex = '##cm_wmini' .. n, WAYS[n].hex
+                    local mx0 = cx0 + (#used + i - 1) * mini
+                    local mhv = 0
+                    if live then
+                        imgui.SetCursorScreenPos({ mx0, ty })
+                        imgui.InvisibleButton(key, { mini, tile }, 3)
+                        local hovered = imgui.IsItemHovered()
+                        if imgui.IsItemClicked(0) then
+                            U.ripple_at(key)
+                            click_way(n, shift)
+                        elseif imgui.IsItemClicked(1) then
+                            U.ripple_at(key)
+                            clear_way(n)
+                        end
+                        mhv = U.lerp(U.A.hover[key] or 0, hovered and 1 or 0, math.min(1, dt * 14))
+                        U.A.hover[key] = mhv
+                        if hovered and not quiet then
+                            local _, col, text = act_way(n)
+                            hint = { mx0 + mini / 2, text, col }
+                        end
+                    end
+                    if mhv > 0 then dl:AddRectFilled({ mx0, ty + S(3) }, { mx0 + mini, ty + tile - S(3) }, u32(hex, 0.16 * mhv * fa), S(6)) end
+                    U.draw_ripples(dl, key, mx0, ty, mini, tile, hex)
+                    draw_glyph(dl, n, mx0 + mini / 2, y + h / 2, mini * 0.3 * (1 + 0.12 * mhv), fa * fade, 0, 0)
                 end
                 for i, n in ipairs(used) do
                     local m, key, hex = st.marks[n], '##cm_mini' .. n, MARKS[n].hex
@@ -959,45 +1264,90 @@ local function draw_bar()
                 end
                 -- a divider, then the X: held for a moment, it takes every mark off (a click alone does nothing, so a
                 -- slip in a fight can't wipe the raid's marks); a ring fills round it while it's held
-                dl:AddLine({ tx + S(2), ty + S(7) }, { tx + S(2), ty + tile - S(7) }, u32(P.line, a), 1)
+                local xh, xmid = h - pad * 2, y + h / 2
+                dl:AddLine({ tx + S(2), ty + S(7) }, { tx + S(2), ty + xh - S(7) }, u32(P.line, a), 1)
                 tx = tx + S(6)
                 local hv, holding = 0, false
+                local anything = next(st.marks) ~= nil or next(st.ways) ~= nil
                 if live then
                     imgui.SetCursorScreenPos({ tx, ty })
-                    imgui.InvisibleButton('##cm_bar_clear', { small, tile })
+                    imgui.InvisibleButton('##cm_bar_clear', { small, xh })
                     local hovered, active = imgui.IsItemHovered(), imgui.IsItemActive()
                     hv = U.lerp(U.A.hover['##cm_bar_clear'] or 0, hovered and 1 or 0, math.min(1, dt * 14))
                     U.A.hover['##cm_bar_clear'] = hv
-                    holding = active and hovered and next(st.marks) ~= nil
+                    holding = active and hovered and anything
                     if holding then
                         BAR.hold = BAR.hold + dt
                         if BAR.hold >= HOLD_CLEAR then
                             U.ripple_at('##cm_bar_clear')
                             clear(nil)
+                            if next(st.ways) ~= nil then clear_way(nil) end
                             BAR.hold = -1 -- done: nothing more until the button is let go
                         end
                     elseif not active then
                         BAR.hold = 0
                     end
                     if hovered and not quiet then
-                        if next(st.marks) == nil then hint = { tx + small / 2, 'No marks to take off', P.dim }
-                        elseif BAR.hold < 0 then hint = { tx + small / 2, 'Every mark is off', P.danger }
+                        if not anything then hint = { tx + small / 2, 'Nothing to take off', P.dim }
+                        elseif BAR.hold < 0 then hint = { tx + small / 2, 'Everything is off', P.danger }
                         elseif holding then hint = { tx + small / 2, 'Keep holding…', P.danger }
-                        else hint = { tx + small / 2, 'Hold to take every mark off', P.danger } end
+                        else hint = { tx + small / 2, 'Hold to take every mark and waymark off', P.danger } end
                     end
                 end
                 local t = math.max(0, math.min(1, BAR.hold / HOLD_CLEAR))
-                if hv > 0 then dl:AddRectFilled({ tx, ty }, { tx + small, ty + tile }, u32(P.danger, 0.14 * hv * a), S(9)) end
-                U.draw_ripples(dl, '##cm_bar_clear', tx, ty, small, tile, P.danger)
+                if hv > 0 then dl:AddRectFilled({ tx, ty }, { tx + small, ty + xh }, u32(P.danger, 0.14 * hv * a), S(9)) end
+                U.draw_ripples(dl, '##cm_bar_clear', tx, ty, small, xh, P.danger)
                 if t > 0 then
                     dl:PathClear()
-                    dl:PathArcTo({ tx + small / 2, ty + tile / 2 }, tile * 0.36, -math.pi / 2, -math.pi / 2 + math.pi * 2 * t, 40)
+                    dl:PathArcTo({ tx + small / 2, xmid }, tile * 0.36, -math.pi / 2, -math.pi / 2 + math.pi * 2 * t, 40)
                     dl:PathStroke(u32(P.danger, a), 0, S(2.5))
                 end
-                U.icon(dl, tx + small / 2, ty + tile / 2, 'xmark', mix(P.dim, P.danger, math.max(hv, t)), T.body, a)
+                U.icon(dl, tx + small / 2, xmid, 'xmark', mix(P.dim, P.danger, math.max(hv, t)), T.body, a)
                 if st.server == false then
                     dl:AddCircleFilled({ tx + small - S(6), ty + S(6) }, S(3), u32(P.warn, a), 12)
                     if hv > 0.5 and not quiet and not holding then hint = { tx + small / 2, "This server doesn't relay marks: yours are seen by you alone", P.warn } end
+                end
+                -- the waymarks' row under the marks: A to D round, 1 to 4 square, each under a mark's tile. A free one
+                -- goes down at your feet, one that's out comes off (Shift-click moves it here, right-click takes it off)
+                if cfg.ways then
+                    local wx, wy = cx0 - S(24) * (1 - a), y + pad + tile + gap
+                    for n = 1, #WAYS do
+                        local key, hex, sq = '##cm_way' .. n, WAYS[n].hex, WAYS[n].square
+                        local on = st.ways[n] ~= nil
+                        local hovered = false
+                        if live then
+                            imgui.SetCursorScreenPos({ wx, wy })
+                            imgui.InvisibleButton(key, { tile, wtile }, 3)
+                            hovered = imgui.IsItemHovered()
+                            if imgui.IsItemClicked(0) then
+                                U.ripple_at(key)
+                                click_way(n, shift)
+                            elseif imgui.IsItemClicked(1) then
+                                U.ripple_at(key)
+                                clear_way(n)
+                            end
+                        end
+                        local hv = U.A.hover[key] or 0
+                        hv = U.lerp(hv, hovered and 1 or 0, math.min(1, dt * 14))
+                        U.A.hover[key] = hv
+                        local tr = sq and S(4) or S(13)
+                        if on then
+                            local g = 0.6 + 0.3 * hv
+                            for k = 3, 1, -1 do
+                                dl:AddRectFilled({ wx - S(k), wy - S(k) }, { wx + tile + S(k), wy + wtile + S(k) }, u32(hex, 0.045 * g * a), tr + S(k))
+                            end
+                        end
+                        dl:AddRectFilled({ wx, wy }, { wx + tile, wy + wtile }, u32(on and hex or P.card, (on and 0.16 or 0.7) * a), tr)
+                        if hv > 0 then dl:AddRectFilled({ wx, wy }, { wx + tile, wy + wtile }, u32(hex, 0.16 * hv * a), tr) end
+                        dl:AddRect({ wx, wy }, { wx + tile, wy + wtile }, u32(on and hex or mix(P.line, hex, 0.6 * hv), (on and 0.7 or 0.35 + 0.4 * hv) * a), tr, 15, 1)
+                        U.draw_ripples(dl, key, wx, wy, tile, wtile, hex)
+                        draw_glyph(dl, n, wx + tile / 2, wy + wtile / 2, wtile * 0.3 * (1 + 0.08 * hv), a * fade, on and 0 or 0.45 * (1 - hv), 0)
+                        if hovered and not quiet then
+                            local _, col, text = act_way(n)
+                            hint = { wx + tile / 2, text, col }
+                        end
+                        wx = wx + tile + gap
+                    end
                 end
             end
             dl:PopClipRect()
@@ -1139,12 +1489,30 @@ local function settings_body(dl, x, y, w, h, a)
         { 'The mark your target carries', 'comes off' },
         { 'Shift-click', 'moves a mark onto your target' },
         { 'Right-click', 'takes a mark off  ·  hold the X: all off' },
+        { 'A free waymark', 'goes down at your feet' },
+        { "A waymark that's out", 'comes off  ·  Shift-click: moves it here' },
+        { 'Right-click the ground', 'a menu of the waymarks, to put one there' },
     }) do
         local lw = U.measure(l[1], F.semi, T.tiny)
         U.text_mid(dl, c1, cy, l[1], P.text, F.semi, T.tiny)
         U.text_mid(dl, c1 + lw + S(6), cy, l[2], P.dim, F.text, T.tiny)
         cy = cy + S(18)
     end
+    cy = cy + S(6)
+
+    -- left: the waymarks
+    cy = U.section(dl, c1, cy, cw, 'WAYMARKS', 'flag') + S(16)
+    tv, tch = U.toggle(dl, '##cm_ways', c1, cy, 'Their row in the bar', cfg.ways)
+    cfg.ways, changed = tv, changed or tch
+    cy = cy + S(34)
+    v, _, released = slider_row(dl, '##cm_beam', c1, cy, cw, 'Column', cfg.beam, 0, 15, cfg.beam == 0 and 'none' or '%.0f yalms')
+    cfg.beam = math.floor(v + 0.5)
+    if released then changed = true end
+    cy = cy + S(32)
+    v, _, released = slider_row(dl, '##cm_wayr', c1, cy, cw, 'Width', cfg.way_radius, 0.5, 4, '%.1f yalms')
+    cfg.way_radius = math.floor(v * 2 + 0.5) / 2
+    if released then changed = true end
+    cy = cy + S(26)
     local left_end = cy - S(4)
 
     -- right: the marks over targets, with a preview at their size there (the eight in turn)
@@ -1196,7 +1564,7 @@ local function settings_body(dl, x, y, w, h, a)
     -- the foot
     local fy = math.max(left_end, right_end) + S(18)
     dl:AddLine({ x + S(16), fy }, { x + w - S(16), fy }, u32(P.line), 1)
-    U.text_mid(dl, x + S(24), fy + S(25), '/mark help lists the commands   ·   /claw works too', P.faint, F.text, T.tiny)
+    U.text_mid(dl, x + S(24), fy + S(25), '/mark help and /wp help list the commands   ·   /claw works too', P.faint, F.text, T.tiny)
     if U.button(dl, '##cm_defaults', x + w - S(24) - S(116), fy + S(12), S(116), S(26), 'Defaults', P.dim, 'ghost', 'rotate-right', F.semi, T.tiny) then
         for k, val in pairs(DEFAULTS) do
             if k ~= 'bar' and k ~= 'folded' and k ~= 'settings_dx' and k ~= 'settings_dy' then cfg[k] = val end
@@ -1313,6 +1681,117 @@ local function entity_under(mx, my)
     return best
 end
 
+-- Right-click on the ground: a menu of the waymarks, to put one down on the spot under the pointer (m.ground, from
+-- vana.world.pick). The spot is ringed on the ground while the menu is up, in the colour of the waymark under the pointer.
+local function draw_ground_menu(m)
+    local g = m.ground
+    local S, u32, mix, now_t = U.S, U.u32, U.mix, imgui.GetTime()
+    local dt = frame_dt()
+    local rows = {}
+    if next(st.ways) ~= nil then
+        rows[#rows + 1] = { label = 'Take every waymark off', ic = 'trash-can', color = P.warn, run = function () clear_way(nil) end }
+    end
+    local pad, tile, tgap, head_h, row_h = S(8), S(56), S(6), S(50), S(32)
+    local w = pad * 2 + tile * 4 + tgap * 3
+    local grid_h = tile * 2 + tgap
+    local h = head_h + pad + grid_h + pad + (#rows > 0 and pad + #rows * row_h or 0) + pad
+    m.anim = math.min(1, m.anim + dt * 9)
+    local a = U.ease(m.anim)
+    local sw, sh = vana.ui.screen()
+    local x = math.max(S(8), math.min(m.x, sw - w - S(8)))
+    local y = math.max(S(8), math.min(m.y, sh - h - S(8))) - S(6) * (1 - a)
+    local too_far = g.d > WAY_REACH
+    local hover_n
+    imgui.SetNextWindowPos({ x, y }, U.ALWAYS)
+    imgui.SetNextWindowSize({ w, h }, U.ALWAYS)
+    m.frames = m.frames + 1
+    if m.frames <= 3 then imgui.SetNextWindowFocus() end
+    if imgui.Begin('##clawmark_ground_menu', nil, U.WINDOW_FLAGS + U.NO_SAVE) then
+        local dl = imgui.GetWindowDrawList()
+        local mg = S(40)
+        dl:PushClipRect({ x - mg, y - mg }, { x + w + mg, y + h + mg }, false)
+        local ok, err = pcall(function ()
+            U.shadow(dl, x, y, w, h, S(14), 1.5 * a)
+            U.panel(dl, x, y, w, h, P.glass, a, S(14), P.line, false)
+            dl:AddRectFilled({ x + 1, y + 1 }, { x + w - 1, y + head_h }, u32(P.accent, 0.10 * a), S(13), 48)
+            local tag = ('%.0fy'):format(g.d)
+            local tw = U.measure(tag, F.semi, T.tiny)
+            U.text(dl, x + S(14), y + S(8), 'Waymark here', P.text, F.disp, T.body, a)
+            U.text(dl, x + w - S(14) - tw, y + S(11), tag, too_far and P.danger or P.accent, F.semi, T.tiny, a)
+            local sub = too_far and 'Too far: a waymark goes within 60 yalms of you' or 'Click one to put it down on this spot'
+
+            -- the waymarks, four by two: A to D round, 1 to 4 square
+            local gy = y + head_h + pad
+            for n = 1, #WAYS do
+                local wmk = st.ways[n]
+                local col, row = (n - 1) % 4, math.floor((n - 1) / 4)
+                local tx, ty = x + pad + col * (tile + tgap), gy + row * (tile + tgap)
+                local key = '##cm_gtile' .. n
+                imgui.SetCursorScreenPos({ tx, ty })
+                local pressed, _, hv = U.hit(key, tile, tile, S(10))
+                local hex, rr = WAYS[n].hex, WAYS[n].square and S(5) or S(10)
+                dl:AddRectFilled({ tx, ty }, { tx + tile, ty + tile }, u32(wmk and hex or P.card, (wmk and 0.18 or 0.9) * a), rr)
+                if hv > 0 then dl:AddRectFilled({ tx, ty }, { tx + tile, ty + tile }, u32(hex, 0.14 * hv * a), rr) end
+                dl:AddRect({ tx, ty }, { tx + tile, ty + tile }, u32(wmk and hex or mix(P.line, hex, 0.6 * hv), (wmk and 0.8 or 1) * a), rr, 15, wmk and S(1.5) or 1)
+                U.draw_ripples(dl, key, tx, ty, tile, tile, hex)
+                draw_glyph(dl, n, tx + tile / 2, ty + tile * 0.42, tile * 0.24 * (1 + 0.1 * hv), a, 0, 0)
+                U.text_center(dl, tx, ty + tile * 0.8, tile, wmk and 'out' or 'free', wmk and P.faint or mix(P.dim, P.text, hv), F.semi, T.tiny, a)
+                if hv > 0.5 then
+                    hover_n = n
+                    if not too_far then
+                        sub = wmk and (WAYS[n].name .. ' is out: click to move it here') or ('Click to put ' .. WAYS[n].name .. ' here')
+                    end
+                end
+                if pressed and not too_far then
+                    put_way_at(n, g.x, g.y, g.z)
+                    MENU.open = nil
+                end
+            end
+            U.text(dl, x + S(14), y + S(28), U.fit(sub, F.text, T.tiny, w - S(28)), P.dim, F.text, T.tiny, a)
+            dl:AddLine({ x + 1, y + head_h }, { x + w - 1, y + head_h }, u32(P.line, a), 1)
+
+            -- the rows
+            if #rows > 0 then
+                local cy = gy + grid_h + pad
+                dl:AddLine({ x + S(14), cy }, { x + w - S(14), cy }, u32(P.line, 0.8 * a), 1)
+                cy = cy + pad
+                for i, r in ipairs(rows) do
+                    local key, rx, rw = '##cm_grow' .. i, x + pad, w - pad * 2
+                    imgui.SetCursorScreenPos({ rx, cy })
+                    local pressed, _, hv = U.hit(key, rw, row_h, S(8))
+                    if hv > 0 then
+                        dl:AddRectFilled({ rx, cy }, { rx + rw, cy + row_h }, u32(r.color, (0.06 + 0.1 * hv) * a), S(8))
+                        dl:AddRectFilled({ rx, cy + S(9) }, { rx + S(3), cy + row_h - S(9) }, u32(r.color, hv * a), S(1.5))
+                    end
+                    U.draw_ripples(dl, key, rx, cy, rw, row_h, r.color)
+                    U.icon(dl, rx + S(18), cy + row_h / 2, r.ic, r.color, T.small, a)
+                    U.text_mid(dl, rx + S(36), cy + row_h / 2, r.label, mix(P.text, r.color, 0.3 + 0.7 * hv), F.semi, T.small, a)
+                    if pressed then
+                        U.ripple_at(key)
+                        r.run()
+                        MENU.open = nil
+                    end
+                    cy = cy + row_h
+                end
+            end
+
+            if now_t - m.at > 0.15 and (imgui.IsMouseClicked(0) or imgui.IsMouseClicked(1)) then
+                local mx, my = imgui.GetMousePos()
+                if mx < x or mx > x + w or my < y or my > y + h then MENU.open = nil end
+            end
+            if imgui.IsKeyPressed(U.KEY_ESCAPE) then MENU.open = nil end
+        end)
+        dl:PopClipRect()
+        if not ok then vana.log('clawmark-vanacore waymark menu: ' .. tostring(err)) MENU.open = nil end
+    end
+    imgui.End()
+    if MENU.open == m and VIEW.ok then
+        local col = hover_n and WAYS[hover_n].color or { 0.85, 0.9, 1.0 }
+        draw_ground_ring(imgui.GetBackgroundDrawList(), col, g.x, g.z, g.y, cfg.way_radius, too_far and 0.35 or 0.7, clock(), g.d,
+            hover_n and WAYS[hover_n].square or false)
+    end
+end
+
 -- The menu is a glass sheet at the pointer in Party Finder's and the Auction House's style (ui.lua, their shared kit):
 -- a head with the target and its mark, the eight marks as tiles, then the rows. A click elsewhere or Esc closes it.
 local function draw_menu()
@@ -1320,10 +1799,11 @@ local function draw_menu()
         local w = MENU.want
         MENU.want = nil
         -- under the pointer, so it has the hover from the start
-        MENU.open = { index = w.index, id = w.id, x = w.x - U.S(10), y = w.y - U.S(10), at = imgui.GetTime(), anim = 0, frames = 0 }
+        MENU.open = { index = w.index, id = w.id, ground = w.ground, x = w.x - U.S(10), y = w.y - U.S(10), at = imgui.GetTime(), anim = 0, frames = 0 }
     end
     local m = MENU.open
     if m == nil or not st.kit then return end
+    if m.ground then return draw_ground_menu(m) end
     local e = vana.game.entity(m.index)
     if e == nil or e.id ~= m.id then MENU.open = nil return end
 
@@ -1467,6 +1947,17 @@ vana.events.on('mouse', function (kind, x, y, delta, blocked)
             MENU.want = { index = index, id = vana.game.entity(index).id, x = x, y = y }
             return true
         end
+        -- the ground: the waymarks' menu, to put one on the spot (vana.world.pick, a VanaCore newer than 0.8.216: the zone's
+        -- collision under the pointer)
+        if cfg.ways and vana.world.pick then
+            local gx, gy, gz = vana.world.pick(x, y)
+            if gx then
+                local me = my_entity()
+                local far = me and math.sqrt((me.x - gx) ^ 2 + (me.y - gy) ^ 2 + (me.z - gz) ^ 2) or 0
+                MENU.want = { ground = { x = gx, y = gy, z = gz, d = far }, x = x, y = y }
+                return true
+            end
+        end
     end
 end)
 
@@ -1514,22 +2005,22 @@ end)
 vana.events.on('packet_in', function (e)
     if e.id == PACKET then
         local p = ffi.cast('uint8_t*', e.data_raw)
-        if p[0x04] == 1 then on_state(p) end
+        if p[0x04] == S2C.STATE then on_state(p) elseif p[0x04] == S2C.WAYMARKS then on_ways(p) end
         return true
     end
 end)
 
 vana.events.on('zone_out', function ()
-    st.marks = {}
+    st.marks, st.ways, ME.index = {}, {}, nil
 end)
 
 vana.events.on('zone_change', function ()
-    st.marks = {}
+    st.marks, st.ways, ME.index = {}, {}, nil
     sync_soon(2)
 end)
 
 vana.events.on('login', function ()
-    st.marks = {}
+    st.marks, st.ways, ME.index = {}, {}, nil
     sync_soon(3)
 end)
 
@@ -1540,9 +2031,64 @@ local HELP = {
     '/mark target <mark>: target what carries it',
     '/mark settings: theme, scale, opacity, sizes;  /mark fold: fold the bar',
     '/mark size <pct>, /mark height <n>, /mark chat, /mark rclick (the right-click menu)',
-    '/claw works the same as /mark',
+    '/claw works the same as /mark;  /wp help: the waymarks',
     'Marks: 1-8 or star, circle, diamond, triangle, moon, square, cross, skull',
 }
+
+local WAY_HELP = {
+    '/wp <waymark>: down at your feet (moves it if it is out);  /wp <waymark> target: at your target\'s feet',
+    '/wp <waymark> <yalms>: so many yalms ahead of you',
+    '/wp clear [<waymark>]: one waymark off, or all of them',
+    '/wp bar: their row in the bar;  /wp column <yalms>: the column of light, 0 (none) to 15;  /wp width <yalms>: 0.5 to 4',
+    '/way and /waymark work the same as /wp',
+    'Waymarks: A, B, C, D (round) and 1, 2, 3, 4 (square)',
+}
+
+vana.events.on('command', function (e)
+    local args = {}
+    for w in e.command:gmatch('%S+') do args[#args + 1] = w end
+    local cmd = (args[1] or ''):lower()
+    if cmd ~= '/wp' and cmd ~= '/way' and cmd ~= '/waymark' and cmd ~= '/waymarks' then return end
+    local sub = (args[2] or ''):lower()
+
+    if sub == '' or sub == 'help' then
+        for _, l in ipairs(WAY_HELP) do say(l) end
+    elseif sub == 'bar' then
+        cfg.ways = not cfg.ways
+        config:save()
+        say('The waymarks ' .. (cfg.ways and 'have' or "don't have") .. ' their row in the bar.')
+    elseif sub == 'clear' or sub == 'off' then
+        if args[3] then
+            local n = parse_way(args[3])
+            if n then clear_way(n) else say('No waymark called ' .. args[3] .. '.') end
+        else
+            clear_way(nil)
+        end
+    elseif sub == 'column' or sub == 'beam' or sub == 'height' then
+        local v = tonumber(args[3])
+        if v then
+            cfg.beam = math.max(0, math.min(15, math.floor(v + 0.5)))
+            config:save()
+        end
+        say(cfg.beam > 0 and ('The column of light over a waymark is %d yalms tall.'):format(cfg.beam) or 'Waymarks are rings alone, with no column.')
+    elseif sub == 'width' or sub == 'radius' or sub == 'size' then
+        local v = tonumber(args[3])
+        if v then
+            cfg.way_radius = math.max(0.5, math.min(4, math.floor(v * 2 + 0.5) / 2))
+            config:save()
+        end
+        say(('Waymarks are %.1f yalms wide.'):format(cfg.way_radius))
+    else
+        local n = parse_way(sub)
+        if n == nil then
+            say('No waymark called ' .. sub .. '. /wp help lists them.')
+            return true
+        end
+        local where = (args[3] or ''):lower()
+        if where == 'off' or where == 'clear' then clear_way(n) else put_way(n, where) end
+    end
+    return true
+end)
 
 vana.events.on('command', function (e)
     local args = {}
