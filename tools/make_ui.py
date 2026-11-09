@@ -1,10 +1,13 @@
-"""Builds ui.lua, the auction house addon's drawing kit, out of the Party Finder addon's helper functions so the two look
+"""Builds ui.lua, the drawing kit of the auction house and Clawmark addons, out of the Party Finder addon's helper functions so the two look
 the same. Functions are copied by name; the animation state they kept in `st` moves to a module table."""
 import os, re, sys
 # run from anywhere: python tools/make_ui.py [out]; the source is Party Finder's addon in this repo
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'addons', 'vanacore', 'partyfinder-vanacore', 'partyfinder-vanacore.lua')
-OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'addons', 'vanacore', 'auctionhouse-vanacore', 'ui.lua')
+# the addons that carry the kit (each folder stands alone, so each has its own copy); an argument writes only that path,
+# as the auction house's
+TARGETS = ['auctionhouse-vanacore', 'clawmark-vanacore']
+OUT = sys.argv[1] if len(sys.argv) > 1 else None
 lines = open(SRC).read().split('\n')
 
 def func(name):
@@ -197,8 +200,18 @@ U.dropdown, U.section, U.slider, U.segments, U.toggle, U.dialog, U.toast, U.draw
 U.anim = A -- the host sets A.pad_shown (the controller is in use); hit() keeps A.focus for the ring
 return U
 ''')
-open(OUT, 'w').write('\n'.join(parts) + '\n')
-print('ui.lua written:', sum(1 for _ in open(OUT)), 'lines')
+kit = '\n'.join(parts) + '\n'
+def for_addon(name):
+    if name == 'auctionhouse-vanacore':
+        return kit
+    return (kit.replace('auctionhouse-vanacore', name)
+               .replace('gathered so the auction house draws the same way', 'gathered so %s draws the same way' % name))
+if OUT:
+    open(OUT, 'w').write(for_addon('auctionhouse-vanacore'))
+else:
+    for name in TARGETS:
+        open(os.path.join(ROOT, 'addons', 'vanacore', name, 'ui.lua'), 'w').write(for_addon(name))
+print('ui.lua written:', OUT or ', '.join(TARGETS))
 
 # the controller module, one copy per addon (each addon folder stands alone)
 import shutil

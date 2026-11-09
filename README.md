@@ -8,6 +8,7 @@ the clients keep them, so a folder copies straight into place.
 | Party Finder 2.14 | Ashita | [`addons/ashita/partyfinder`](addons/ashita/partyfinder) | LFG/LFM listings, Duty Roulette, Mission Help and Venture parties |
 | Party Finder 2.2 | VanaCore | [`addons/vanacore/partyfinder-vanacore`](addons/vanacore/partyfinder-vanacore) | The same finder rewritten for VanaCore's native API: glass cards, slots, themes, sound packs |
 | Auction House 1.0 | VanaCore | [`addons/vanacore/auctionhouse-vanacore`](addons/vanacore/auctionhouse-vanacore) | The auction house as its own window: stock, sale history and graphs, watch list, selling, sold notices |
+| Clawmark 1.0 | VanaCore | [`addons/vanacore/clawmark-vanacore`](addons/vanacore/clawmark-vanacore) | Raid-style marks over targets, shared with your party and alliance; folds into an assist bar |
 
 Each folder has its own README with what it does, its commands and how it talks to the server.
 
@@ -17,8 +18,8 @@ Each folder has its own README with what it does, its commands and how it talks 
 - **VanaCore:** copy a folder from `addons/vanacore/` to `Vanacore\addons\vanacore\` and `/addon load <folder name>`, for
   example `/addon load auctionhouse-vanacore`. Add the same line to `Vanacore\scripts\boot.txt` to load it at start.
 
-Party Finder needs the server's Party Finder module (`party_finder` in the CatsEyeXI modules repo); the Auction House
-runs on any LandSandBoat server and needs nothing server-side.
+Party Finder needs the server's Party Finder module (`party_finder` in the CatsEyeXI modules repo) and Clawmark
+its `target_marks` module; the Auction House runs on any LandSandBoat server and needs nothing server-side.
 
 ## Publishing to the launcher
 
@@ -42,8 +43,8 @@ picks the builds (only `vanacore` for now). The Ashita Party Finder isn't publis
   renames the addon, so players' settings and load lines would no longer find it.
 - **Each addon folder stands alone.** Players install one folder at a time, so its fonts and images live inside it,
   even where two addons carry the same files.
-- **Shared source lives in `tools/`.** [`tools/make_ui.py`](tools/make_ui.py) builds the Auction House's drawing kit
-  and themes (`auctionhouse-vanacore/ui.lua`) from Party Finder's helpers, so the two look the same: change Party
+- **Shared source lives in `tools/`.** [`tools/make_ui.py`](tools/make_ui.py) builds the drawing kit and themes of the
+  Auction House and Clawmark (`<addon>/ui.lua`) from Party Finder's helpers, so they all look the same: change Party
   Finder, then run `python tools/make_ui.py` from anywhere.
 
 ## History
