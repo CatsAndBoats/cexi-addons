@@ -1,0 +1,3335 @@
+{
+  "schema": 1,
+  "revision": 0,
+  "generated": null,
+  "exclude": [
+    ".git*",
+    ".github/**",
+    ".vscode/**",
+    "docs/**",
+    "*.md",
+    "LICENSE*"
+  ],
+  "addons": {
+    "p_cexidats": {
+      "launcher": {
+        "n": "cexidats",
+        "a": "-",
+        "v": "???",
+        "d": "Patches the FFXI client at runtime to support 26,000+ custom item IDs without modifying retail files. Required for CatsEye XI custom items to display correctly in inventory.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/cexidats.dll"
+      },
+      "install": "cexidats",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": true,
+        "auto_sd": true,
+        "locked": true,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_cexislots": {
+      "launcher": {
+        "n": "cexislots",
+        "a": "-",
+        "v": "???",
+        "d": "Patches the FFXI client at runtime to support custom animations, spells and abilities. Required for CatsEyeXI custom content to work correctly.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/cexislots.dll"
+      },
+      "install": "cexislots",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": true,
+        "auto_sd": true,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_findall": {
+      "launcher": {
+        "n": "FindAll",
+        "a": "-",
+        "v": "???",
+        "d": "Caches inventories for all your characters and lets you search across all of them at once. Also makes inventory load instantly on zone-in.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/FindAll.dll"
+      },
+      "install": "FindAll",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_hardwaremouse": {
+      "launcher": {
+        "n": "HardwareMouse",
+        "a": "-",
+        "v": "???",
+        "d": "Forces the hardware mouse cursor to always display, fixing cases where the cursor disappears in-game.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/HardwareMouse.dll"
+      },
+      "install": "HardwareMouse",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_legacyac": {
+      "launcher": {
+        "n": "LegacyAC",
+        "a": "-",
+        "v": "???",
+        "d": "A port of Ashitacast v3 for Ashita 4. Allows XML-based gear swapping using the classic Ashitacast format.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/LegacyAC.dll"
+      },
+      "install": "LegacyAC",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_minimap": {
+      "launcher": {
+        "n": "Minimap",
+        "a": "-",
+        "v": "???",
+        "d": "Displays a fully configurable minimap of your current zone on screen, including player position and nearby entities.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/Minimap.dll"
+      },
+      "install": "Minimap",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_multisend": {
+      "launcher": {
+        "n": "Multisend",
+        "a": "-",
+        "v": "???",
+        "d": "Allows controlling multiple FFXI characters simultaneously from one client. Send commands to all windows at once.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/Multisend.dll"
+      },
+      "install": "Multisend",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_nameplate": {
+      "launcher": {
+        "n": "Nameplate",
+        "a": "-",
+        "v": "???",
+        "d": "Fixes FFXI's nameplate aspect ratio so names are crisp and correctly sized regardless of window resolution. Also supports hiding nameplates by mode.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/Nameplate.dll"
+      },
+      "install": "Nameplate",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_screenshot": {
+      "launcher": {
+        "n": "Screenshot",
+        "a": "-",
+        "v": "???",
+        "d": "Saves in-game screenshots to PNG or BMP format without the copyright watermark present in default FFXI screenshots.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/Screenshot.dll"
+      },
+      "install": "Screenshot",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_sequencer": {
+      "launcher": {
+        "n": "Sequencer",
+        "a": "-",
+        "v": "???",
+        "d": "Fixes packet sequence IDs when using gear swap plugins (LuAshitacast, LegacyAC, Ashitacast) to prevent double-action errors during lag.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/Sequencer.dll"
+      },
+      "install": "Sequencer",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_shorthand": {
+      "launcher": {
+        "n": "Shorthand",
+        "a": "-",
+        "v": "???",
+        "d": "Adds flexible shorthand slash commands for spells and abilities, letting you cast by partial name instead of exact name.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/Shorthand.dll"
+      },
+      "install": "Shorthand",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_thirdparty": {
+      "launcher": {
+        "n": "Thirdparty",
+        "a": "-",
+        "v": "???",
+        "d": "An Ashita core dependency plugin that provides shared third-party library support for other plugins.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/Thirdparty.dll"
+      },
+      "install": "Thirdparty",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_toon": {
+      "launcher": {
+        "n": "toon",
+        "a": "-",
+        "v": "???",
+        "d": "Applies a cel-shading toon rendering effect to the game world, giving FFXI a stylised cartoon art style.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/toon.dll"
+      },
+      "install": "toon",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "p_uberwarp": {
+      "launcher": {
+        "n": "Uberwarp",
+        "a": "-",
+        "v": "???",
+        "d": "Provides fast zone-line traversal and movement assistance for private server navigation.",
+        "l": "",
+        "sd": "-",
+        "p": true
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/plugins/Uberwarp.dll"
+      },
+      "install": "Uberwarp",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": true,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_amantracker": {
+      "launcher": {
+        "n": "AMANTracker",
+        "a": "Seekey",
+        "v": "2.7",
+        "d": "GUI Tracker for Adventurers Mutual Aid Network Training Regimes",
+        "l": "https://github.com/seekey13/AMANTracker",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "seekey13/AMANTracker",
+        "track": "release",
+        "ref": "2.7",
+        "sha": "cc10be65a1d7ad7be5c9c9318fa336383c596053",
+        "path": ""
+      },
+      "install": "AMANTracker",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_aspect": {
+      "launcher": {
+        "n": "aspect",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Forces the game's aspect ratio to match the window's resolution, preventing distortion.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/aspect"
+      },
+      "install": "aspect",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_auctionhouse-vanacore": {
+      "launcher": {
+        "n": "auctionhouse-vanacore",
+        "a": "Carver",
+        "v": "1.0",
+        "d": "CatsEyeXI's Auction House for VanaCore: browse, buy, sell and watch your sales from one window.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "addons/vanacore/auctionhouse-vanacore"
+      },
+      "install": "auctionhouse-vanacore",
+      "targets": [
+        "vanacore"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_clawmark-vanacore": {
+      "launcher": {
+        "n": "clawmark-vanacore",
+        "a": "Carver",
+        "v": "1.1",
+        "d": "Clawmark: raid-style target marks and waymarks shared with your party and alliance.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "addons/vanacore/clawmark-vanacore"
+      },
+      "install": "clawmark-vanacore",
+      "targets": [
+        "vanacore"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_autojoin": {
+      "launcher": {
+        "n": "autojoin",
+        "a": "atom0s & Thorny",
+        "v": "1.0",
+        "d": "Automatically responds to party invites based on your configuration. Can auto-join, auto-decline, or handle invites by sender name.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/autojoin"
+      },
+      "install": "autojoin",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_autorespond": {
+      "launcher": {
+        "n": "autorespond",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Automatically responds to tells with a custom message when AFK mode is enabled.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/autorespond"
+      },
+      "install": "autorespond",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_blucheck": {
+      "launcher": {
+        "n": "blucheck",
+        "a": "atom0s",
+        "v": "1.1",
+        "d": "Tracks which Blue Magic spells you have and haven't learned yet, with an in-game UI.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/blucheck"
+      },
+      "install": "blucheck",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_blumon": {
+      "launcher": {
+        "n": "blumon",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Displays a coloured message in chat whenever you learn a new Blue Magic spell.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/blumon"
+      },
+      "install": "blumon",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_blusets": {
+      "launcher": {
+        "n": "blusets",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Save and load Blue Mage spell sets via slash commands. Great for swapping between builds quickly.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/blusets"
+      },
+      "install": "blusets",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_cam": {
+      "launcher": {
+        "n": "cam",
+        "a": "Hokuten - Modified by Vekien",
+        "v": "1.0.0",
+        "d": "DEPRECATED - DO NOT USE - USE xicamera INSTEAD",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/cam"
+      },
+      "install": "cam",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_cfhblock": {
+      "launcher": {
+        "n": "cfhblock",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Blocks the Call for Help (CFH) packet from being sent, preventing accidental tagging of monsters.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/cfhblock"
+      },
+      "install": "cfhblock",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_chains": {
+      "launcher": {
+        "n": "chains",
+        "a": "Sippius - Original Ashita-v3 skillchains by Ivaar",
+        "v": "0.8",
+        "d": "Displays available skillchain options for your current target so you can coordinate weapon skills easily.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/chains"
+      },
+      "install": "chains",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_changecall": {
+      "launcher": {
+        "n": "changecall",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Overrides all incoming /call macros to play a different call sound instead.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/changecall"
+      },
+      "install": "changecall",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_chatmon": {
+      "launcher": {
+        "n": "chatmon",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Plays sound alerts for chat events such as tells, party name-mentions, invites, skillups, and more.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/chatmon"
+      },
+      "install": "chatmon",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_checker": {
+      "launcher": {
+        "n": "checker",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Enhances the /check command with coloured difficulty text and displays monster levels, including NMs.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/checker"
+      },
+      "install": "checker",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_cleancs": {
+      "launcher": {
+        "n": "cleancs",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Hides Ashita-rendered UI elements (addon windows, etc.) automatically during cutscenes.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/cleancs"
+      },
+      "install": "cleancs",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_clock": {
+      "launcher": {
+        "n": "clock",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Displays clocks for multiple real-world timezones on screen simultaneously.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/clock"
+      },
+      "install": "clock",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_config": {
+      "launcher": {
+        "n": "config",
+        "a": "atom0s",
+        "v": "1.1",
+        "d": "Adds slash commands to force-set in-game graphics and configuration settings directly.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/config"
+      },
+      "install": "config",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_craftmon": {
+      "launcher": {
+        "n": "craftmon",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Reveals your crafting result (Normal Quality, High Quality, or Break) immediately after starting the synth.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/craftmon"
+      },
+      "install": "craftmon",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_crystalbuff": {
+      "launcher": {
+        "n": "CrystalBuff",
+        "a": "Seekey",
+        "v": "1.5",
+        "d": "Tracks and corrects crystal buff (Signet, Sanction, Sigil) based on current zone.",
+        "l": "https://github.com/seekey13/CrystalBuff",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "seekey13/CrystalBuff",
+        "track": "release",
+        "ref": "1.5",
+        "sha": "fa11ccbd723c722e856d2f9e5deefa2fe055d04f",
+        "path": ""
+      },
+      "install": "crystalbuff",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_customcolors": {
+      "launcher": {
+        "n": "CustomColors",
+        "a": "Loxley",
+        "v": "1.1",
+        "d": "Applies custom colours to chat messages for CatsEye XI server-specific content.",
+        "l": "https://catseyexi.com/cw",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/customcolors"
+      },
+      "install": "customcolors",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": true,
+        "auto_sd": true,
+        "locked": true,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_debuff": {
+      "launcher": {
+        "n": "debuff",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Allows you to cancel active buffs or debuffs by status ID via a slash command.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/debuff"
+      },
+      "install": "debuff",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_distance": {
+      "launcher": {
+        "n": "distance",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Displays your distance to your current target on screen in real time.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/distance"
+      },
+      "install": "distance",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_drawdistance": {
+      "launcher": {
+        "n": "drawdistance",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Adjusts the game's entity and world render distances via slash commands to improve performance or visibility.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/drawdistance"
+      },
+      "install": "drawdistance",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_easyth": {
+      "launcher": {
+        "n": "EasyTH",
+        "a": "Arielfy",
+        "v": "0.4",
+        "d": "Tracks Treasure Hunter procs on enemies, showing the current TH level in an on-screen display.",
+        "l": "https://github.com/ariel-logos/easyTH",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "ariel-logos/easyTH",
+        "track": "pin",
+        "ref": null,
+        "sha": "1e8d2c21ed2ad8906c81db741bcb52fc8be22d03",
+        "path": ""
+      },
+      "install": "easyTH",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_enternity": {
+      "launcher": {
+        "n": "enternity",
+        "a": "Hypnotoad & atom0s",
+        "v": "1.1",
+        "d": "Automatically advances through dialog and cutscenes that require pressing Enter, so you don't have to spam the button.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/enternity"
+      },
+      "install": "enternity",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_equipmon": {
+      "launcher": {
+        "n": "equipmon",
+        "a": "atom0s",
+        "v": "1.2",
+        "d": "Displays your currently equipped gear on screen at all times, with optional slot labels.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/equipmon"
+      },
+      "install": "equipmon",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_fancychat": {
+      "launcher": {
+        "n": "fancychat",
+        "a": "Arielfy",
+        "v": "1.0.260921",
+        "d": "A highly customizable replacement chat window with tabs, combat-log formatting, timestamps, notepad tools, and optional map or link helpers.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/fancychat"
+      },
+      "install": "fancychat",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_fancycompass": {
+      "launcher": {
+        "n": "FancyCompass",
+        "a": "Arielfy",
+        "v": "1.0",
+        "d": "A customizable ImGui compass and clock overlay that replaces the default in-game compass HUD, displaying directional heading, Vana'diel time, and weather in a configurable panel.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/fancycompass"
+      },
+      "install": "fancycompass",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_fancytrusts": {
+      "launcher": {
+        "n": "FancyTrusts",
+        "a": "Arielfy",
+        "v": "0.3.1",
+        "d": "A fancy ImGui UI panel for managing and summoning Trust NPCs with a visual grid layout.",
+        "l": "https://github.com/ariel-logos/FancyTrusts",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "ariel-logos/FancyTrusts",
+        "track": "pin",
+        "ref": null,
+        "sha": "94381c54bc0bfbf454d035f4ffd2120fd2ab8123",
+        "path": "FancyTrusts"
+      },
+      "install": "FancyTrusts",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_filterless": {
+      "launcher": {
+        "n": "filterless",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Removes the bad language profanity filter entirely — useful on private servers.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/filterless"
+      },
+      "install": "filterless",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_filters": {
+      "launcher": {
+        "n": "filters",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Save and load your chat filter settings to named files via slash commands.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/filters"
+      },
+      "install": "filters",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_filterscan": {
+      "launcher": {
+        "n": "filterscan",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Filters your Widescan results by monster name, making it easy to hunt specific targets.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/filterscan"
+      },
+      "install": "filterscan",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_find": {
+      "launcher": {
+        "n": "Find",
+        "a": "MalRD, zombie343, sippius(v4), Haruuc",
+        "v": "3.1.0_cexi",
+        "d": "Searches all of your storage containers and slips for items by name.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/find"
+      },
+      "install": "find",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_fps": {
+      "launcher": {
+        "n": "fps",
+        "a": "atom0s",
+        "v": "1.1",
+        "d": "Displays the current game FPS on screen and allows you to unlock or cap the framerate.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/fps"
+      },
+      "install": "fps",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_freemem": {
+      "launcher": {
+        "n": "freemem",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Triggers a Windows memory cleanup to free unused RAM and reduce memory pressure on the game.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/freemem"
+      },
+      "install": "freemem",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_frenslist": {
+      "launcher": {
+        "n": "frenslist",
+        "a": "Arielfy",
+        "v": "1.0",
+        "d": "A persistent, always-updating friend list. Add up to 30 players and see at a glance who's online, what zone they're in, their job/level, and whether they're in a party or away. Get notified when friends log in or out, click a name to send a /tell, and pick from 13 color themes. Commands: /fl add <name>.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/frenslist"
+      },
+      "install": "frenslist",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_gainz": {
+      "launcher": {
+        "n": "gainz",
+        "a": "Commandobill",
+        "v": "1.1",
+        "d": "Displays Gainz event schedule and timer info on demand, so you always know when events are active.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/gainz"
+      },
+      "install": "gainz",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_geocompass": {
+      "launcher": {
+        "n": "GeoCompass",
+        "a": "Arielfy",
+        "v": "0.2",
+        "d": "Shows a Geomancer compass overlay to assist with Cardinal Chant placement for CatsEye XI.",
+        "l": "https://github.com/ariel-logos/Geocompass",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "ariel-logos/Geocompass",
+        "track": "pin",
+        "ref": null,
+        "sha": "b6735ce0d6f0112b1ec59c5cb4e7f011ad77840f",
+        "path": "geocompass"
+      },
+      "install": "geocompass",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_goldilox": {
+      "launcher": {
+        "n": "Goldilox",
+        "a": "Dewin (UI rewrite)",
+        "v": "3.8",
+        "d": "Keeps track of Goblin dailies.  Exclusively for CatsEye XI.",
+        "l": "https://github.com/ChadBrowick/Goldilox-Vanacore",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "ChadBrowick/Goldilox-Vanacore",
+        "track": "branch",
+        "ref": "main",
+        "sha": "02c47d6ef6aa7fc2b696522c3f879f22f1b2f731",
+        "path": "Goldilox-v3.8/Goldilox"
+      },
+      "install": "Goldilox",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_goldilox-ui": {
+      "launcher": {
+        "n": "Goldilox-UI",
+        "a": "Dewin & Seekey",
+        "v": "1.2",
+        "d": "Keeps track of Goblin dailies.  Exclusively for CatsEye XI.",
+        "l": "https://github.com/seekey13/goldilox-ui",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "seekey13/goldilox-ui",
+        "track": "release",
+        "ref": "1.2",
+        "sha": "52bc8dd2ae1a3631cae5441ac5eca920047e3d60",
+        "path": ""
+      },
+      "install": "goldilox-ui",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_hideconsole": {
+      "launcher": {
+        "n": "hideconsole",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Hides the Ashita boot loader console window so it doesn't clutter your taskbar.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/hideconsole"
+      },
+      "install": "hideconsole",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": true,
+        "auto_sd": true,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_hideui": {
+      "launcher": {
+        "n": "hideui",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Adds slash commands to hide, show, or toggle all Ashita-rendered UI elements at once.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/hideui"
+      },
+      "install": "hideui",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_ime": {
+      "launcher": {
+        "n": "ime",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Enables the Japanese IME input toolbar on any language client, allowing Japanese text input.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/ime"
+      },
+      "install": "ime",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_imguistyle": {
+      "launcher": {
+        "n": "imguistyle",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Provides an in-game style editor for Ashita's ImGui UI theme, with per-character saving.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/imguistyle"
+      },
+      "install": "imguistyle",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_instantchat": {
+      "launcher": {
+        "n": "instantchat",
+        "a": "atom0s",
+        "v": "1.1",
+        "d": "Removes the brief delay that occurs when chat messages appear in the chat log windows.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/instantchat"
+      },
+      "install": "instantchat",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_itemwatch": {
+      "launcher": {
+        "n": "itemwatch",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Tracks specific items and key items on-screen with an easy-to-use in-game editor. Great for Abyssea farming.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/itemwatch"
+      },
+      "install": "itemwatch",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_libs": {
+      "launcher": {
+        "n": "libs",
+        "a": "atom0s & CatsEyeXI",
+        "v": "",
+        "d": "The shared Lua libraries Ashita addons load (common, imgui, settings, ffxi helpers). Always installed.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/libs"
+      },
+      "install": "libs",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": true,
+        "hide_on_vanacore": false,
+        "hidden": true
+      },
+      "deps": []
+    },
+    "a_links": {
+      "launcher": {
+        "n": "links",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Captures URLs that appear in chat and lets you open them with a single click from a UI window.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/links"
+      },
+      "install": "links",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_logincmd": {
+      "launcher": {
+        "n": "logincmd",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Executes a per-character Lua or script file automatically when logging in or switching characters.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/logincmd"
+      },
+      "install": "logincmd",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_logs": {
+      "launcher": {
+        "n": "logs",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Logs all incoming chat text to per-character, per-date log files saved to disk.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/logs"
+      },
+      "install": "logs",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_luashitacast": {
+      "launcher": {
+        "n": "LuAshitacast",
+        "a": "Thorny",
+        "v": "2.02",
+        "d": "A powerful Lua-based gear swap system. Write character-specific scripts to swap equipment on spell cast, job ability, and more.",
+        "l": "https://github.com/ThornyFFXI/LuAshitacast",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "ThornyFFXI/LuAshitacast",
+        "track": "pin",
+        "ref": null,
+        "sha": "8406d9b48a1d54aaf1306de5304c26204f5987d4",
+        "path": "addons/luashitacast"
+      },
+      "install": "luashitacast",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_macrofix": {
+      "launcher": {
+        "n": "macrofix",
+        "a": "atom0s & Sorien",
+        "v": "1.0",
+        "d": "Removes the animation delay when macro bars appear, making them display instantly.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/macrofix"
+      },
+      "install": "macrofix",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_mapdot": {
+      "launcher": {
+        "n": "mapdot",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Displays all nearby entities as dots on the compass minimap regardless of your current job.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/mapdot"
+      },
+      "install": "mapdot",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_minimapmon": {
+      "launcher": {
+        "n": "minimapmon",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Automatically hides the Minimap plugin under certain conditions, such as when standing still.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/minimapmon"
+      },
+      "install": "minimapmon",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_mobdb": {
+      "launcher": {
+        "n": "mobdb",
+        "a": "Thorny",
+        "v": "1.15",
+        "d": "Displays detailed database information about monsters, including resistances, drops, and stats.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/mobdb"
+      },
+      "install": "mobdb",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_move": {
+      "launcher": {
+        "n": "move",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "A window manager addon to reposition, resize, and toggle borders on the game window.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/move"
+      },
+      "install": "move",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_nolock": {
+      "launcher": {
+        "n": "nolock",
+        "a": "WinterSolstice8, atom0s for the patch",
+        "v": "1.0.0",
+        "d": "Removes the engagement lock requirement so you can attack without facing a target.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/nolock"
+      },
+      "install": "nolock",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": true,
+        "auto_sd": true,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_nomount": {
+      "launcher": {
+        "n": "nomount",
+        "a": "Thorny",
+        "v": "1.01",
+        "d": "Blocks the default mount music from playing when mounting a Chocobo or other mount.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/NoMount"
+      },
+      "install": "NoMount",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_noname": {
+      "launcher": {
+        "n": "noname",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Hides your own character name from appearing above your character model.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/noname"
+      },
+      "install": "noname",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_partybuffs": {
+      "launcher": {
+        "n": "PartyBuffs",
+        "a": "Thorny",
+        "v": "1.07",
+        "d": "Displays active status buffs for all party members alongside the vanilla party list.",
+        "l": "https://github.com/ThornyFFXI/MiscAshita4",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/partybuffs"
+      },
+      "install": "partybuffs",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_partyfinder": {
+      "launcher": {
+        "n": "partyfinder",
+        "a": "Carver",
+        "v": "2.14",
+        "d": "A party finder tool built for CatsEye XI, letting players post and browse party listings in-game.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "addons/ashita/partyfinder"
+      },
+      "install": "partyfinder",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": true,
+        "auto_sd": true,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_partyfinder-vanacore": {
+      "launcher": {
+        "n": "partyfinder-vanacore",
+        "a": "Carver",
+        "v": "2.2",
+        "d": "CatsEyeXI's Party Finder for VanaCore: listings, join requests, Duty Roulette and Mission Help.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "addons/vanacore/partyfinder-vanacore"
+      },
+      "install": "partyfinder-vanacore",
+      "targets": [
+        "vanacore"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_petinfo": {
+      "launcher": {
+        "n": "petinfo",
+        "a": "atom0s & Tornac",
+        "v": "1.2",
+        "d": "Displays your pet's current HP, TP, and other stats in a small on-screen UI window.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/petinfo"
+      },
+      "install": "petinfo",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_points": {
+      "launcher": {
+        "n": "points",
+        "a": "Shinzaku",
+        "v": "2.2.2",
+        "d": "Tracks various point currencies and recurring event resources (Sparks, Bayld, Accolades, etc.) in a display window.",
+        "l": "https://github.com/Shinzaku/Ashita4-Addons/points",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/points"
+      },
+      "install": "points",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_pupsets": {
+      "launcher": {
+        "n": "pupsets",
+        "a": "sippius - blusets(atom0s)/pupsets-v3(DivByZero)",
+        "v": "1.1",
+        "d": "Save and load Puppetmaster automaton attachment setups via slash commands, similar to BluSets.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/pupsets"
+      },
+      "install": "pupsets",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_recast": {
+      "launcher": {
+        "n": "recast",
+        "a": "atom0s, Thorny, RZN",
+        "v": "1.0",
+        "d": "Displays coloured recast timers for your abilities and spells directly on screen.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/recast"
+      },
+      "install": "recast",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_renamer": {
+      "launcher": {
+        "n": "renamer",
+        "a": "atom0s & Teotwawki",
+        "v": "1.0",
+        "d": "Lets you rename entities (players, NPCs, monsters) with custom overrides via a built-in editor.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/renamer"
+      },
+      "install": "renamer",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_rolltracker": {
+      "launcher": {
+        "n": "rolltracker",
+        "a": "Daniel_H, sippius(v4)",
+        "v": "1.0.2",
+        "d": "Tracks Corsair dice rolls in your party or alliance, showing current roll names, values, and lucky/unlucky numbers.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/RollTracker"
+      },
+      "install": "RollTracker",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_sellit": {
+      "launcher": {
+        "n": "SellIt",
+        "a": "Thorny",
+        "v": "1.0",
+        "d": "Automates selling items to NPCs via a slash command, one at a time with a configurable delay.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/sellit"
+      },
+      "install": "sellit",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_sexchange": {
+      "launcher": {
+        "n": "sexchange",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Lets you override your character's displayed race and hair style via packet manipulation (visual only).",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/sexchange"
+      },
+      "install": "sexchange",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_sidekick": {
+      "launcher": {
+        "n": "Sidekick",
+        "a": "Seekey",
+        "v": "3.1.1",
+        "d": "Support Job Automation Framework",
+        "l": "https://github.com/seekey13/Sidekick",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "seekey13/Sidekick",
+        "track": "release",
+        "ref": "3.1.1",
+        "sha": "72d1c969777a5c0004d8449f6c6f6d83801032cc",
+        "path": ""
+      },
+      "install": "Sidekick",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_simplelog": {
+      "launcher": {
+        "n": "simplelog",
+        "a": "Created by Byrth, Ported by Spiken",
+        "v": "0.1.2",
+        "d": "A combat log parser that records and displays damage, healing, and ability use in a readable format.",
+        "l": "https://github.com/Spike2D/SimpleLog",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/simplelog"
+      },
+      "install": "simplelog",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_singlerace": {
+      "launcher": {
+        "n": "singlerace",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Forces all other players and NPCs to display as a single specified race and hair style (visual only).",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/singlerace"
+      },
+      "install": "singlerace",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_skillwatch": {
+      "launcher": {
+        "n": "skillwatch",
+        "a": "Arielfy",
+        "v": "0.3",
+        "d": "Displays an on-screen alert box for incoming enemy abilities and spells, with configurable filters and optional sound notifications.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/skillwatch"
+      },
+      "install": "skillwatch",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_sparks": {
+      "launcher": {
+        "n": "Sparks",
+        "a": "Brax(orig) - Sammeh Modified - v 2.0.0.2 - Towbes modified v2.0.0.3 - Winter Solstice v4.0.0.0 for Ashita v4",
+        "v": "4.0.0.0",
+        "d": "Tracks Sparks of Eminence point accumulation and displays Unity NPC reward information.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/sparks"
+      },
+      "install": "sparks",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_statustimers": {
+      "launcher": {
+        "n": "statustimers",
+        "a": "heals",
+        "v": "4.1.501",
+        "d": "Replaces the default status effect icon display with an improved version that shows remaining buff/debuff durations.",
+        "l": "https://github.com/Shirk/statustimers",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/statustimers"
+      },
+      "install": "statustimers",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_stfu": {
+      "launcher": {
+        "n": "stfu",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Suppresses repetitive system message spam and silences annoying macro <call> sounds.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/stfu"
+      },
+      "install": "stfu",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_targetlines": {
+      "launcher": {
+        "n": "targetlines",
+        "a": "Jyouya",
+        "v": "1.2",
+        "d": "Draws FFXII-style targeting lines from you to your current target and sub-target.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/targetlines"
+      },
+      "install": "targetlines",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_timers": {
+      "launcher": {
+        "n": "Timers",
+        "a": "Shiyo, The Mystic",
+        "v": "1.0.2.1",
+        "d": "Displays countdown timers for spells and abilities you've used, so you can track durations at a glance.",
+        "l": "https://github.com/lenonk/Timers",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/timers"
+      },
+      "install": "timers",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_timestamp": {
+      "launcher": {
+        "n": "timestamp",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Prepends a timestamp to every message in the chat log so you always know when things happened.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/timestamp"
+      },
+      "install": "timestamp",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_tokens": {
+      "launcher": {
+        "n": "tokens",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Extends the set of parsable tokens available in chatlog macros and scripts.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/tokens"
+      },
+      "install": "tokens",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_tparty": {
+      "launcher": {
+        "n": "tparty",
+        "a": "atom0s",
+        "v": "1.0",
+        "d": "Displays your full party and alliance's current TP and MP values, plus your target's HP percentage.",
+        "l": "https://ashitaxi.com/",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/tparty"
+      },
+      "install": "tparty",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_trackmebooty": {
+      "launcher": {
+        "n": "TrackMeBooty",
+        "a": "Arielfy",
+        "v": "0.2",
+        "d": "An item tracker that monitors drops and loot from enemies to help track farming progress.",
+        "l": "https://github.com/ariel-logos/TrackMeBooty",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "ariel-logos/TrackMeBooty",
+        "track": "pin",
+        "ref": null,
+        "sha": "88d8f4e94e2bbe0edac8a273f5201362c1ae5042",
+        "path": ""
+      },
+      "install": "TrackMeBooty",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_trove": {
+      "launcher": {
+        "n": "trove",
+        "a": "Loxley",
+        "v": "1.0.0",
+        "d": "A Crystal Warrior-exclusive storage manager. Provides a tabbed ImGui UI to browse and withdraw items from your Ephemeral Box by category, view currencies, track achievement points, and access Squire storage — all without leaving the game.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/trove"
+      },
+      "install": "trove",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_ubermap": {
+      "launcher": {
+        "n": "UberMap",
+        "a": "Seekey",
+        "v": "1.4",
+        "d": "Displays the server map, automatically on Home Point interaction.",
+        "l": "https://github.com/seekey13/UberMap",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "seekey13/UberMap",
+        "track": "release",
+        "ref": "1.4",
+        "sha": "dd3b02e3f91f1e99f726f133f038bdd71532b903",
+        "path": ""
+      },
+      "install": "ubermap",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_ventures": {
+      "launcher": {
+        "n": "ventures",
+        "a": "Commandobill, Seekey, and Phatty",
+        "v": "2.0.2",
+        "d": "Captures and displays EXP area data from the !ventures server command in a clean, sortable window.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/ventures"
+      },
+      "install": "ventures",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_xicamera": {
+      "launcher": {
+        "n": "xicamera",
+        "a": "Hokuten",
+        "v": "0.7.10",
+        "d": "Modifies the camera distance, pan speed, jitter fix, battle lockon and more!",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/xicamera"
+      },
+      "install": "xicamera",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_xiui": {
+      "launcher": {
+        "n": "XIUI",
+        "a": "Team XIUI",
+        "v": "1.8.4",
+        "d": "A modern replacement for the game's HUD: party list, player and target bars, cast bar, hotbars and more, each set up in game with /xiui. The successor to HXUI.",
+        "l": "https://github.com/tirem/XIUI",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "tirem/XIUI",
+        "track": "release",
+        "ref": "v1.8.4",
+        "sha": "4cdb8172086155e322ba7870c50214c5c31f79e1",
+        "path": "XIUI",
+        "asset": "^XIUI-[0-9.]+\\.zip$"
+      },
+      "install": "XIUI",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_xivbar": {
+      "launcher": {
+        "n": "xivbar",
+        "a": " Tirem (Rework) Edeon (Original)",
+        "v": "1.0.0",
+        "d": "Adds a Final Fantasy XIV-style hotbar display showing your current MP, TP, and HP in a sleek bar format.",
+        "l": "",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/xivbar"
+      },
+      "install": "xivbar",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_yunagearopt": {
+      "launcher": {
+        "n": "yunagearopt",
+        "a": "Yunas",
+        "v": "1.1.78",
+        "d": "Builds every set for a job from the gear you own (augments included) and exports LegacyAC XML, LuAshitacast and GearSwap.",
+        "l": "https://github.com/YunasXI/yunagearopt",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "YunasXI/yunagearopt",
+        "track": "release",
+        "ref": "1.1.78",
+        "sha": "e78ef508057a50c8e88ca4fd20d9c3fa000cba30",
+        "path": ""
+      },
+      "install": "yunagearopt",
+      "targets": [
+        "vanacore"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_yunaui": {
+      "launcher": {
+        "n": "YunaUI",
+        "a": "Yunas",
+        "v": "1.1.54",
+        "d": "A complete, clean HUD for CatsEyeXI: party and alliance lists, player and target bars, cast bar, buffs, maps and more, made to look like one modern interface. VanaCore only.",
+        "l": "https://github.com/YunasXI/yunaui",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "YunasXI/yunaui",
+        "track": "release",
+        "ref": "1.1.54",
+        "sha": "f9a7c04946afc559a0effa262c63d6713145aa73",
+        "path": "yunaui",
+        "asset": "^yunaui-[0-9.]+\\.zip$"
+      },
+      "install": "yunaui",
+      "targets": [
+        "vanacore"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    },
+    "a_zonename": {
+      "launcher": {
+        "n": "zonename",
+        "a": "Xenonsmurf",
+        "v": "1.1",
+        "d": "Displays the current zone and region name on screen when entering a new area, with a fading effect.",
+        "l": "https://github.com/xenonsmurf/Ashita-4-Plugins-and-Addons",
+        "sd": "-",
+        "p": false
+      },
+      "source": {
+        "repo": "CatsAndBoats/cexi-addons",
+        "track": "branch",
+        "ref": "main",
+        "sha": null,
+        "path": "legacy/ashita/addons/zonename"
+      },
+      "install": "zonename",
+      "targets": [
+        "ashita"
+      ],
+      "exclude": [],
+      "flags": {
+        "is_plugin": false,
+        "auto_win": false,
+        "auto_sd": false,
+        "locked": false,
+        "hide_on_vanacore": false
+      },
+      "deps": []
+    }
+  }
+}

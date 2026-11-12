@@ -1,0 +1,677 @@
+-- lib/defaults.lua — initial-state factories (default_*) and styling
+-- constants.  Pure data; sole side effect is utils.LoadTextures().
+
+require('common')
+require('imgui')  -- populates ImGuiWindowFlags_* globals used in default_fcw
+local gdi   = require('gdifonts.include')
+local utils = require('utils')
+
+local M = {}
+
+-- ================================================================
+-- UIWindow state — memory pointers, FFXI-side menu/window tracking.
+-- ================================================================
+function M.default_uiw()
+	return T{
+		NetStatObj         = T{0, 1},
+		-- Deref-at-read parts for the zone/netstat struct: static-slot
+		-- address + struct offset, resolved per frame in render.lua.
+		NetStatBase        = nil,
+		NetStatOffset      = 0,
+		MenuDesc           = nil,
+		LegacyChatOpen     = false,
+		LastMenu           = {'', 0},
+		MenuCD             = 0,
+		InvIdx             = 0,
+		NoShiftIdx         = 0,
+		MenuExt            = 0,
+		MenuList           = {},
+		WasInEquip         = false,
+		WasInInv           = false,
+		DialogPromptStart  = 0,
+		DialogCDStart      = 0,
+		DialogShown        = false,
+		DialogPtr          = nil,
+		UISizeYPtr         = nil,
+		UISizeXPtr         = nil,
+		EventPtr           = nil,
+		-- "Interface hidden" bool getter.  Code address only: the
+		-- mov ecx,imm32 operand at +0x0A is the static UI object and
+		-- byte +0xB4 on it is the flag.  render.lua walks the chain
+		-- per frame.  The client raises this both for a letterboxed
+		-- cutscene and for the player's own hide-UI hotkey.
+		UiHiddenPtr        = nil,
+		UiHideAt           = nil,   -- os.clock() deadline; nil = not pending
+		UiOwnedHide        = false, -- this option (not the player) is hiding
+		DrawMessageWindowPtr = nil,
+		-- Seeded with the FFXI defaults so the per-frame MoveChatPos
+		-- math in render.lua can never divide by nil/zero before the
+		-- first successful live read of the real values.
+		UISizeX            = 640,
+		UISizeY            = 480,
+		WinPtr1            = nil,
+		WinPtr2            = nil,
+		InputWinOpen       = nil,
+		-- Seeded 0 (not nil): the render-side read is now guarded and
+		-- can skip assignment on pre-settle frames, and the ~= 0 /
+		-- >= comparisons downstream must never see nil.
+		MemValue           = 0,
+		LastMemValue       = -1,
+	}
+end
+
+-- ================================================================
+-- FancyChat windows — three indexed entries:
+--   [1] primary chat (full state)
+--   [2] secondary chat (subset)
+--   [3] BigMode overlay (subset)
+-- ================================================================
+function M.default_fcw()
+	return T{
+		T{
+			-- cexi
+			LastCommands = T{
+				{}, 0,
+				{'!mog', '!chef', '!signet', '!sanction', '!sigil', '!ventures',
+				 '!points', '!prestige', '!fatigue', '!currency', '!dailies', '!pops'},
+				1
+			},
+			HasDoneServMes		  = false,
+			WaitingServMes 		  = 0,
+			BufferBusy            = false,
+			WasRendered           = false,
+			itemInfo              = {},
+			itemIcons             = T{{}, {}, {}, {}},
+			itemTexture           = T{{}, {}, {}, {}},
+			autoHideCheckCD       = 0,
+			autoHideFadeTime      = 0,
+			autoHideFade          = 0,
+			autoHideTime          = 0,
+			isHiddenGUI           = false,
+			LoginStatus           = nil,
+			Zoning                = false,
+			ProcessingText        = false,
+			ErrorMsg              = '',
+			GuideMeDocked         = true,
+			NotepadDocked         = true,
+			GuideMeClosedTmp      = false,
+			NotepadClosedTmp      = false,
+			GuideMeURL            = T{''},
+			Note                  = T{''},
+			GuideMeWalkthrough    = nil,
+			PrevKeyptr            = T{0, 0, 0, 0},
+			DraggingScroll        = false,
+			ScrollPos             = 0,
+			PrevMousePos          = T{0, 0},
+			MoveChatPos1          = 0,
+			MoveChatPos2          = 0,
+			MoveChatPos3          = 0,
+			MoveChatPos4          = 0,
+			MoveChatPos5          = 0,
+			MoveChat              = false,
+			PrevMoveChat          = false,
+			InitDone              = false,
+			Closing               = false,
+			LoggedIn              = false,
+			LoggedLobby           = 0,
+			FirstLogin			  = 1,
+			SaveStart             = 0,
+			SaveCD                = 5,
+			ReLogStart            = 0,
+			ServMesCD             = 8,
+			PlayerName            = '---',
+			RoRectBaseX           = 0,
+			RoRectBaseY           = 0,
+			FWDBaseX              = 0,
+			BKWBaseX              = 0,
+			BKWBaseY              = 0,
+			PositionLinesRequest  = {false, false},
+			RequestAuxFix         = false,
+			GuideMeOpened         = T{false},
+			NotepadOpened         = T{false},
+			Textures              = utils.LoadTextures(),
+			-- HideChat is the COMBINED, per-frame answer to "should
+			-- FancyChat be on screen right now".  Recomputed from
+			-- scratch every frame in render.lua; never write it
+			-- directly.
+			HideChat              = false,
+			-- The player's own hide-chat shortcut toggles THIS.  Kept
+			-- separate so the UI coming back can't un-hide a chat they
+			-- hid deliberately.
+			UserHideChat          = false,
+			PrevHideChat          = false,
+			PrevAnchor_X          = -1,
+			PrevAnchor_Y          = -1,
+			Anchor_X              = 0,
+			Anchor_Y              = 0,
+			BGScale               = 1.25,
+			BG_W                  = 0,
+			BG_H                  = 0,
+			TextureIDBorder       = nil,
+			TextureIDSettings     = nil,
+			TextureIDGuideMe      = nil,
+			TextureIDLogs         = nil,
+			TextureIDLoading      = nil,
+			TextureIDFolder       = nil,
+			TextureIDCompact      = nil,
+			TextureIDManual       = nil,
+			TextureIDInfo         = nil,
+			TextureIDNotepad      = nil,
+			TextureIDDumpchat     = nil,
+			TextureIDLogo         = nil,
+			HoverLine             = -1,
+			Keydown               = false,
+			Keydown2              = false,
+			Keydown3              = false,
+			Clicking              = false,
+			Dragging              = false,
+			Scrolling             = false,
+			ScrollUpRequest       = false,
+			ScrollDownRequest     = false,
+			ScrolledBack          = 0,
+			ScrollDelta           = 0,
+			ChatShiftScale        = 0,
+			ChatShiftScale_Min    = 50,
+			ChatShiftScale_Base   = 50,
+			ChatShiftScale_Target = 0,
+			OsClockLast           = 0,
+			OsClockLastFade       = 0,
+			ChatShift             = 0,
+			ChatHead              = 1,
+			RenderFOs             = false,
+			PosChanged            = true,
+			TabsPos               = nil,
+			compactPos            = nil,
+			compactSize           = nil,
+			windowFlagsChatBG = bit.bor(
+				ImGuiWindowFlags_NoDecoration,
+				ImGuiWindowFlags_NoResize,
+				ImGuiWindowFlags_NoBringToFrontOnFocus,
+				ImGuiWindowFlags_NoFocusOnAppearing,
+				ImGuiWindowFlags_NoBackground
+			),
+			windowFlagsGuideMeDocked = bit.bor(
+				ImGuiWindowFlags_NoResize,
+				ImGuiWindowFlags_NoBringToFrontOnFocus,
+				ImGuiWindowFlags_NoCollapse,
+				ImGuiWindowFlags_NoMove,
+				ImGuiWindowFlags_NoSavedSettings,
+				ImGuiWindowFlags_NoNav
+			),
+			windowFlagsGuideMe = bit.bor(
+				ImGuiWindowFlags_NoBringToFrontOnFocus,
+				ImGuiWindowFlags_NoSavedSettings,
+				ImGuiWindowFlags_NoNav
+			),
+		},
+		T{
+			RoRectBaseY           = 0,
+			RequestAuxFix         = false,
+			PositionLinesRequest  = {false, false},
+			PrevAnchor_X          = -1,
+			PrevAnchor_Y          = -1,
+			Anchor_X              = 0,
+			Anchor_Y              = 0,
+			BGScale               = 1.25,
+			BG_W                  = 0,
+			BG_H                  = 0,
+			HoverLine             = -1,
+			Keydown               = false,
+			Keydown2              = false,
+			Clicking              = false,
+			Dragging              = false,
+			Scrolling             = false,
+			ScrollUpRequest       = false,
+			ScrollDownRequest     = false,
+			ScrolledBack          = 0,
+			ScrollDelta           = 0,
+			ScrollPos             = 0,
+			ChatShiftScale        = 0,
+			ChatShiftScale_Min    = 50,
+			ChatShiftScale_Base   = 50,
+			ChatShiftScale_Target = 0,
+			OsClockLast           = 0,
+			OsClockLastFade       = 0,
+			ChatShift             = 0,
+			ChatHead              = 1,
+			RenderFOs             = false,
+			TabsPos               = nil,
+			PosChanged            = true,
+			compactPos            = nil,
+			compactSize           = nil,
+		},
+		{
+			HLeft                = 0,
+			BigModePrev          = false,
+			BigMode              = false,
+			Clicking             = false,
+			RoRectBaseY          = 0,
+			ScrollPos            = 0,
+			ChatLines            = 0,
+			RequestAuxFix        = false,
+			HoverLine            = -1,
+			Keydown              = false,
+			Keydown2             = false,
+			Scrolling            = false,
+			ScrollUpRequest      = false,
+			ScrollDownRequest    = false,
+			ScrolledBack         = 0,
+			ScrollDelta          = 0,
+			RenderFOs            = false,
+			ChatShift            = 0,
+			PositionLinesRequest = {false, false},
+			ChatHead             = 1,
+			PrevAnchor_X         = -1,
+			PrevAnchor_Y         = -1,
+			Anchor_X             = 0,
+			Anchor_Y             = 0,
+			BGScale              = 1.25,
+			BG_W                 = 0,
+			BG_H                 = 0,
+		}
+	}
+end
+
+-- ================================================================
+-- Chat-message buffers, one per logical tab.
+-- ================================================================
+function M.default_chat_buffer()
+	return T{
+		{'All',       T{text = T{}, mode = T{}, color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+		{'AllAlt',    T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+		{'Combat',    T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+		{'Linkshell', T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+		{'Party',     T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+		{'Tell',      T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+		{'Shout',     T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+		{'Custom',    T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+		-- Slots 9 + 10 are used only when SplitLinkshellTab is enabled.
+		-- They mirror slot 4's shape; the existing slot 4 stays unused
+		-- in split mode and these stay unused otherwise.  Decision is
+		-- made once at Init() based on the persisted setting, so the
+		-- per-message routing is a single static branch and not a
+		-- per-line gate.
+		{'L1',        T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+		{'L2',        T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+	}
+end
+
+-- ================================================================
+-- Persisted user settings (gets handed to Ashita's settings.load,
+-- which fills in any missing defaults from this baseline).
+-- ================================================================
+function M.default_settings()
+	return T{
+		ver                  = '0',
+		GamepadNav           = T{false},
+		CompactTabsBL        = T{false},
+		R0warning            = T{true},
+		UseHalfLength        = T{false},
+		PreciseTS            = T{false},
+		MoveChatATMenu       = T{true},
+		CustomFilters        = T{false},
+		SelectedCombatFilter = 'example.txt',
+		-- Parallel slots for the non-combat ("Other") filter list,
+		-- backed by filters/other/*.txt.  Same shape as the combat
+		-- pair above so the Filters tab can drive both with one
+		-- factored helper.
+		OtherFilters         = T{false},
+		SelectedOtherFilter  = 'example.txt',
+		autoDumpChat         = T{false},
+		-- Slots 1-5: NPC, LS (used when SplitLinkshellTab is off),
+		-- Party, Tell, Shout.  Slots 6-7: L1, L2 (used only when
+		-- SplitLinkshellTab is on; ignored otherwise).  The UI shows
+		-- either slot 2 OR slots 6+7 depending on the split state.
+		CustomTabModes       = T{false, false, false, false, false, false, false},  -- npc, ls, party, tell, shout, L1, L2
+		ItemPreview          = T{true},
+		AutoHideWindow       = T{false},
+		AutoHideTimeMax      = 10,
+		Notes                = T{},
+		CSMode               = {'Hide 2nd', 2},
+		CompactCombat        = {true},
+		-- When true, new chat lines appear immediately at the bottom
+		-- with no scroll-up animation.  Read at the top of the per-
+		-- frame catch-up block in render.lua.  Bound to a "requires
+		-- restart" checkbox in the Chat Window tab; the toggle goes
+		-- through `set.InstantChatScroll` so it's only committed on
+		-- "Restart & apply".
+		InstantChatScroll    = T{false},
+		CombatSplitChar      = {'Greater >', 0x003E},  -- alternatives: 0x7E ~, 0x2022 •, 0x2043 ⁃
+		GuideMeSecondWindow  = T{false},
+		GuideMeFontScale     = 1,
+		EnableFastScroll     = T{true},
+		EnabledChatMove      = T{false},
+		LockWindowPos        = T{false},
+		-- Saved chat-window positions (screen pixels), one pair per
+		-- window.  {-1, -1} = "never saved" sentinel: the window keeps
+		-- whatever position ImGui gives it (a legacy imgui.ini entry
+		-- or the default spawn) and adopts that as the saved value on
+		-- the first logged-in frame.  render.lua writes the pair on
+		-- every drag-release and applies it via SetNextWindowPos on
+		-- login / character switch.  Owning the position here (in the
+		-- per-character settings file) instead of relying on imgui.ini
+		-- makes it survive crashes and unclean exits - imgui.ini is
+		-- only flushed on clean shutdown on some Ashita cores, which
+		-- is why alt characters kept resetting to the top-left.
+		Window1Pos           = T{-1, -1},
+		Window2Pos           = T{-1, -1},
+		-- Follow the client's own "interface hidden" flag, which it
+		-- raises for cutscenes and for the hide-UI hotkey alike.
+		-- Opt-in: moving where a user's chat goes on an update is a
+		-- surprise.  Applies live, no restart.
+		HideWhenUIHidden     = T{false},
+		-- Background image filenames, chosen in Settings -> Chat
+		-- Window.  Both name a file in images/backgrounds/ - one
+		-- folder serves both surfaces, since each maps the texture to
+		-- its own shape rather than needing art cut to fit.
+		-- '' = no image, i.e. the plain colour plate.  When an image
+		-- IS set the plate colour's RGB is ignored and only its alpha
+		-- tints the artwork, so the opacity slider and the auto-hide
+		-- fade keep working.
+		ChatBGImage          = '',
+		InputBarBGImage      = '',
+		-- Opacity for the chat background IMAGE (0..1), live-editable.
+		-- Deliberately separate from rectSettings.fill_color, whose
+		-- alpha drives the plain plate but is restart-gated (staged
+		-- through set.PlateBGColor + "Restart & apply"), which would
+		-- otherwise leave a freshly picked image stuck at the default
+		-- plate alpha until the addon was reloaded.  Multiplied by the
+		-- auto-hide fade so the artwork still fades with the chat.
+		ChatBGImageOpacity   = 1.0,
+		-- Custom input chat bar: a styled gdi mirror of the native
+		-- chat input line, shown while the input is open.  Draggable
+		-- (same invisible-window pattern as the chat windows), with
+		-- its own width, plate color+opacity (single ARGB value) and
+		-- font size, all live-applied from the Chat Window tab.
+		-- InputBarPos follows the Window1Pos conventions: screen
+		-- pixels, per-character, {-1,-1} = "never placed" sentinel
+		-- (first use spawns it bottom-center and persists that).
+		InputBar             = T{false},
+		InputBarPos          = T{-1, -1},
+		-- Bar width in CHARACTERS, converted to pixels with the same
+		-- formula the chat windows use (chars * font_height * 0.59),
+		-- so the bar scales with its own font size exactly like the
+		-- chat plates scale with theirs.
+		InputBarChars        = 60,
+		InputBarBGColor      = 0x99000000,
+		InputBarFontHeight   = 18,
+		-- Extra pixels added symmetrically above and below the text
+		-- to the bar's bg plate height (0 = the default snug fit).
+		InputBarPadding      = 0,
+		-- Dedicated drag-lock for the input bar, independent from the
+		-- chat windows' LockWindowPos (which most users keep enabled
+		-- for the menu-avoidance feature).  Authoritative everywhere,
+		-- including test mode.
+		InputBarLock         = T{false},
+		-- When true, FancyChat stays visible even while the legacy
+		-- FFXI chat window is open (clicked / typing).  Default off,
+		-- which preserves the original "legacy open => FC hidden"
+		-- exclusive behaviour.  Checked by the visibility gates in
+		-- render.lua alongside uiw.LegacyChatOpen.
+		ShowWithLegacy       = T{false},
+		HelpButton           = T{true},
+		CompactTabs          = false,
+		PlayerName           = '---',
+		FormatTSMode         = 1,
+		SelectedTab          = 'All',
+		SelectedTab2         = 'All',
+		HideCombatFromAll    = T{false},
+		SecondChat           = T{false},
+		chatLineMaxL         = 100,
+		ChatLines            = 8,
+		WindowPosOffset      = T{0, 0, 0, 0},
+		defaultColor         = 0xFFFFFFFF,
+		ColorBlind           = T{false},
+		shortcutHide         = 46,
+		shortcutTab          = 45,
+		shortcutTab2         = 48,
+		shortcutBig          = 34,
+		shortcutHideS        = 42,
+		shortcutTabS         = 42,
+		shortcutTab2S        = 42,
+		shortcutBigS         = 42,
+		shortcutHideEnabled  = T{false},
+		shortcutTabEnabled   = T{false},
+		shortcutTab2Enabled  = T{false},
+		shortcutBigEnabled   = T{false},
+		-- Gamepad digital-button bindings.  Values are XInput button
+		-- indexes as delivered by Ashita's xinput_button event.  Stick
+		-- axes (18/19/20/21) are intentionally NOT user-remappable.
+		GamepadBindings = {
+			modifier          = 8,    -- LB: hold to enable navigation mode
+			cyclePrimaryTab   = 9,    -- RB
+			cycleSecondaryTab = 17,   -- RT
+			snapToBottom      = 13,   -- B
+			toggleBigMode     = 15,   -- Y
+			openChatInput     = 14,   -- X
+			submitInput       = 12,   -- A
+			historyPrev       = 0,    -- D-pad Up
+			historyNext       = 1,    -- D-pad Down
+			presetPrev        = 2,    -- D-pad Left
+			presetNext        = 3,    -- D-pad Right
+		},
+		-- When true, the Gamepad tab labels each binding with its
+		-- friendly Xbox name (LB, RT, A, ...).  When false (default),
+		-- raw XInput button indexes are shown - safer for non-Xbox
+		-- controllers whose physical buttons map to different XInput
+		-- numbers than an Xbox pad would.
+		XboxController       = T{false},
+		-- When true, the Linkshell tab is replaced with two separate
+		-- L1 / L2 tabs and linkshell-1 / linkshell-2 traffic is routed
+		-- into the corresponding buffer slot only.  Persisted; the
+		-- routing decision is made once at addon load (Init()) so
+		-- toggling requires a Restart & apply.  Lives in the Chat
+		-- Window tab's restart-required group.
+		SplitLinkshellTab    = T{false},
+		blockAll             = T{false},
+		blockCombat          = T{false},
+		timeStamp            = T{true},
+		TimeStamp12h         = T{false},
+		timeStampLine        = {false},
+		timeStampLineFreq    = {'10 minutes', 600},
+		hideNonParty         = T{true},
+		hideNonYou           = T{false},
+		hideAlliance         = T{true},
+		-- Packet-based filter (alternative to the three booleans above).
+		-- When PacketFilterEnabled2 is true, the parser consults the
+		-- combat-packets classifier and applies the hierarchy level
+		-- below; the three text-based hide flags are ignored.  Level
+		-- semantics: 1=show all (Others) | 2=hide Others | 3=also
+		-- hide Alliance | 4=also hide non-pet party | 5=also hide
+		-- Pet (show only You).  TARGET (the mob you/party are
+		-- engaged with) is always shown regardless of level.
+		--
+		-- KEY MIGRATION NOTE: this was originally `PacketFilterEnabled`
+		-- with a default of true.  After spell-interrupt crashes
+		-- (combat_packets pcall fix), we want to force existing players
+		-- back to text-mode filtering by default and let them opt back
+		-- into packet mode.  Renaming the key causes RepairSettings to
+		-- prune the old saved value on next load, so the new default
+		-- (false) takes effect.  Players who deliberately re-enable
+		-- packet mode via the UI then save the new key.
+		PacketFilterEnabled2 = T{false},
+		PacketFilterLevel    = 1,
+		-- When true, restricts the TARGET scope to actions whose
+		-- target list contains the local player.  Other TARGET
+		-- packets (mob hitting a party member, etc.) get blocked.
+		-- Useful for solo-ish "only show what's happening to ME"
+		-- play.  Ignored when packet-based filtering is off.
+		PacketFilterTargetMeOnly = T{false},
+		heartEmoji           = T{false},
+		EnableFCColorMarking = T{true},
+		selectedNotification = 'notification_1',
+		boostNotification    = T{false},
+		tellNotification     = T{false},
+		alertwords           = '',
+		selectedAlert        = 'notification_1',
+		boostAlert           = T{false},
+		Alert                = T{false},
+		alertOptions         = {false, true, true, true, true},
+		firstLoadMessage     = T{false},
+		settingsOpened       = T{false},
+		fontSettings = {
+			bg_overlap     = -2,
+			box_height     = 0,
+			box_width      = 0,
+			font_alignment = 0,
+			font_color     = 0xFFFFFFFF,
+			font_family    = 'Consolas',
+			font_flags     = gdi.FontFlags.Bold,
+			font_height    = 20,
+			gradient_color = 0x00000000,
+			gradient_style = 0,
+			opacity        = 1,
+			outline_color  = 0xFF000000,
+			outline_width  = 2,
+			position_x     = 0,
+			position_y     = 0,
+			text           = '',
+			visible        = true,
+			z_order        = 0,
+			background     = {visible = true, fill_color = 0x00000000},
+		},
+		rectSettings = {
+			width           = 100,
+			height          = 100,
+			corner_rounding = 0,
+			outline_color   = 0xFF000000,
+			outline_width   = 0,
+			fill_color      = 0x4D000000,
+			gradient_style  = 0,
+			gradient_color  = 0x00000000,
+			position_x      = 0,
+			position_y      = 0,
+			visible         = true,
+			z_order         = -1,
+		},
+	}
+end
+
+-- ================================================================
+-- Default per-mode color set (ARGB).  Two-element entries provide
+-- a colour-blind alternate in slot [2].
+-- ================================================================
+function M.default_colors()
+	return {
+		tell         = {0xFFD35AFF},
+		party        = {0xFF66E7FE},
+		shout        = {0xFFFF5E5E},
+		linkshell1   = {0xFF50FFD0},
+		linkshell2   = {0xFF00FF80},
+		emote        = {0xFFC797FF},
+		-- Default taken from the mode table's unity entry (mode 212).
+		unity        = {0xFFFFD270},
+		combat       = {0xFFDCF1FC},
+		damage       = {0xFFFFFFFF},
+		combatspell  = {0xFFDDC9FF},
+		spelldamage  = {0xFFF0FFF0},
+		lot          = {0xFFE2FA0C},
+		attain       = {0xFFFFE438},
+		obtained     = {0xFFA1FF3D},
+		keyitem      = {0xFFC797FF},
+		learn        = {0xFF5C71FF},
+		found        = {0xFFE5FF3D},
+		ability      = {0xFFF3A6FF},
+		you          = {0xFF00FFC1},
+		actor1       = {0xFF6BD5FF},
+		actor2       = {0xFFF7CF05},
+		helm         = {0xFFE5FF3D},
+		useitem      = {0xFFF58FFF},
+		negative     = {0xFFFF5640},
+		-- Both error slots default to the colours previously hardcoded
+		-- in utils.modesDA for FFXI chat modes 123 and 157.  Customisable
+		-- from Settings -> Font Colors as "Error (main)" / "Error (other)".
+		error1       = {0xFFFF0090},
+		error        = {0xFFFF44BB},
+		roe			 = {0xFFF56C42},
+		dmgdone      = {0xFF91FF47, 0xFF91FFF0},
+		dmggot       = {0xFFFA4343, 0xFFFFA269},
+		spelldmgdone = {0xFFADFF33, 0xFF5EE0DE},
+		spelldmggot  = {0xFFFC2B43, 0xFFE6874C},
+		cexi         = {0xFF00FFB3, 0xFFFF0055},
+	}
+end
+
+-- ================================================================
+-- Human-readable labels + tooltips for each color slot, used by the
+-- Settings UI's Font Colors tab.  Constant — exported by reference.
+-- ================================================================
+M.color_descriptions = {
+	tell         = {'Tell',                '/tell messages'},
+	party        = {'Party',               '/party messages'},
+	shout        = {'Shout',               '/shout messages'},
+	linkshell1   = {'Linkshell 1',         '/linkshell messages'},
+	linkshell2   = {'Linkshell 2',         '/linkshell2 messages'},
+	emote        = {'Emotes',              '/emote messages'},
+	unity        = {'Unity',               '/unity messages'},
+	combat       = {'Combat',              'Combat base color'},
+	damage       = {'Combat Damage',       'Default DMG color'},
+	combatspell  = {'Combat Spell',        'Spell base color'},
+	spelldamage  = {'Spell Dmg (Default)', 'Default spell DMG color'},
+	lot          = {'Lot Cast',            'Casting lot color'},
+	attain       = {'Attain',              'For level up and other character progression messages'},
+	obtained     = {'Obtain/Gain',         'For messages such as x obtains/gains y'},
+	keyitem      = {'Key Item',            'Obtained key item messages'},
+	learn        = {'Learn',               'Learning new skills/spells messages'},
+	found        = {'Drops',               'For messages such as Found on x: y'},
+	dmgdone      = {'Damage Done',  	   'Highlights damage done by you or enemy missed attacks.'},
+	dmggot       = {'Damage Taken',  	   'Highlights damage taken by you or your missed attacks.'},
+	spelldmgdone = {'Spell Dmg Done',      'Highlights spell damage done'},
+	spelldmggot  = {'Spell Dmg Taken',     'Highlights spell damage taken'},
+	cexi         = {'CEXI',                'CEXI content messages'},
+	ability      = {'Ability/Spell',       'Highlights an ability or spell used by an Entity'},
+	you          = {'You',                 'Color highlighting youin combat text.'},
+	actor1       = {'Friend Entity',       'Color highlighting the friendly entity in combat text.\n(i.e. the player, party members, etc.'},
+	actor2       = {'Foe Entity',          'Color highlighting the foe entity in combat text.\n(i.e. a monster, boss, etc.'},
+	helm         = {'HELM result',         'Color highlighting the yelded item from an HELM action'},
+	useitem      = {'Using Items',            'Color highlighting the use of an item'},
+	negative     = {'Negative Effect',     'Color that notifies a potential negative action (e.g. throwing items away)'},
+	error1       = {'Error (main)',        'Primary FFXI error / "can\'t do that" messages.'},
+	error        = {'Error (other)',       'Secondary FFXI error messages.'},
+	roe			 = {'RoE Messages',        'Color of Records of Emenince messages'},
+}
+
+-- ================================================================
+-- Tab-button color schemes (constant, exported by reference).
+-- ================================================================
+M.tab_button_styles_normal = {
+	T{ImGuiCol_Text,          {1.0, 1.0, 1.0, 0.8}},
+	T{ImGuiCol_Button,        {0,   0,   0,   0.3}},
+	T{ImGuiCol_ButtonActive,  {0,   0,   0,   1.0}},
+	T{ImGuiCol_ButtonHovered, {0.5, 0.5, 0.5, 0.7}},
+	T{ImGuiCol_FrameBg,        {0,   0,   0,   0}},
+	T{ImGuiCol_FrameBgHovered, {0,   0,   0,   0}},
+	T{ImGuiCol_FrameBgActive,  {0,   0,   0,   0}},
+}
+
+M.tab_button_styles_selected = {
+	T{ImGuiCol_Text,          {0.1, 0.1, 0.1, 0.9}},
+	T{ImGuiCol_Button,        {0.8, 0.8, 0.8, 0.5}},
+	T{ImGuiCol_ButtonActive,  {1,   1,   1,   1.0}},
+	T{ImGuiCol_ButtonHovered, {0.7, 0.7, 0.7, 0.7}},
+}
+
+-- ================================================================
+-- Initial gamepad-state record.
+-- ================================================================
+function M.default_gamepad()
+	return {
+		enabled         = false,
+		scroll1         = 0,
+		scroll2         = 0,
+		buttonsCD       = 0,
+		buttonsCDready  = false,
+		analogCD        = 0,
+		analogCDready   = false,
+		pressedEnter    = false,
+		-- When non-nil, the next xinput_button press (state == 1) for
+		-- a non-axis, listed button is written into
+		-- allSettings.GamepadBindings[listenKey] and listening exits.
+		-- Set by the Settings -> Gamepad tab "listen" buttons; cleared
+		-- on Escape (key_state callback) or by clicking the same row's
+		-- listen button again.
+		listenKey       = nil,
+	}
+end
+
+return M
