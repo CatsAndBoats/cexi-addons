@@ -1319,16 +1319,16 @@
         "a": "Arielfy",
         "v": "1.0",
         "d": "A customizable ImGui compass and clock overlay that replaces the default in-game compass HUD, displaying directional heading, Vana'diel time, and weather in a configurable panel.",
-        "l": "",
+        "l": "https://github.com/ariel-logos/FancyCompass",
         "sd": "-",
         "p": false
       },
       "source": {
-        "repo": "CatsAndBoats/cexi-addons",
-        "track": "branch",
-        "ref": "main",
-        "sha": null,
-        "path": "legacy/ashita/addons/fancycompass"
+        "repo": "ariel-logos/FancyCompass",
+        "track": "pin",
+        "ref": null,
+        "sha": "71c5566e9f7f72880ef5af036ac0ca929caf33cc",
+        "path": ""
       },
       "install": "fancycompass",
       "targets": [
@@ -1348,7 +1348,7 @@
       "launcher": {
         "n": "FancyTrusts",
         "a": "Arielfy",
-        "v": "0.3.1",
+        "v": "0.3.2",
         "d": "A fancy ImGui UI panel for managing and summoning Trust NPCs with a visual grid layout.",
         "l": "https://github.com/ariel-logos/FancyTrusts",
         "sd": "-",
@@ -1358,7 +1358,7 @@
         "repo": "ariel-logos/FancyTrusts",
         "track": "pin",
         "ref": null,
-        "sha": "94381c54bc0bfbf454d035f4ffd2120fd2ab8123",
+        "sha": "fb93d213c43f2a618b34156afafb5170e74a4d86",
         "path": "FancyTrusts"
       },
       "install": "FancyTrusts",
@@ -1637,7 +1637,7 @@
         "repo": "ariel-logos/Geocompass",
         "track": "pin",
         "ref": null,
-        "sha": "b6735ce0d6f0112b1ec59c5cb4e7f011ad77840f",
+        "sha": "09bd7370b818677e0427ce14e20267d07d6f0d4c",
         "path": "geocompass"
       },
       "install": "geocompass",
@@ -3033,7 +3033,7 @@
         "repo": "ariel-logos/TrackMeBooty",
         "track": "pin",
         "ref": null,
-        "sha": "88d8f4e94e2bbe0edac8a273f5201362c1ae5042",
+        "sha": "c8823b486db264314c46ee849ee143de341f95a6",
         "path": ""
       },
       "install": "TrackMeBooty",
