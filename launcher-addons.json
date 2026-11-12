@@ -724,37 +724,6 @@
       },
       "deps": []
     },
-    "a_cam": {
-      "launcher": {
-        "n": "cam",
-        "a": "Hokuten - Modified by Vekien",
-        "v": "1.0.0",
-        "d": "DEPRECATED - DO NOT USE - USE xicamera INSTEAD",
-        "l": "",
-        "sd": "-",
-        "p": false
-      },
-      "source": {
-        "repo": "CatsAndBoats/cexi-addons",
-        "track": "branch",
-        "ref": "main",
-        "sha": null,
-        "path": "legacy/ashita/addons/cam"
-      },
-      "install": "cam",
-      "targets": [
-        "ashita"
-      ],
-      "exclude": [],
-      "flags": {
-        "is_plugin": false,
-        "auto_win": false,
-        "auto_sd": false,
-        "locked": false,
-        "hide_on_vanacore": false
-      },
-      "deps": []
-    },
     "a_cfhblock": {
       "launcher": {
         "n": "cfhblock",
