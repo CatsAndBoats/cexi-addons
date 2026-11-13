@@ -144,11 +144,13 @@ end
 local TRACK = { floors_at = 0, floors = {} }
 
 -- the floor an entity of this zone is on, asked of the game now and then (it casts a line at the zone's collision)
+-- (an answer that isn't one of the zone's floors, as over a gap in the collision or in mid-air, leaves the last good one)
 local function floor_of(key, e, refresh)
     local hit = TRACK.floors[key]
     if hit ~= nil and not refresh then return hit end
     local f = DATA.floor_at(e.x, e.y, e.z)
-    if f ~= nil then TRACK.floors[key] = f end
+    local z = DATA.zones[TRACK.zone or -1]
+    if f ~= nil and (z == nil or z.by_floor[f] ~= nil) then TRACK.floors[key] = f end
     return TRACK.floors[key]
 end
 
@@ -381,7 +383,7 @@ function C.open_shared(entry)
     end
     entry.seen = true
     C.show(entry.zone, entry.floor, { at = { entry.mx, entry.my }, zoom = 2.2 })
-    st.sel = entry
+    if C.CV then C.CV.select(entry) else st.sel = entry end -- (with its card: Save pin, Share)
     st.ping = { mx = entry.mx, my = entry.my, at = clock() }
     return true
 end

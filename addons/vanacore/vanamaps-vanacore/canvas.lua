@@ -34,7 +34,9 @@ return function (C)
         V.tz = math.max(lo, math.min(hi, V.tz))
         local r = V.rect
         if r == nil then return end
-        local slack = 20
+        -- (the little way the map's edge may come inside the canvas's grows with the zoom: the whole map, at its fit,
+        -- sits dead centre)
+        local slack = 20 * math.max(0, math.min(1, (V.tz / V.fit - 1.05) / 0.3))
         local half_w, half_h = r.w / 2 / V.tz, r.h / 2 / V.tz
         if half_w * 2 >= SIZE + slack * 2 then V.tx = SIZE / 2
         else V.tx = math.max(half_w - slack, math.min(SIZE - half_w + slack, V.tx)) end
@@ -377,9 +379,16 @@ return function (C)
                     if U.button(cdl, '##vm_pin_share', ix, cy, bw, S(32), 'Share', color, 'solid', 'paper-plane', F.semi, T.small) then
                         imgui.OpenPopup('##vm_card_share')
                     end
-                    if U.button(cdl, '##vm_pin_del', ix + bw + S(8), cy, bw, S(32), 'Remove', P.danger, 'ghost', 'trash-can', F.semi, T.small) then
-                        C.remove_pin(pin)
-                        return
+                    -- Remove asks once more (a pin with a note is a click away from gone)
+                    local sure = M.sure_pin == pin and clock() - (M.sure_at or 0) < 3
+                    if U.button(cdl, '##vm_pin_del', ix + bw + S(8), cy, bw, S(32), sure and 'Really?' or 'Remove', P.danger, sure and 'solid' or 'ghost', 'trash-can',
+                            F.semi, T.small) then
+                        if sure then
+                            M.sure_pin = nil
+                            C.remove_pin(pin)
+                            return
+                        end
+                        M.sure_pin, M.sure_at = pin, clock()
                     end
                 else
                     local title = (pin.title or '') ~= '' and pin.title or 'A pin shared in chat'
@@ -691,8 +700,11 @@ return function (C)
             if tg and tg.floor == st.floor then
                 local tmx, tmy = DATA.to_map(f, tg.x, tg.y)
                 local sx, sy = to_screen(tmx, tmy)
-                G.reticle(dl, sx, sy, S(9), P.danger, t, 1)
-                if cfg.names and tg.name ~= '' then G.tag(dl, sx + S(15), sy, tg.name, P.danger, 0.95) end
+                -- (a party member targeted has their own dot and name: the ring goes round it)
+                local member = false
+                for _, m in ipairs(C.party) do if m.name == tg.name then member = true end end
+                G.reticle(dl, sx, sy, member and S(15) or S(9), P.danger, t, 1)
+                if cfg.names and tg.name ~= '' and not member then G.tag(dl, sx + S(15), sy, tg.name, P.danger, 0.95) end
             end
             -- you
             if me_here then
