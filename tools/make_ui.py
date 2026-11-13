@@ -6,7 +6,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'addons', 'vanacore', 'partyfinder-vanacore', 'partyfinder-vanacore.lua')
 # the addons that carry the kit (each folder stands alone, so each has its own copy); an argument writes only that path,
 # as the auction house's
-TARGETS = ['auctionhouse-vanacore', 'clawmark-vanacore']
+TARGETS = ['auctionhouse-vanacore', 'clawmark-vanacore', 'vanamaps-vanacore']
 OUT = sys.argv[1] if len(sys.argv) > 1 else None
 lines = open(SRC).read().split('\n')
 
@@ -215,7 +215,7 @@ print('ui.lua written:', OUT or ', '.join(TARGETS))
 
 # the controller module, one copy per addon (each addon folder stands alone)
 import shutil
-for folder in ('auctionhouse-vanacore', 'partyfinder-vanacore'):
+for folder in ('auctionhouse-vanacore', 'partyfinder-vanacore', 'vanamaps-vanacore'):
     dst = os.path.join(ROOT, 'addons', 'vanacore', folder, 'pad.lua')
     shutil.copyfile(os.path.join(ROOT, 'tools', 'pad.lua'), dst)
     print('pad.lua copied to', folder)
