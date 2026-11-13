@@ -52,7 +52,8 @@ local function cstr(p) return p ~= nil and ffi.string(p) or '' end
 
 -- The spell a scroll teaches, by the scroll's English name ("Fire II", or "Scroll of Fire II"), through the resource
 -- manager's GetSpellByName (vtable slot 4, language 2 = English): its learn level for each job (LevelRequired, by job
--- number; -1 for a job that never learns it, over 99 for job points). nil for anything that isn't a spell's scroll.
+-- number; -1 for a job that never learns it, over 99 for job points), and the spell's own number (`spell`: its bit
+-- in the game's list of the spells you know). nil for anything that isn't a spell's scroll.
 pcall(ffi.cdef, [[
 typedef struct {
     uint16_t Index; uint16_t Type; uint16_t Element; uint16_t Targets; uint16_t Skill; uint16_t ManaCost;
@@ -85,6 +86,7 @@ function I.scroll_levels(id)
     local sp = ffi.cast('ah_ISpellHead*', p)
     local levels = {}
     for job = 0, 23 do levels[job] = sp.LevelRequired[job] end
+    levels.spell = sp.Index
     spells_of[id] = levels
     return levels
 end

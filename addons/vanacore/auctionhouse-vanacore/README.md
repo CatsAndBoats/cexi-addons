@@ -30,8 +30,13 @@ to turn it round, and its arrow shows which way it runs), and the
 at its level, and your race can't wear, and spell scrolls (and Geomancy's Indi- plates) neither your main job nor your sub job can learn at
 their current levels (the server's own rule when a scroll is used); anything else (food, medicines, materials) stays
 listed (both chips at the right of the tab row, both remembered). Gear you can wear and scrolls you can learn have a
-yellow name in the list, and the rest of those are dimmed. The search box in the header finds any listed item by
-name, across every category. Click an item for its card: description, the jobs that can use it, stock, the last
+yellow name in the list, and the rest of those are dimmed. A scroll whose spell you already know (the game's own
+list of what you've learned) has a green name with **Already learned** under it, its card says so too, and the
+**Unlearned** chip hides those scrolls, so none is bought twice; with **Usable** on as well, what's left is what
+you can learn and haven't. The search box in the header finds any listed item by
+name, across every category. Rest the mouse on a row and the item's own card comes up beside it: its name, who
+wears it or how it stacks, and the game's description, where its stats are (gear with **Compare** on shows the
+comparison instead). Click an item for its card: description, the jobs that can use it, stock, the last
 ten sales for singles or stacks with **last · median · range** and the trend, a price graph, and the bid box. The
 house fills the cheapest listing at or under your bid and you pay what you bid, as always; the box starts at the
 last sale.
@@ -56,8 +61,11 @@ stock coming back shows as a notice. Clicking a row opens its card.
 
 **Sell.** Your bag, with the items the house doesn't take greyed (the **Sellable** chip above the bag hides them
 instead, and is remembered). The two buttons beside it show the bag as icons or as a list with each item's name,
-how many you have, its category and the last price it sold for once you've looked at it (also remembered). Pick one
-and choose single or full stack (a stack's prices show even when you hold fewer; listing one waits for a full stack), and the **market** for it shows above the
+how many you have, its category and the last price it sold for once you've looked at it (also remembered). **Bag** /
+**Name** beside those keeps the bag's own order or sorts it by name (click **Name** again for Z to A), the box in the
+header filters the bag by name ("dhalmel" leaves the dhalmel things), and the mouse over anything shows its card:
+name, how many, description and stats. Pick one
+and choose single or full stack: a slot holding a whole stack is picked as a **full stack**, anything less as singles, and the switch is there either way (a stack's prices show even when you hold fewer; listing one waits for a full stack), and the **market** for it shows above the
 price: how many are up right now (singles and stacks), last, median and range with the trend, the price graph
 when there's room (each sale's difference from the median when there isn't), and the latest sales (price, when, who sold to whom).
 Clicking last, median or any sale puts that price in the box, and beside the label it says how yours compares to the
@@ -65,14 +73,18 @@ median. Then **List for N gil**: the house quotes its listing fee, and a card sp
 whole transaction (the item, the price, the fee paid now, the payout to your delivery box when it sells) for you to
 say **List it** to.
 
-**Listings.** Everything you have up, in one scrolling list, with the price and a **Take down** for each. The list
-fills by itself when the tab opens, after you list or take something down, and on **Refresh**. The game's own window
+**Listings.** Everything you have up, in one scrolling list, with the price and a **Take down** for each;
+**Listed** / **Name** sorts it as the house has it (oldest first; click again for newest first) or by name (A to Z,
+again for Z to A), and the box in the header filters it by name. The list
+fills by itself when the tab opens and on **Refresh**. The game's own window
 shows seven listings; CatsEyeXI's server (its `ah_pagination` module) keeps more, six to a page, showing the next page
 each time the list is asked for and answering once every 1.5 s, so a long list takes a few seconds to read; the rows
 sit under a "Reading your listings" veil while it does, and nothing on them can be clicked until it lifts, so a
-take-down never lands on a page the house has just turned. The pages stay the server's business: the one thing you may notice is that
-taking down a listing the house isn't currently showing takes a moment (the confirmation says so) while the window
-brings the house round to it. **History**
+take-down never lands on a page the house has just turned. That reading happens once: a listing you take down, or
+put up, is taken off or added to the list here without asking the house for every page again, so several can come
+down one after another. The pages stay the server's business: the one thing you may notice is that
+taking down a listing unlike any on the page the house last showed takes a moment (the confirmation says so) while
+the window turns the house's pages to it. **History**
 on a row asks the search server for that item's recent sales (only when you ask: nothing is fetched for rows nobody
 looks at) and shows last, median, range and trend under the row, with where your price stands against the median.
 **Relist** takes a listing down and puts it back up at a new price. Its dialog shows the price it's up for, the
@@ -87,7 +99,8 @@ the Activity tab, and keeps the price on the item's record. The chat line stays 
 
 **Activity.** A running record of what this character did at the house, kept across restarts: every purchase,
 listing (with its fee), take-down and sale, newest first, twenty to a page (**Newer** / **Older**), with **All**,
-**Bought** and **Sold** filters. The strip above it totals the gil over the whole record: spent on purchases, earned
+**Bought** and **Sold** filters, and the box in the header to keep only the entries for items with those words in
+their names (the Watch tab's list filters the same way). The strip above it totals the gil over what's shown: spent on purchases, earned
 from sales, paid in listing fees, and the net of the three. A sale is known only when the server announces it to you,
 so one that happens while you're logged out shows in your delivery box, not here. **Clear** (beside the filters) empties the
 whole record and its totals after asking; it doesn't touch anything you have up at the house.
@@ -181,6 +194,10 @@ dropped.
   the window opens, Bid, AskCommit then LotIn to sell (both carry an auction work slot 0–6 at 0x05; the server refuses
   −1 there without a word), Info for the sales list (the server's AH pagination module
   pages it six at a time; its chat lines are hidden while the window is asking), LotCancel to take one down. The
+  server takes a listing down by a slot of the page it last showed and by what that slot held: it deletes one of
+  your listings of that item, kind and price, and leaves its page as it was. So the window keeps what the last page
+  shown held, sends a take-down straight away when a slot there is like the listing wanted (as often as you have such
+  listings), turns the pages only otherwise, and after one closes the gap in its own list as the house's pages do. The
   server checks only that the zone's flag allows an auction house; standing at a clerk, in a zone that has one, is
   the addon's own rule, and no setting turns it off.
 - **Categories, stock, history:** the search server (`src/search`), over TCP on the login host, port 54002. The

@@ -14,7 +14,7 @@
 
 addon.name    = 'auctionhouse-vanacore'
 addon.author  = 'Carver'
-addon.version = '1.2'
+addon.version = '1.3'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -62,6 +62,8 @@ local st = {
     counter = { near = false, here = false, dist = nil, zone = nil, at = 0 }, zone_ok = nil, work_at = 0,
     sales = {}, sales_at = 0, sales_open = false, sales_wait = false, -- rows keyed (page - 1) * 6 + slot + 1
     sweep = nil, server_page = nil, page_n = nil, reply_page = nil, sales_total = nil, -- the server's pages (its ah_pagination module)
+    shown = nil, -- the page the house last showed, by slot: what a take-down's slot number means to the server
+    filter = { sell = { '' }, sales = { '' }, activity = { '' }, watch = { '' } }, -- each tab's own name filter
     sell = { slot = nil, stack = false, price = { '' }, fee = nil, asked = nil, pending = false, at = 0 },
     buy = { price = { '' }, pending = nil },
     inventory = {}, inv_at = 0, gil = 0,
@@ -76,6 +78,8 @@ local settings = {
     sort = 'name', in_stock = false, remember = {},
     chart = true, watch = {}, watch_poll = true, watch_every = 300, theme = 'aurora', usable = false, compare = false,
     sellable_only = false, -- the Sell tab hides what the house won't take
+    unlearned = false, -- the Buy list hides scrolls of spells you already know
+    sell_sort = 'bag', sales_sort = 'date', -- the bag in its own order or by name; your listings as listed or by name
     open_sound = true, open_sound_id = 'small_bell', -- a bell as the window opens (sounds\<id>.wav)
     language = 'auto', -- 'auto' (the client's), 'en' or 'ja'
     sell_view = 'grid', -- the Sell tab's bag: 'grid' (icons) or 'list' (rows with names)
@@ -414,12 +418,85 @@ local function on_sales_slot(d)
     local qty = u8(d, 0x2A)
     if st.reply_page == nil then
         -- no page line came before the rows: a server without pages, whose one list is all there is
-        st.sales, st.reply_page, st.server_page = {}, 1, nil
+        st.sales, st.reply_page, st.server_page, st.shown = {}, 1, nil, {}
     end
     local page = st.reply_page
     if st.sweep then st.sweep.got = true end
     local key = (page - 1) * 6 + slot + 1
     st.sales[key] = { key = key, page = page, slot = slot, id = item, stack = qty == 0, price = rd32(d, 0x2C), at = rd32(d, 0x38) }
+    st.shown = st.shown or {}
+    st.shown[slot] = { id = item, stack = qty == 0, price = rd32(d, 0x2C) }
+end
+
+-- The server takes a listing down by a slot of the page it last showed, and by what that slot held: it deletes one
+-- listing of yours of that item, kind and price (its oldest), and keeps the page as it was. So a slot of the shown
+-- page that held a listing like the one wanted takes it down, whichever page the window has it on, and as many times
+-- as you have such listings; the pages are only turned for one the shown page has nothing like.
+local function shown_slot(id, stack, price)
+    if st.shown == nil then return nil end
+    for slot = 0, 6 do
+        local s = st.shown[slot]
+        if s and s.id == id and s.stack == (stack and true or false) and s.price == price then return slot end
+    end
+    return nil
+end
+
+-- a listing has left the house (taken down, or sold): it leaves the list here too, the rows after it moving up one
+-- as the house's pages do, so the list stays the house's without reading every page again. Of listings alike, the
+-- earliest goes: that is the one the server's take-down and its sale pick
+local function sales_drop(id, stack, price, key)
+    local gone = nil
+    for k, r in pairs(st.sales) do
+        if r.id == id and r.stack == (stack and true or false) and r.price == price and (gone == nil or k < gone) then gone = k end
+    end
+    if gone == nil and key ~= nil and st.sales[key] ~= nil then gone = key end
+    if gone == nil then return nil end
+    local row = st.sales[gone]
+    st.sales[gone] = nil
+    if st.sales_hist == gone then st.sales_hist = nil end
+    if st.server_page ~= nil then
+        -- (a server without pages keeps its one list's slots until it is asked again)
+        local rows = {}
+        for k, r in pairs(st.sales) do if k > gone then rows[#rows + 1] = r end end
+        table.sort(rows, function (a, b) return a.key < b.key end)
+        for _, r in ipairs(rows) do
+            st.sales[r.key] = nil
+            r.key = r.key - 1
+            r.page, r.slot = math.floor((r.key - 1) / 6) + 1, (r.key - 1) % 6
+            st.sales[r.key] = r
+        end
+        if st.sales_hist and st.sales_hist > gone then st.sales_hist = st.sales_hist - 1 end
+    end
+    return row
+end
+
+-- a listing just put up goes last, as the house keeps them (oldest first)
+local function sales_add(id, stack, price)
+    if not st.sales_open then return end -- the list was never read here: it will be, whole, when it's looked at
+    local last = 0
+    for k in pairs(st.sales) do if k > last then last = k end end
+    local key = last + 1
+    st.sales[key] = { key = key, page = math.floor((key - 1) / 6) + 1, slot = (key - 1) % 6, id = id, stack = stack and true or false, price = price, at = 0 }
+end
+
+-- the take-down itself, by a slot of the shown page
+local function send_take_down(slot, key, id, stack, price)
+    st.cancel_pending, st.cancel_at = key, clock()
+    st.cancel_what = { id = id, stack = stack and true or false, price = price }
+    send_cancel(slot)
+end
+
+-- a sweep after one listing: has the page now shown anything like it? Then down it comes (the row's key is where the
+-- house has it now)
+local function sweep_take()
+    local sw = st.sweep
+    local w = sw and sw.want
+    if w == nil or not sw.got or st.cancel_pending ~= nil then return false end
+    local slot = shown_slot(w.id, w.stack, w.price)
+    if slot == nil then return false end
+    st.sweep = nil
+    send_take_down(slot, (st.server_page and (st.server_page - 1) * 6 or 0) + slot + 1, w.id, w.stack, w.price)
+    return true
 end
 
 -- a sweep has seen everything once a page comes round again, or once a short page (the last) has every page before
@@ -442,21 +519,17 @@ local function sweep_step()
         return
     end
     if sw.want then
-        local w = sw.want
-        if st.server_page == w.page then
-            local row = st.sales[w.key]
-            st.sweep = nil
-            if row and row.id == w.id and row.price == w.price then
-                st.cancel_pending, st.cancel_at = w.key, clock()
-                send_cancel(w.slot)
-            else
-                U.toast('warn', 'The list changed', 'That listing is not where it was; look again', 5, 'triangle-exclamation')
-                st.sales_dirty = true
+        if sweep_take() then return end
+        if sweep_complete(sw) or sw.steps > 24 then
+            -- every page shown, and none had it: it sold, or the list here was out of date. The pages just read are
+            -- the list now; what wasn't seen among them is gone
+            if st.server_page ~= nil and sweep_complete(sw) then
+                for key, row in pairs(st.sales) do if not sw.seen[row.page] then st.sales[key] = nil end end
             end
-            return
-        elseif sweep_complete(sw) or sw.steps > 24 then
             st.sweep = nil
-            U.toast('warn', "Couldn't reach that page", 'The house never showed it; refresh and try again', 5, 'triangle-exclamation')
+            st.sales_open = true
+            st.relist = nil
+            U.toast('warn', LANG.t('That listing is gone'), LANG.t('The house no longer has it up: it sold, or the list here was out of date'), 5, 'triangle-exclamation')
             return
         end
     elseif sweep_complete(sw) or sw.steps > 24 then
@@ -513,21 +586,24 @@ local function on_packet(e)
         on_sales_slot(d)
     elseif cmd == CMD.LotCancel then
         if st.cancel_pending ~= nil and result == 0 then
-            local row = st.sales[st.cancel_pending]
+            local what = st.cancel_what or st.sales[st.cancel_pending]
             local rl = st.relist
-            if rl and rl.stage == 'cancel' and rl.key == st.cancel_pending then rl.stage, rl.at = 'bag', clock() end
-            st.sales[st.cancel_pending] = nil
-            st.cancel_pending = nil
+            if rl and rl.stage == 'cancel' then rl.stage, rl.at = 'bag', clock() end
+            -- it leaves the list here, and the rows after it close the gap as the house's do: the pages aren't read
+            -- again for it, so the next take-down can go at once
+            local row = what and sales_drop(what.id, what.stack, what.price, st.cancel_pending) or nil
+            row = row or what
+            st.cancel_pending, st.cancel_what = nil, nil
             if not (rl and rl.stage == 'bag') then
                 U.toast('ok', 'Taken down', row and (I.name(row.id) .. ' is back in your bag') or 'Returned to your bag', 4, 'box-open')
             end
             if row then LEDGER.add({ kind = 'taken', id = row.id, stack = row.stack, price = row.price }) end
             refresh_inventory()
-            st.sales_dirty = true -- the house closes the gap: the pages are read again once the cooldown passes
         elseif st.cancel_pending ~= nil then
-            st.cancel_pending = nil
+            st.cancel_pending, st.cancel_what = nil, nil
             st.relist = nil -- still up at its old price
-            U.toast('danger', "Couldn't take it down", result == RESULT.Full and 'Your inventory is full' or 'Try again in a moment', 5, 'triangle-exclamation')
+            U.toast('danger', "Couldn't take it down", result == RESULT.Full and LANG.t('Your inventory is full, or it has just sold') or 'Try again in a moment', 5, 'triangle-exclamation')
+            st.sales_dirty = true -- the list here may be behind the house's: read again
         else
             on_sales_slot(d)
         end
@@ -555,10 +631,10 @@ local function on_packet(e)
                 forget_history(a.item)
                 LEDGER.add({ kind = 'listed', id = a.item, stack = a.stack, price = a.price, fee = st.sell.fee })
             end
+            if a then sales_add(a.item, a.stack, a.price) else st.sales_dirty = true end
             st.sell.asked, st.sell.fee, st.sell.slot = nil, nil, nil
             st.relist = nil
             refresh_inventory()
-            st.sales_dirty = true
         else
             U.toast('danger', "Couldn't list it", 'Not enough gil for the fee, the slots are full, or the item changed' .. (st.relist and ' (it is in your bag)' or ''), 6, 'triangle-exclamation')
             st.relist = nil
@@ -790,6 +866,38 @@ local function can_learn(id)
     return by(w.job, w.level) or by(w.sub or 0, w.sub_level or 0)
 end
 
+-- whether you already know the spell a scroll teaches: the game's own list of the spells you've learned, a bit per
+-- spell (read once a second). nil for anything that isn't a spell's scroll, and before the server has sent the list
+local function knows_spell(id)
+    if not SCROLL_CATS[I.category_of(id) or 0] then return nil end
+    local lv = I.scroll_levels(id)
+    if lv == nil or lv.spell == nil then return nil end
+    local k = st.known
+    if k == nil or clock() - k.at > 1 then
+        local ok, bits = pcall(vana.game.spells)
+        k = { bits = ok and type(bits) == 'string' and bits or nil, at = clock() }
+        st.known = k
+    end
+    if k.bits == nil then return nil end
+    local byte = k.bits:byte(math.floor(lv.spell / 8) + 1)
+    return byte ~= nil and bit.band(byte, bit.lshift(1, lv.spell % 8)) ~= 0
+end
+
+-- a tab's name filter, as lower-case words (nil when there is none), and whether a name has them all, in any order
+-- and any case
+local function filter_words(tab)
+    local q = (st.filter[tab] and st.filter[tab][1] or ''):lower()
+    local words = nil
+    for w in q:gmatch('%S+') do words = words or {} words[#words + 1] = w end
+    return words
+end
+local function name_has(name, words)
+    if words == nil then return true end
+    name = (name or ''):lower()
+    for _, w in ipairs(words) do if not name:find(w, 1, true) then return false end end
+    return true
+end
+
 -------------------------------------------------------------------------------
 -- Where you are: the zone, the counter
 --
@@ -884,16 +992,16 @@ local function do_list()
     send_lot_in(a.slot, a.price, a.stack)
 end
 
--- take a listing down: straight away while the house is showing its page, else by turning the pages to it first
+-- take a listing down: straight away when the page the house last showed has one like it (see shown_slot), else by
+-- turning the pages until one does
 local function do_cancel(c)
     if not may_trade() then refuse_trade() return end
-    if st.server_page == nil or st.server_page == c.page then
-        st.cancel_pending = c.key
-        st.cancel_at = clock()
-        send_cancel(c.slot)
+    local slot = shown_slot(c.item, c.stack, c.price)
+    if slot then
+        send_take_down(slot, c.key, c.item, c.stack, c.price)
     else
         U.toast('info', 'Finding that listing', 'The house shows a few at a time; a moment', 4, 'clock')
-        start_sweep({ page = c.page, slot = c.slot, key = c.key, id = c.item, price = c.price })
+        start_sweep({ key = c.key, id = c.item, stack = c.stack and true or false, price = c.price })
     end
 end
 
@@ -1010,8 +1118,8 @@ local function on_sold(name, buyer, price)
     local stack = row and row.stack or false
     -- the listings are only ever what's still up: the sold one leaves them, and the sale goes on the record
     LEDGER.add({ kind = 'sold', id = id, name = id == nil and name or nil, stack = stack, price = price, who = buyer })
-    if row then st.sales[row.key] = nil end
-    st.sales_dirty = true
+    if row then sales_drop(row.id, row.stack, row.price, row.key) end
+    st.sales_dirty = true -- (which listing sold is a guess when two are alike in price: the pages are read again)
     -- the price record gets the sale from the house's own history, with its time (recording it here too would count it
     -- twice)
     if id then
@@ -1567,27 +1675,37 @@ local function draw_header(dl, x, y, w, t)
     local pw = pill(dl, 0, -1000, label, P.card, GOLD, F.disp, T.small, S(9), 'coins')
     local px = bx - S(16) - pw
     pill(dl, px, by + S(5), label, mix(GOLD, P.ink, 0.78), GOLD, F.disp, T.small, S(9), 'coins')
-    -- the search box, on the buy tab: up here, where there's room (the tab row holds the tabs and the list's filters)
-    if st.tab == 'buy' then
+    -- the search box, up here where there's room (the tab row holds the tabs and the list's filters). On the Buy tab
+    -- it searches every item the house lists; on the others it filters what the tab shows (your bag, your listings,
+    -- the record, the watch list) by name, each tab keeping its own words
+    local buying = st.tab == 'buy'
+    local qbuf = buying and st.query or st.filter[st.tab]
+    if qbuf then
+        local hints = { sell = 'Filter your bag by name', sales = 'Filter your listings by name', activity = 'Filter your activity by name', watch = 'Filter your watch list by name' }
         local sw = S(300)
         local sx = px - S(20) - sw
         imgui.SetCursorScreenPos({ sx, by })
-        local changed = field('##ahsearch', LANG.t('Search every item by name'), st.query, sw, T.small, false, true)
-        if changed then
+        local changed = field(buying and '##ahsearch' or ('##ahfilter_' .. st.tab), LANG.t(buying and 'Search every item by name' or hints[st.tab]), qbuf, sw, T.small, false, true)
+        if changed and buying then
             local q = st.query[1] or ''
             if #q >= 2 then st.results, st.result_total = I.search(q, 80) fetch_result_lists() else st.results = nil end
             st.list_at = clock()
+        elseif changed then
+            st.act_page, st.act_top = 1, true -- (the record's pages start over under a new filter)
         end
-        if (st.query[1] or '') ~= '' then
+        if (qbuf[1] or '') ~= '' then
             imgui.SetCursorScreenPos({ sx + sw - S(30), by + S(1) })
             local cleared, _, chv = hit('##clearq', S(26), S(26), S(13))
             if chv > 0.01 then dl:AddCircleFilled({ sx + sw - S(16), by + size / 2 }, S(11), u32(P.text, 0.10 * chv), 20) end
             icon(dl, sx + sw - S(16), by + size / 2, 'xmark', mix(P.dim, P.text, chv), T.small)
             if imgui.IsItemHovered() then imgui.SetMouseCursor(7) with_font(F.text, T.small, imgui.SetTooltip, LANG.t('Clear the search')) end
-            if cleared then
+            if cleared and buying then
                 st.query[1] = ''
                 st.results, st.result_total = nil, 0
                 st.list_at = clock()
+            elseif cleared then
+                qbuf[1] = ''
+                st.act_page, st.act_top = 1, true
             end
         else
             icon(dl, sx + sw - S(16), by + size / 2, 'magnifying-glass', P.dim, T.small)
@@ -1665,9 +1783,45 @@ local function draw_tabs(dl, x, y, w)
             settings.compare = not settings.compare
             save_settings()
         end
+        -- scrolls of spells you already know, out of the way (so none is bought twice)
+        cx = cx - S(8) - chip_width(LANG.t('UNLEARNED'))
+        tip = settings.unlearned and LANG.t('Hiding scrolls of spells you already know') or LANG.t('Hide scrolls of spells you already know; everything else stays')
+        if filter_chip(dl, '##unlearned', cx, fy, LANG.t('UNLEARNED'), settings.unlearned, P.accent, tip, 'scroll', 'scroll') then
+            settings.unlearned = not settings.unlearned
+            save_settings()
+        end
     end
     dl:AddLine({ x + S(16), y + h }, { x + w - S(16), y + h }, u32(P.line), 1)
     return h
+end
+
+-- a sort switch as the Buy list's, for the Sell bag and the Listings: each way's name, with a small triangle for its
+-- direction where it has two (the one in use bright; a click on it turns it round). ways: { id, label, { 'the way
+-- up', 'the way down' } or nil, tip }. Drawn with its right edge at xr; returns the way clicked, and its width
+local function sort_switch(dl, key, xr, y, ways, current, desc)
+    local gs = S(24) - S(8)
+    local opts, sw = {}, 0
+    for _, way in ipairs(ways) do
+        local on = way[1] == current
+        local d = on and desc or false
+        local o = { way[1], way[2] }
+        if way[3] then
+            o.glyph = function (gdl, gx, gy, gsz, a)
+                local hw, hh = gsz * 0.24, gsz * 0.2
+                local col = u32(on and P.accent or P.dim, on and 1 or 0.35 + 0.4 * (a - 0.55) / 0.45)
+                if d then gdl:AddTriangleFilled({ gx - hw, gy - hh }, { gx + hw, gy - hh }, { gx, gy + hh }, col)
+                else gdl:AddTriangleFilled({ gx - hw, gy + hh }, { gx + hw, gy + hh }, { gx, gy - hh }, col) end
+            end
+            o.tip = on and ('Sorted ' .. way[3][d and 2 or 1] .. '; click for ' .. way[3][d and 1 or 2]) or ('Sort ' .. way[3][1])
+            sw = sw + measure(way[2], F.disp, T.tiny) + S(22) + gs + S(6) + S(5)
+        else
+            o.tip = way[4]
+            sw = sw + measure(way[2], F.disp, T.tiny) + S(22) + S(5)
+        end
+        opts[#opts + 1] = o
+    end
+    local _, _, clicked = U.segments(dl, key, xr - sw, y, S(24), opts, current, nil, F.disp, T.tiny)
+    return clicked, sw
 end
 
 -- a group's sub-section is open when opened, and starts open when the category in use is one of its own
@@ -1842,13 +1996,24 @@ local function draw_item_row(dl, id, x, y, w, alpha, lines)
         local learn = can_learn(id) -- a spell's scroll: yours to learn, or not
         if learn ~= nil then ncol = learn and mix(P.text, GOLD, 0.75) or mix(P.text, P.dim, 0.6) end
     end
+    -- a scroll whose spell you already know: green, and said under the name
+    local known = knows_spell(id) == true
+    if known then ncol = mix(P.text, P.ok, 0.7) end
     text(dl, x + S(60), y + S(8), name, selected and GOLD or ncol, F.disp, T.h2, alpha)
     local sub_w = w - S(60) - S(110)
     lines = lines or item_sub_lines(id, sub_w)
     local ly = y + S(32)
+    local lx = x + S(60)
+    if known then
+        local kl = LANG.t('Already learned')
+        icon(dl, lx + S(5), ly + S(6), 'circle-check', P.ok, T.tiny, alpha)
+        text(dl, lx + S(14), ly, kl, P.ok, F.text, T.tiny, alpha)
+        lx = lx + S(14) + measure(kl, F.text, T.tiny) + S(10)
+        sub_w = sub_w - (lx - x - S(60))
+    end
     for i, ln in ipairs(lines) do
         if i > 2 then break end
-        text(dl, x + S(60), ly, fit(ln, F.text, T.tiny, sub_w), P.dim, F.text, T.tiny, alpha * 0.9)
+        text(dl, i == 1 and lx or x + S(60), ly, fit(ln, F.text, T.tiny, i == 1 and sub_w or (w - S(60) - S(110))), P.dim, F.text, T.tiny, alpha * 0.9)
         ly = ly + S(14)
     end
     stock_pills(dl, x + w - S(14), y + S(10), id, alpha, true)
@@ -1954,9 +2119,20 @@ local function draw_list(dl, x, y, w, h, t)
         end
         ids = keep
     end
+    if settings.unlearned then
+        -- scrolls of spells you already know leave; everything else (other scrolls, and whatever isn't one) stays
+        local keep = {}
+        for _, id in ipairs(ids) do if knows_spell(id) ~= true then keep[#keep + 1] = id end end
+        ids = keep
+    end
     local hidden = total - #ids
-    if settings.in_stock or settings.usable then
-        local what = settings.in_stock and settings.usable and 'usable, in stock' or settings.usable and 'usable' or 'in stock'
+    local nfilters = (settings.in_stock and 1 or 0) + (settings.usable and 1 or 0) + (settings.unlearned and 1 or 0)
+    if nfilters > 0 then
+        local parts = {}
+        if settings.usable then parts[#parts + 1] = 'usable' end
+        if settings.unlearned then parts[#parts + 1] = 'not learned' end
+        if settings.in_stock then parts[#parts + 1] = 'in stock' end
+        local what = table.concat(parts, ', ')
         if st.results then
             title = 'SEARCH  ·  ' .. #ids .. ' ' .. what
         else
@@ -2042,10 +2218,12 @@ local function draw_list(dl, x, y, w, h, t)
     local first_drawn = nil
     if #ids == 0 then
         local why = hidden == 0 and (st.results and 'Nothing by that name' or (I.answered(st.category) and 'Nothing here' or LANG.t('Asking the house…')))
+            or (settings.unlearned and nfilters > 1 and 'Nothing left by the filters')
+            or (settings.unlearned and 'Nothing here you have yet to learn')
             or (settings.in_stock and settings.usable and 'Nothing up that you can wear')
             or (settings.usable and 'Nothing here you can wear') or 'Nothing in stock'
         text_center(cdl, x, ly + S(60), w, why, P.dim, F.disp, T.h1)
-        if hidden > 0 then text_center(cdl, x, ly + S(90), w, hidden .. (hidden == 1 and ' item is' or ' items are') .. ' hidden by ' .. (settings.in_stock and settings.usable and 'the filters' or settings.usable and 'the Usable filter' or 'the In stock filter'), P.faint, F.text, T.small) end
+        if hidden > 0 then text_center(cdl, x, ly + S(90), w, hidden .. (hidden == 1 and ' item is' or ' items are') .. ' hidden by ' .. (nfilters > 1 and 'the filters' or settings.usable and 'the Usable filter' or settings.unlearned and 'the Unlearned filter' or 'the In stock filter'), P.faint, F.text, T.small) end
         if st.results == nil and st.search_error then text_center(cdl, x, ly + S(90), w, 'Search server: ' .. tostring(st.search_error), P.danger, F.text, T.small) end
         if st.results then draw_search_reach(cdl, x, ly + S(120), w) end
     end
@@ -2158,6 +2336,15 @@ local function draw_detail(dl, x, y, w, h, t)
             cy = cy + S(18)
         end
         cy = cy + S(6)
+    end
+    -- a spell's scroll: whether you know the spell already
+    do
+        local known = knows_spell(id)
+        if known ~= nil then
+            icon(dl, cx + S(7), cy + S(8), known and 'circle-check' or 'scroll', known and P.ok or P.dim, T.small)
+            text(dl, cx + S(20), cy, known and LANG.t('You already know this spell') or LANG.t('You have not learned this spell'), known and P.ok or P.dim, F.text, T.small)
+            cy = cy + S(24)
+        end
     end
     -- the jobs, as badges, when it's gear for some of them
     local jobs = I.jobs_of(r.jobs)
@@ -2414,8 +2601,33 @@ local function draw_sell(dl, x, y, w, h, t)
         if settings.sellable_only and not sellable then hidden = hidden + 1
         else items[#items + 1] = { it = it, r = r, sellable = sellable } end
     end
-    text(dl, x + S(6), y, LANG.t('YOUR BAG') .. '  ·  ' .. #st.inventory .. ' ' .. LANG.t('items') .. (hidden > 0 and ('  ·  ' .. hidden .. ' ' .. LANG.t('the house won\'t take, hidden')) or ''), P.dim, F.disp, T.small)
+    -- the header box's words: only what has them in its name
+    local words = filter_words('sell')
+    if words then
+        local keep = {}
+        for _, e in ipairs(items) do if name_has(e.r.name, words) then keep[#keep + 1] = e end end
+        items = keep
+    end
+    -- by name, either way round, or as the bag has them
+    if settings.sell_sort == 'name' then
+        local desc = settings.sell_sort_desc == true
+        table.sort(items, function (a, b)
+            local na, nb = a.r.name:lower(), b.r.name:lower()
+            if na ~= nb then if desc then return na > nb else return na < nb end end
+            return a.it.slot < b.it.slot
+        end)
+    end
     local chip_x = x + bagw - S(8) - chip_width(LANG.t('SELLABLE'))
+    do
+        local sort_x = chip_x - S(10) - S(26) * 2 - S(4) - S(10)
+        local current = settings.sell_sort == 'name' and 'name' or 'bag'
+        local clicked, sw = sort_switch(dl, '##sellsort', sort_x, y - S(4), {
+            { 'bag', LANG.t('BAG'), nil, LANG.t('As your bag has them') }, { 'name', LANG.t('NAME'), { 'A to Z', 'Z to A' } } }, current, settings.sell_sort_desc == true)
+        if clicked == 'name' and current == 'name' then settings.sell_sort_desc = not settings.sell_sort_desc save_settings()
+        elseif clicked and clicked ~= current then settings.sell_sort, settings.sell_sort_desc = clicked, false save_settings() end
+        local title = LANG.t('YOUR BAG') .. '  ·  ' .. (words and (#items .. ' ' .. LANG.t('of') .. ' ') or '') .. #st.inventory .. ' ' .. LANG.t('items') .. (hidden > 0 and ('  ·  ' .. hidden .. ' ' .. LANG.t('the house won\'t take, hidden')) or '')
+        text(dl, x + S(6), y, fit(title, F.disp, T.small, sort_x - sw - S(12) - (x + S(6))), P.dim, F.disp, T.small)
+    end
     if filter_chip(dl, '##sellable', chip_x, y - S(4), LANG.t('SELLABLE'), settings.sellable_only, GOLD,
         settings.sellable_only and LANG.t("Hiding what the house won't take") or LANG.t("Hide what the house won't take"), 'tag', 'tag') then
         settings.sellable_only = not settings.sellable_only
@@ -2453,7 +2665,9 @@ local function draw_sell(dl, x, y, w, h, t)
         stick_walk(#items, function (i) return '##bag' .. items[i].it.slot end, nil, listed_view and 1 or per)
     end
     local n = 0
-    if #items == 0 and hidden > 0 then
+    if #items == 0 and words then
+        text_center(cdl, x, gy + S(40), bagw, LANG.t('Nothing in your bag by that name'), P.dim, F.disp, T.body)
+    elseif #items == 0 and hidden > 0 then
         text_center(cdl, x, gy + S(40), bagw, 'Nothing in your bag the house takes', P.dim, F.disp, T.body)
     end
     for _, entry in ipairs(items) do
@@ -2497,12 +2711,16 @@ local function draw_sell(dl, x, y, w, h, t)
         end
         if on then cdl:AddRect({ cx, cy }, { cx + cell, cy + cell }, u32(GOLD, 0.9), S(8), 15, S(1.5)) end
         end
-        if hovered and not listed_view then
-            with_font(F.text, T.small, imgui.SetTooltip, r.name .. (it.count > 1 and (' x' .. it.count) or '') .. (sellable and '' or ('\n' .. LANG.t('The house does not take this'))))
+        -- under the mouse: the item's card (its name, how many, its description and stats), at once on the icons,
+        -- which have no names, and after a moment on a row
+        if hovered then
+            st.hover_id, st.hover_rect, st.hover_fast = it.id, nil, not listed_view
+            st.hover_count, st.hover_note = it.count, (not sellable) and LANG.t('The house does not take this') or nil
         end
         if pressed and sellable then
             st.sell.slot, st.sell.item, st.sell.count = it.slot, it.id, it.count
-            st.sell.stack = false
+            -- a slot holding a whole stack is picked as a stack (SINGLE is a click away); anything less, as singles
+            st.sell.stack = r.stack > 1 and it.count >= r.stack
             st.sell.price[1] = ''
             st.sell.fee, st.sell.asked = nil, nil
             fetch_history(it.id, false)
@@ -2604,17 +2822,44 @@ end
 
 -- LISTINGS
 local function draw_sales(dl, x, y, w, h, t)
-    local rows = {}
-    for _, row in pairs(st.sales) do rows[#rows + 1] = row end
-    table.sort(rows, function (a, b) return a.key < b.key end)
-    local head = LANG.t('UP FOR SALE') .. '  ·  ' .. #rows .. (#rows == 1 and (' ' .. LANG.t('item')) or (' ' .. LANG.t('items')))
+    local rows, total = {}, 0
+    local words = filter_words('sales')
+    for _, row in pairs(st.sales) do
+        total = total + 1
+        if name_has(I.name(row.id), words) then rows[#rows + 1] = row end
+    end
+    -- as the house has them (oldest first, or newest), or by name, either way round
+    local by_name, desc = settings.sales_sort == 'name', settings.sales_sort_desc == true
+    table.sort(rows, function (a, b)
+        if by_name then
+            local na, nb = I.name(a.id):lower(), I.name(b.id):lower()
+            if na ~= nb then if desc then return na > nb else return na < nb end end
+            return a.key < b.key
+        end
+        if desc then return a.key > b.key end
+        return a.key < b.key
+    end)
+    local head = LANG.t('UP FOR SALE') .. '  ·  ' .. (words and (#rows .. ' ' .. LANG.t('of') .. ' ') or '') .. total .. (total == 1 and (' ' .. LANG.t('item')) or (' ' .. LANG.t('items')))
     text(dl, x + S(6), y, head, P.dim, F.disp, T.small)
+    if total > 0 then
+        local current = by_name and 'name' or 'date'
+        local clicked = sort_switch(dl, '##salessort', x + w - S(130) - S(12), y - S(5), {
+            { 'date', LANG.t('LISTED'), { 'oldest first', 'newest first' } }, { 'name', LANG.t('NAME'), { 'A to Z', 'Z to A' } } }, current, desc)
+        if clicked == current then settings.sales_sort_desc = not desc save_settings()
+        elseif clicked then settings.sales_sort, settings.sales_sort_desc = clicked, false save_settings() end
+    end
     local cooling = clock() - st.sales_at < LIMITS.sales or st.sweep ~= nil
     local label = (st.sweep or st.sales_wait) and LANG.t('Reading…') or LANG.t('Refresh')
     if button(dl, '##sales_refresh', x + w - S(130), y - S(6), S(124), S(26), label, cooling and P.faint or P.accent, 'ghost', 'rotate-right', F.semi, T.tiny) and not cooling and may_trade() then
         start_sweep()
     end
     local cy = y + S(32)
+    if #rows == 0 and total > 0 then
+        glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
+        text_center(dl, x, y + h / 2 + S(30), w, LANG.t('Nothing up by that name'), P.text, F.disp, T.h1)
+        text_center(dl, x, y + h / 2 + S(54), w, string.format(LANG.t('%d of your listings are hidden by the filter'), total), P.dim, F.text, T.small)
+        return
+    end
     if #rows == 0 then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
         if st.sweep then
@@ -2687,7 +2932,7 @@ local function draw_sales(dl, x, y, w, h, t)
         end
         edge_seat('##cancel' .. row.key, first, last)
         if button(cdl, '##cancel' .. row.key, x + w - S(130), cy + S(14), S(116), S(32), LANG.t('Take down'), can and P.danger or P.faint, 'ghost', 'xmark', F.semi, T.small) and can then
-            st.confirm = { kind = 'cancel', slot = row.slot, item = row.id, page = row.page, key = row.key, price = row.price }
+            st.confirm = { kind = 'cancel', slot = row.slot, item = row.id, page = row.page, key = row.key, price = row.price, stack = row.stack }
         end
         cy = cy + rh
         if open then
@@ -2757,7 +3002,10 @@ local ACT_KIND = {
 }
 local ACT_PER = 20
 local function draw_activity(dl, x, y, w, h, t)
-    local rows, page, pages, total = LEDGER.page(st.act_filter, st.act_page, ACT_PER)
+    -- the header box's words: only the entries whose item has them in its name (the totals are theirs too)
+    local words = filter_words('activity')
+    local match = words and function (r) return name_has(r.id and I.name(r.id) or r.name, words) end or nil
+    local rows, page, pages, total = LEDGER.page(st.act_filter, st.act_page, ACT_PER, match)
     st.act_page = page
     text(dl, x + S(6), y, LANG.t('ACTIVITY') .. '  ·  ' .. total .. (total == 1 and (' ' .. LANG.t('entry')) or (' ' .. LANG.t('entries'))), P.dim, F.disp, T.small)
     -- the filters
@@ -2778,7 +3026,7 @@ local function draw_activity(dl, x, y, w, h, t)
         end
     end
     -- the gil, over everything the filter keeps
-    local tot = LEDGER.totals(st.act_filter)
+    local tot = LEDGER.totals(st.act_filter, match)
     local ty = y + S(30)
     panel(dl, x + S(4), ty, w - S(8), S(50), P.well, 0.45, S(10))
     local cols = {}
@@ -2801,7 +3049,7 @@ local function draw_activity(dl, x, y, w, h, t)
     local bottom = y + h - S(30)
     if total == 0 then
         glass_gil(dl, x + w / 2, y + h / 2 - S(10), S(72), t, 0.9)
-        text_center(dl, x, y + h / 2 + S(50), w, st.act_filter == 'all' and LANG.t('Nothing yet') or ('Nothing ' .. st.act_filter .. ' yet'), P.text, F.disp, T.h1)
+        text_center(dl, x, y + h / 2 + S(50), w, words and LANG.t('Nothing by that name') or (st.act_filter == 'all' and LANG.t('Nothing yet') or ('Nothing ' .. st.act_filter .. ' yet')), P.text, F.disp, T.h1)
         text_center(dl, x, y + h / 2 + S(74), w, LANG.t('What you buy, list, take down and sell here is kept, per character, across restarts'), P.dim, F.text, T.small)
         return
     end
@@ -2852,8 +3100,15 @@ end
 
 -- WATCH: the items you follow, each with its stock, last price, how it moved, a sparkline, and a price to be told at
 local function draw_watch(dl, x, y, w, h, t)
-    local list = settings.watch
-    text(dl, x + S(6), y, LANG.t('WATCHING') .. '  ·  ' .. #list .. (#list == 1 and (' ' .. LANG.t('item')) or (' ' .. LANG.t('items'))), P.dim, F.disp, T.small)
+    local all = settings.watch
+    local list = all
+    -- the header box's words: only the watched items with them in their names
+    local words = filter_words('watch')
+    if words then
+        list = {}
+        for _, e in ipairs(all) do if name_has(I.name(e.id), words) then list[#list + 1] = e end end
+    end
+    text(dl, x + S(6), y, LANG.t('WATCHING') .. '  ·  ' .. (words and (#list .. ' ' .. LANG.t('of') .. ' ') or '') .. #all .. (#all == 1 and (' ' .. LANG.t('item')) or (' ' .. LANG.t('items'))), P.dim, F.disp, T.small)
     local checked = st.watch_at > 0 and ('checked ' .. ago(os.time() - math.floor(clock() - st.watch_at))) or (settings.watch_poll and LANG.t('checks every') .. ' ' .. math.floor((settings.watch_every or 300) / 60) .. ' ' .. LANG.t('min') or 'background checks are off')
     text(dl, x + w - S(142) - measure(checked, F.text, T.tiny), y + S(3), checked, P.faint, F.text, T.tiny)
     local busy = SEARCH.pending() > 0
@@ -2861,6 +3116,11 @@ local function draw_watch(dl, x, y, w, h, t)
         poll_watch()
     end
     local ly, lh = y + S(32), h - S(32)
+    if #list == 0 and #all > 0 then
+        glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
+        text_center(dl, x, y + h / 2 + S(30), w, LANG.t('Nothing watched by that name'), P.text, F.disp, T.h1)
+        return
+    end
     if #list == 0 then
         glass_gil(dl, x + w / 2, y + h / 2 - S(30), S(72), t, 0.9)
         text_center(dl, x, y + h / 2 + S(30), w, LANG.t('Nothing watched yet'), P.text, F.disp, T.h1)
@@ -3076,6 +3336,67 @@ local function draw_settings(dl, x, y, w, h)
     if changed then save_settings() end
 end
 
+-- An item's own words by the mouse, on a Buy row or over something in the Sell bag: its name, who wears it or how it
+-- stacks, and the game's description (where its stats are), so nothing need be picked, or the window left, to read
+-- them. Drawn by the window itself, over everything. count: how many the bag's slot holds; note: a warning line
+local function item_tip(id, count, note, since)
+    local r = I.get(id)
+    if r.placeholder then return end
+    local a = math.min(1, math.max(0, (now_t - (since or 0)) * 8))
+    if a <= 0.02 then return end
+    local w = S(300)
+    local inner = w - S(28)
+    local lines = {}
+    local desc = COMPARE.readable(r.desc)
+    if desc ~= '' then
+        for raw in (desc .. '\n'):gmatch('([^\n]*)\n') do
+            for _, l in ipairs(wrap(raw, F.text, T.small, inner)) do lines[#lines + 1] = l end
+        end
+    end
+    local sub = I.jobs_line(id)
+    if r.stack > 1 then sub = (sub ~= '' and (sub .. '  ·  ') or '') .. 'Stacks of ' .. r.stack end
+    local cat = I.category_of(id)
+    local cn = cat and LANG.t(I.CATEGORY_NAME[cat] or '') or ''
+    if cn ~= '' then sub = sub ~= '' and (sub .. '  ·  ' .. cn) or cn end
+    local extra = {}
+    local known = knows_spell(id)
+    if known ~= nil then extra[#extra + 1] = { known and LANG.t('You already know this spell') or LANG.t('You have not learned this spell'), known and P.ok or P.dim } end
+    if note then extra[#extra + 1] = { note, P.warn } end
+    local h = S(12) + S(22) + (sub ~= '' and S(16) or 0) + (#lines > 0 and (S(8) + #lines * S(17)) or 0) + (#extra > 0 and (S(6) + #extra * S(16)) or 0) + S(10)
+    local mx, my = imgui.GetMousePos()
+    local okv, vw, vh = pcall(vana.ui.screen)
+    if not okv or type(vw) ~= 'number' then vw, vh = 1920, 1080 end
+    local x = mx + S(18)
+    if x + w > vw - S(8) then x = mx - S(18) - w end
+    local y = math.max(S(8), math.min(my + S(18), vh - h - S(8)))
+    local fdl = imgui.GetForegroundDrawList()
+    shadow(fdl, x, y, w, h, S(10), a)
+    panel(fdl, x, y, w, h, P.glass, 0.98 * a, S(10), P.line)
+    local cy = y + S(12)
+    local many = (count or 0) > 1 and ('  x' .. count) or ''
+    text(fdl, x + S(14), cy, fit(r.name, F.disp, T.h2, inner - measure(many, F.disp, T.h2)) .. many, GOLD, F.disp, T.h2, a)
+    cy = cy + S(22)
+    if sub ~= '' then
+        text(fdl, x + S(14), cy, fit(sub, F.text, T.tiny, inner), P.dim, F.text, T.tiny, a)
+        cy = cy + S(16)
+    end
+    if #lines > 0 then
+        fdl:AddLine({ x + S(14), cy + S(3) }, { x + w - S(14), cy + S(3) }, u32(P.line, 0.6 * a), 1)
+        cy = cy + S(8)
+        for _, l in ipairs(lines) do
+            text(fdl, x + S(14), cy, l, P.text, F.text, T.small, a)
+            cy = cy + S(17)
+        end
+    end
+    if #extra > 0 then
+        cy = cy + S(6)
+        for _, e in ipairs(extra) do
+            text(fdl, x + S(14), cy, fit(e[1], F.text, T.tiny, inner), e[2], F.text, T.tiny, a)
+            cy = cy + S(16)
+        end
+    end
+end
+
 local function draw_confirm()
     local c = st.confirm
     if c == nil then return end
@@ -3083,7 +3404,7 @@ local function draw_confirm()
     if c.kind == 'relist' then w, h = S(470), S(338) end
     if c.kind == 'sell' and st.relist then h = h + S(18) end
     if c.kind == 'sell' and LANG.ja() then h = S(320) + (st.relist and S(18) or 0) end
-    if c.kind == 'cancel' and st.server_page ~= nil and st.server_page ~= c.page then h = h + S(18) end -- a line about the wait
+    if c.kind == 'cancel' and shown_slot(c.item, c.stack, c.price) == nil then h = h + S(18) end -- a line about the wait
     U.dialog('##ah_confirm', w, h, 0, function (dl, x, y)
         shadow(dl, x, y, w, h, S(16), 1.5)
         panel(dl, x, y, w, h, P.glass, 1, S(16), GOLD, true)
@@ -3191,7 +3512,7 @@ local function draw_confirm()
         else
             title = 'Take it down?'
             body = I.name(c.item) .. ' comes back to your bag.\nThe listing fee is not returned.'
-            if st.server_page ~= nil and st.server_page ~= c.page then
+            if shown_slot(c.item, c.stack, c.price) == nil then
                 body = body .. '\nThe house needs a moment to find this one.'
             end
             yes, ic, col = LANG.t('Take down'), 'xmark', P.danger
@@ -3433,7 +3754,7 @@ local function draw_main(t)
         local fade = math.min(1, (t - st.opened_at) * 4)
         shadow(dl, x, y, w, h, S(16), fade)
         panel(dl, x, y, w, h, P.bg, fade, S(16), P.line)
-        st.hover_id = nil
+        st.hover_id, st.hover_rect, st.hover_fast, st.hover_count, st.hover_note = nil, nil, nil, nil, nil
         -- the controller's buttons are the focused window's (RootAndChildWindows): two open windows never both answer
         st.pad_focused = imgui.IsWindowFocused(3)
         -- (or a confirmation's, a window of its own that takes the focus: Cancel there closes it)
@@ -3483,6 +3804,20 @@ local function draw_main(t)
             COMPARE.card(st.hover_id, mx, my, { t = t, wearer = wearer(), stack = hr ~= nil })
         else
             COMPARE.idle()
+        end
+        -- the item under the mouse, in its own words (item_tip): after a moment on a row, at once on the bag's icons.
+        -- Not where Compare is showing the gear already, nor for a controller's ring (Confirm opens that row's card)
+        do
+            local tip = (st.tab == 'buy' or st.tab == 'sell') and st.hover_id or nil
+            if tip and (st.confirm or st.settings_open or st.hover_rect) then tip = nil end
+            if tip and st.tab == 'buy' and settings.compare and COMPARE.against(tip) ~= nil then tip = nil end
+            if tip then
+                if st.tip_id ~= tip then st.tip_id, st.tip_at = tip, now_t end
+                if st.hover_fast then item_tip(tip, st.hover_count, st.hover_note, 0)
+                elseif now_t - st.tip_at > 0.35 then item_tip(tip, st.hover_count, st.hover_note, st.tip_at + 0.35) end
+            else
+                st.tip_id = nil
+            end
         end
         -- a move between rows leaves nothing focused for a frame, and the legend's words (and width) followed it, so
         -- the row jittered on every press: the pane holds until nothing has had the focus for a moment
@@ -3569,7 +3904,8 @@ local function tick()
         U.toast('danger', 'No answer', LANG.t('The house did not answer'), 5, 'hourglass-end')
     end
     if st.cancel_pending ~= nil and clock() - (st.cancel_at or 0) > LIMITS.reply then
-        st.cancel_pending = nil
+        st.cancel_pending, st.cancel_what = nil, nil
+        st.sales_dirty = true -- whether it came down isn't known: the pages are read again
         U.toast('danger', 'No answer', 'The house did not answer the take-down: refresh My Sales to see where it stands', 6, 'hourglass-end')
     end
     relist_step()
@@ -3605,6 +3941,13 @@ local function tick()
         st.was_near = st.counter.near
         -- the bag and the gil, kept current (a purchase or a fee changes the gil a moment after the house replies)
         if clock() - st.inv_at > LIMITS.inventory then refresh_inventory() end
+        -- a sweep after one listing takes it down the moment the page with it is in, whole (not the 1.6 s later
+        -- the next page would be asked at); a server without pages says no count, and waits the gap out
+        if st.sweep and st.sweep.want and st.sweep.got and st.server_page ~= nil and st.shown then
+            local n = 0
+            for _ in pairs(st.shown) do n = n + 1 end
+            if n >= (st.page_n or 7) then sweep_take() end
+        end
         if st.sweep and not st.sales_wait and clock() - st.sales_at >= SWEEP_GAP then
             if st.sweep.started then sweep_step() else sweep_send() end
         end
@@ -3681,6 +4024,7 @@ vana.events.on('packet_in', function (e)
                 -- the page the rows that follow belong to: its old rows go, and a sweep notes it
                 page, n = tonumber(page), tonumber(n)
                 st.server_page, st.page_n, st.reply_page = page, n, page
+                st.shown = {}
                 for key, row in pairs(st.sales) do if row.page == page then st.sales[key] = nil end end
                 if st.sweep then
                     st.sweep.got = true
@@ -3697,7 +4041,8 @@ vana.events.on('packet_in', function (e)
         st.open = false
         st.sales, st.sales_open, st.sales_wait = {}, false, false
         st.sweep, st.server_page, st.page_n, st.reply_page = nil, nil, nil, nil -- the house starts at page 1 again
-        st.cancel_pending = nil -- the server drops a take-down with the zone, without a reply
+        st.shown = nil
+        st.cancel_pending, st.cancel_what = nil, nil -- the server drops a take-down with the zone, without a reply
         st.lists = {}
         st.counter.near, st.counter.here, st.counter.dist, st.was_near = false, false, nil, false
         st.server_opened = false

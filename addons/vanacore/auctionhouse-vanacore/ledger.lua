@@ -74,17 +74,19 @@ end
 
 function L.count() return #rows end
 
--- the entries a filter keeps ('all', or one of the kinds), newest first
-function L.filtered(filter)
-    if filter == nil or filter == 'all' then return rows end
+-- the entries a filter keeps ('all', or one of the kinds), newest first; match, when given, is asked of each entry
+-- as well (the window's name filter)
+function L.filtered(filter, match)
+    local every = filter == nil or filter == 'all'
+    if every and match == nil then return rows end
     local out = {}
-    for _, r in ipairs(rows) do if r.kind == filter then out[#out + 1] = r end end
+    for _, r in ipairs(rows) do if (every or r.kind == filter) and (match == nil or match(r)) then out[#out + 1] = r end end
     return out
 end
 
 -- one page of them: the rows, the page shown (clamped) and how many pages there are
-function L.page(filter, page, per)
-    local all = L.filtered(filter)
+function L.page(filter, page, per, match)
+    local all = L.filtered(filter, match)
     per = per or 20
     local pages = math.max(1, math.ceil(#all / per))
     page = math.max(1, math.min(pages, page or 1))
@@ -94,9 +96,9 @@ function L.page(filter, page, per)
 end
 
 -- the gil: paid for purchases, paid in listing fees, taken in from sales, and what that nets, over the whole record
-function L.totals(filter)
+function L.totals(filter, match)
     local t = { spent = 0, fees = 0, earned = 0, bought = 0, sold = 0, listed = 0, taken = 0 }
-    for _, r in ipairs(L.filtered(filter)) do
+    for _, r in ipairs(L.filtered(filter, match)) do
         if r.kind == 'bought' then t.spent = t.spent + r.price t.bought = t.bought + 1
         elseif r.kind == 'sold' then t.earned = t.earned + r.price t.sold = t.sold + 1
         elseif r.kind == 'listed' then t.fees = t.fees + (r.fee or 0) t.listed = t.listed + 1
