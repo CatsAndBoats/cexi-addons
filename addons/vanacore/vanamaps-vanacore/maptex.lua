@@ -10,10 +10,17 @@
 --
 -- A cache keeps what was shown lately, under a budget, and releases the rest: nothing is read from disk in a frame
 -- that already has its texture.
+--
+-- Smaller copies. VanaCore draws an addon's texture from its top level alone (a texture's mip levels are never
+-- sampled), so a 2048 map shown 700 pixels wide would be read one texel in three: thin lines break up and shimmer as
+-- the map moves. So each large map gets a half-size and a quarter-size copy of its own, averaged from the full picture
+-- (X.pick takes the one that fits the size it's drawn at). They are made over the frames after the map first shows,
+-- a few milliseconds a frame, and the full picture is drawn until they are ready.
 local ffi = require('ffi')
 local bit = require('bit')
 
-local X = { cache = {}, bytes = 0, budget = 56 * 1024 * 1024, clock = 0, loads = 0, last_ms = 0 }
+-- (epoch: counts the times textures were let go, for whoever holds one across frames)
+local X = { cache = {}, bytes = 0, budget = 64 * 1024 * 1024, clock = 0, loads = 0, last_ms = 0, epoch = 0 }
 
 local FMT_DXT3, FMT_A8R8G8B8, POOL_MANAGED = 0x33545844, 21, 1
 local SLOT = { release = 2, create_texture = 20, lock = 16, unlock = 17 }
@@ -113,7 +120,7 @@ local function load(path)
     else
         bytes = pic.w * pic.h * 4
         tex, err = make(pic.w, pic.h, FMT_A8R8G8B8, function (bits, pitch)
-            local pal = ffi.new('uint32_t[256]')
+            local pal = ffi.new('int32_t[256]') -- (signed: what the bit operations give)
             local src = p + pic.at
             for i = 0, 255 do
                 local a = src[i * 4 + 3] * 2
@@ -124,25 +131,198 @@ local function load(path)
             local w, h = pic.w, pic.h
             for y = 0, h - 1 do
                 -- (the 8-bit pictures are kept bottom row first, as a Windows bitmap is)
-                local row = ffi.cast('uint32_t*', ffi.cast('uint8_t*', bits) + y * pitch)
+                local row = ffi.cast('int32_t*', ffi.cast('uint8_t*', bits) + y * pitch)
                 local from = px + (h - 1 - y) * w
                 for x = 0, w - 1 do row[x] = pal[from[x]] end
             end
         end)
     end
     if tex == nil then return nil, err end
-    return { tex = tex, w = pic.w, h = pic.h, bytes = bytes, kind = pic.kind }
+    local e = { tex = tex, w = pic.w, h = pic.h, bytes = bytes, kind = pic.kind, levels = {} }
+    -- (the file's bytes are kept until the smaller copies are made of them)
+    if pic.w >= 1024 and pic.w == pic.h then e.source = { data = data, pic = pic } end
+    return e
+end
+
+-------------------------------------------------------------------------------
+-- The smaller copies
+-------------------------------------------------------------------------------
+
+local WORK = { queue = {}, running = false, budget_ms = 2.5 }
+
+-- rows y0 .. y1-1 of the half-size picture (32 bits a pixel), from DXT3 blocks: each 4 x 4 block gives 2 x 2 pixels
+local function half_from_dxt3(src, w, out, y0, y1)
+    local hw = w / 2
+    local bw = w / 4
+    local pr, pg, pb = ffi.new('int[4]'), ffi.new('int[4]'), ffi.new('int[4]')
+    local band, rshift, lshift, bor = bit.band, bit.rshift, bit.lshift, bit.bor
+    for by = y0 / 2, y1 / 2 - 1 do
+        local row = src + by * bw * 16
+        local o0, o1 = out + (by * 2) * hw, out + (by * 2 + 1) * hw
+        for bx = 0, bw - 1 do
+            local b = row + bx * 16
+            local c0, c1 = b[8] + b[9] * 256, b[10] + b[11] * 256
+            local r0, g0, b0 = rshift(c0, 11) * 8 + rshift(c0, 13), band(rshift(c0, 5), 63) * 4 + band(rshift(c0, 9), 3), band(c0, 31) * 8 + band(rshift(c0, 2), 7)
+            local r1, g1, b1 = rshift(c1, 11) * 8 + rshift(c1, 13), band(rshift(c1, 5), 63) * 4 + band(rshift(c1, 9), 3), band(c1, 31) * 8 + band(rshift(c1, 2), 7)
+            pr[0], pg[0], pb[0] = r0, g0, b0
+            pr[1], pg[1], pb[1] = r1, g1, b1
+            pr[2], pg[2], pb[2] = (2 * r0 + r1) / 3, (2 * g0 + g1) / 3, (2 * b0 + b1) / 3
+            pr[3], pg[3], pb[3] = (r0 + 2 * r1) / 3, (g0 + 2 * g1) / 3, (b0 + 2 * b1) / 3
+            -- the four rows of two-bit picks, and of four-bit alphas
+            local i0, i1, i2, i3 = b[12], b[13], b[14], b[15]
+            local a0, a1, a2, a3 = b[0] + b[1] * 256, b[2] + b[3] * 256, b[4] + b[5] * 256, b[6] + b[7] * 256
+            -- top left: pixels (0,0) (1,0) (0,1) (1,1); top right: (2,0) (3,0) (2,1) (3,1); and the same below
+            local k0, k1, k2, k3 = band(i0, 3), band(rshift(i0, 2), 3), band(i1, 3), band(rshift(i1, 2), 3)
+            local al = band(a0, 15) + band(rshift(a0, 4), 15) + band(a1, 15) + band(rshift(a1, 4), 15)
+            o0[bx * 2] = bor(rshift(pb[k0] + pb[k1] + pb[k2] + pb[k3], 2), lshift(rshift(pg[k0] + pg[k1] + pg[k2] + pg[k3], 2), 8),
+                lshift(rshift(pr[k0] + pr[k1] + pr[k2] + pr[k3], 2), 16), lshift(rshift(al * 17, 2), 24))
+            k0, k1, k2, k3 = band(rshift(i0, 4), 3), rshift(i0, 6), band(rshift(i1, 4), 3), rshift(i1, 6)
+            al = band(rshift(a0, 8), 15) + rshift(a0, 12) + band(rshift(a1, 8), 15) + rshift(a1, 12)
+            o0[bx * 2 + 1] = bor(rshift(pb[k0] + pb[k1] + pb[k2] + pb[k3], 2), lshift(rshift(pg[k0] + pg[k1] + pg[k2] + pg[k3], 2), 8),
+                lshift(rshift(pr[k0] + pr[k1] + pr[k2] + pr[k3], 2), 16), lshift(rshift(al * 17, 2), 24))
+            k0, k1, k2, k3 = band(i2, 3), band(rshift(i2, 2), 3), band(i3, 3), band(rshift(i3, 2), 3)
+            al = band(a2, 15) + band(rshift(a2, 4), 15) + band(a3, 15) + band(rshift(a3, 4), 15)
+            o1[bx * 2] = bor(rshift(pb[k0] + pb[k1] + pb[k2] + pb[k3], 2), lshift(rshift(pg[k0] + pg[k1] + pg[k2] + pg[k3], 2), 8),
+                lshift(rshift(pr[k0] + pr[k1] + pr[k2] + pr[k3], 2), 16), lshift(rshift(al * 17, 2), 24))
+            k0, k1, k2, k3 = band(rshift(i2, 4), 3), rshift(i2, 6), band(rshift(i3, 4), 3), rshift(i3, 6)
+            al = band(rshift(a2, 8), 15) + rshift(a2, 12) + band(rshift(a3, 8), 15) + rshift(a3, 12)
+            o1[bx * 2 + 1] = bor(rshift(pb[k0] + pb[k1] + pb[k2] + pb[k3], 2), lshift(rshift(pg[k0] + pg[k1] + pg[k2] + pg[k3], 2), 8),
+                lshift(rshift(pr[k0] + pr[k1] + pr[k2] + pr[k3], 2), 16), lshift(rshift(al * 17, 2), 24))
+        end
+    end
+end
+
+-- the same rows from an 8-bit picture (kept bottom row first) and its colours
+local function half_from_indexed(src, w, h, out, y0, y1)
+    local hw = w / 2
+    local px = src + 1024
+    local band, rshift, lshift, bor = bit.band, bit.rshift, bit.lshift, bit.bor
+    for y = y0, y1 - 1 do
+        local ra, rb = px + (h - 1 - y * 2) * w, px + (h - 2 - y * 2) * w
+        local o = out + y * hw
+        for x = 0, hw - 1 do
+            local p0, p1, p2, p3 = src + ra[x * 2] * 4, src + ra[x * 2 + 1] * 4, src + rb[x * 2] * 4, src + rb[x * 2 + 1] * 4
+            local a = (p0[3] + p1[3] + p2[3] + p3[3]) / 2
+            if a > 255 then a = 255 end
+            o[x] = bor(rshift(p0[0] + p1[0] + p2[0] + p3[0], 2), lshift(rshift(p0[1] + p1[1] + p2[1] + p3[1], 2), 8),
+                lshift(rshift(p0[2] + p1[2] + p2[2] + p3[2], 2), 16), lshift(a, 24))
+        end
+    end
+end
+
+-- a picture half the size of a 32-bit one
+local function halve(from, w, out)
+    local hw = w / 2
+    local band, rshift, lshift, bor = bit.band, bit.rshift, bit.lshift, bit.bor
+    for y = 0, hw - 1 do
+        local ra, rb, o = from + y * 2 * w, from + (y * 2 + 1) * w, out + y * hw
+        for x = 0, hw - 1 do
+            local a, b, c, d = ra[x * 2], ra[x * 2 + 1], rb[x * 2], rb[x * 2 + 1]
+            o[x] = bor(
+                rshift(band(a, 0xFF) + band(b, 0xFF) + band(c, 0xFF) + band(d, 0xFF), 2),
+                lshift(rshift(band(rshift(a, 8), 0xFF) + band(rshift(b, 8), 0xFF) + band(rshift(c, 8), 0xFF) + band(rshift(d, 8), 0xFF), 2), 8),
+                lshift(rshift(band(rshift(a, 16), 0xFF) + band(rshift(b, 16), 0xFF) + band(rshift(c, 16), 0xFF) + band(rshift(d, 16), 0xFF), 2), 16),
+                lshift(rshift(rshift(a, 24) + rshift(b, 24) + rshift(c, 24) + rshift(d, 24), 2), 24))
+        end
+    end
+end
+
+local function upload(buf, size)
+    return make(size, size, FMT_A8R8G8B8, function (bits, pitch)
+        if pitch == size * 4 then
+            ffi.copy(bits, buf, size * size * 4)
+        else
+            for y = 0, size - 1 do ffi.copy(ffi.cast('uint8_t*', bits) + y * pitch, buf + y * size, size * 4) end
+        end
+    end)
+end
+
+-- one map's smaller copies, a slice of work a frame (run as a task: coroutine.sleepf between slices)
+local function build_levels(e)
+    local s = e.source
+    local pic, w = s.pic, s.pic.w
+    local src = ffi.cast('const uint8_t*', s.data) + pic.at
+    local hw = w / 2
+    local half = ffi.new('int32_t[?]', hw * hw)
+    local y, rows = 0, 16
+    while y < hw do
+        if e.dead then return end
+        local t0 = vana.time.clock()
+        local y1 = math.min(hw, y + rows)
+        if pic.kind == 'dxt3' then half_from_dxt3(src, w, half, y, y1) else half_from_indexed(src, w, pic.h, half, y, y1) end
+        local ms = (vana.time.clock() - t0) * 1000
+        y = y1
+        -- as many rows a slice as fit the time a frame can spare
+        if ms < WORK.budget_ms * 0.6 then rows = math.min(256, rows * 2) elseif ms > WORK.budget_ms * 1.3 then rows = math.max(4, rows / 2) end
+        coroutine.sleepf(1)
+    end
+    if e.dead then return end
+    local tex = upload(half, hw)
+    if tex then
+        e.levels[1] = { tex = tex, w = hw }
+        e.bytes = e.bytes + hw * hw * 4
+        X.bytes = X.bytes + hw * hw * 4
+    end
+    coroutine.sleepf(1)
+    if e.dead then return end
+    if hw >= 1024 then
+        local qw = hw / 2
+        local quarter = ffi.new('int32_t[?]', qw * qw)
+        halve(half, hw, quarter)
+        coroutine.sleepf(1)
+        if e.dead then return end
+        local qtex = upload(quarter, qw)
+        if qtex then
+            e.levels[2] = { tex = qtex, w = qw }
+            e.bytes = e.bytes + qw * qw * 4
+            X.bytes = X.bytes + qw * qw * 4
+        end
+    end
+end
+
+local function work()
+    WORK.running = true
+    while #WORK.queue > 0 do
+        local e = table.remove(WORK.queue, 1)
+        if not e.dead and e.source then
+            local ok, err = pcall(build_levels, e)
+            if not ok then vana.log('vanamaps-vanacore smaller copies: ' .. tostring(err)) end
+        end
+        e.source, e.building = nil, nil
+    end
+    WORK.running = false
+end
+
+-- The texture of a map that suits `across` pixels of screen for the whole picture: the full one, or a smaller copy
+-- once it's made (asked for here the first time one would help).
+function X.pick(e, across)
+    if e.source and not e.building and across < e.w * 0.72 then
+        e.building = true
+        WORK.queue[#WORK.queue + 1] = e
+        if not WORK.running then vana.tasks.spawn(work) end
+    end
+    if across < e.w * 0.36 and e.levels[2] then return e.levels[2].tex end
+    if across < e.w * 0.72 and e.levels[1] then return e.levels[1].tex end
+    return e.tex
+end
+
+local function free(e)
+    e.dead = true
+    release(e.tex)
+    for _, l in pairs(e.levels or {}) do release(l.tex) end
+    e.tex, e.levels, e.source = nil, {}, nil
 end
 
 local function trim(keep)
     while X.bytes > X.budget do
         local oldest, key = nil, nil
         for k, e in pairs(X.cache) do
-            if e.tex ~= nil and k ~= keep and (oldest == nil or e.used < oldest.used) then oldest, key = e, k end
+            if e.tex ~= nil and k ~= keep and X.clock - e.used > 120 and (oldest == nil or e.used < oldest.used) then oldest, key = e, k end
         end
         if oldest == nil then return end
-        release(oldest.tex)
         X.bytes = X.bytes - oldest.bytes
+        free(oldest)
+        X.epoch = X.epoch + 1
         X.cache[key] = nil
     end
 end
@@ -181,11 +361,12 @@ end
 
 -- everything but `keep` (a first path) let go: the viewer closed, the quality changed
 function X.release_all(keep)
+    X.epoch = X.epoch + 1
     for k, e in pairs(X.cache) do
         if k ~= keep then
             if e.tex ~= nil then
-                release(e.tex)
                 X.bytes = X.bytes - e.bytes
+                free(e)
             end
             X.cache[k] = nil
         end

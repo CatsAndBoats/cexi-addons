@@ -145,6 +145,8 @@ return function (C)
 
     local function mine(pin) return pin ~= nil and pin.code == nil end
 
+    function CV.close_card() M.card_open = false end
+
     function CV.select(pin, card)
         st.sel = pin
         M.card_title, M.card_note = nil, nil
@@ -276,7 +278,10 @@ return function (C)
 
     local function draw_card(dl, t)
         local pin = st.sel
-        if pin == nil or not M.card_open or pin.zone ~= st.zone or pin.floor ~= st.floor then return end
+        if pin == nil or not M.card_open or pin.zone ~= st.zone or pin.floor ~= st.floor then
+            if st.pad_mode == 'card' then st.pad_mode = 'map' end
+            return
+        end
         local r = V.rect
         local own = mine(pin)
         local w = S(308)
@@ -336,6 +341,11 @@ return function (C)
                         local gx = ix + ((i - 1) % 8) * cell
                         local gy = cy + math.floor((i - 1) / 8) * cell
                         imgui.SetCursorScreenPos({ gx, gy })
+                        if i == 1 and M.seat_card then
+                            M.seat_card = M.seat_card - 1
+                            imgui.SetKeyboardFocusHere()
+                            if M.seat_card <= 0 then M.seat_card = nil end
+                        end
                         local pressed, hovered, ihv = U.hit('##vm_ic' .. i, cell, cell, S(7))
                         local on = pin.icon == ic.id
                         if on then
@@ -377,6 +387,12 @@ return function (C)
                     U.text(cdl, ix, cy + S(22), C.zone_name(pin.zone), P.dim, F.text, T.small)
                     cy = cy + S(56)
                     local bw = (iw - S(8)) / 2
+                    if M.seat_card then
+                        M.seat_card = M.seat_card - 1
+                        imgui.SetCursorScreenPos({ ix, cy })
+                        imgui.SetKeyboardFocusHere()
+                        if M.seat_card <= 0 then M.seat_card = nil end
+                    end
                     if U.button(cdl, '##vm_pin_keep', ix, cy, bw, S(32), 'Save pin', color, 'solid', 'location-dot', F.semi, T.small) then
                         local kept = C.add_pin(pin.zone, pin.floor, pin.mx, pin.my, { icon = pin.icon, color = pin.color, title = pin.title or '',
                             note = (pin.from or '') ~= '' and ('From ' .. pin.from) or '' })
@@ -429,7 +445,7 @@ return function (C)
         cur.y = math.max(r.y + S(4), math.min(r.y + r.h - S(4), cur.y))
         -- the triggers zoom about the pointer
         local zin = (PAD.down('r2') and 1 or 0) - (PAD.down('l2') and 1 or 0)
-        if zin ~= 0 then zoom_about(math.exp(zin * dt * 1.8), cur.x, cur.y) end
+        if zin ~= 0 then zoom_about(math.exp(zin * dt * 1.5), cur.x, cur.y) end
         if PAD.pressed('r3') then CV.fit() end
         if PAD.pressed('l3') then C.here() end
         -- the bumpers change floors
@@ -442,11 +458,18 @@ return function (C)
             C.show(st.zone, nf.floor)
         end
         if PAD.pressed('confirm') then
-            if M.hover_pin then
-                CV.select(M.hover_pin)
+            local got = M.hover_pin
+            if got then
+                CV.select(got)
             else
                 local mx, my = to_map(cur.x, cur.y)
-                if mx >= 0 and mx <= SIZE and my >= 0 and my <= SIZE then new_pin(mx, my) end
+                if mx >= 0 and mx <= SIZE and my >= 0 and my <= SIZE then got = new_pin(mx, my) end
+            end
+            if got then
+                -- the card is the controller's now: its icons, colours and buttons, with the D-pad (a title wants a
+                -- keyboard, so the box isn't opened for typing)
+                M.focus_title = nil
+                st.pad_mode, M.seat_card = 'card', 3
             end
         end
         return cur
@@ -479,7 +502,9 @@ return function (C)
             local sources = DATA.sources(f, cfg.quality)
             entry, why = TEX.get(sources)
         end
-        M.tex = entry and entry.tex or nil
+        -- (a picture let go while it was still fading out isn't drawn again)
+        if M.tex_epoch ~= TEX.epoch then M.tex_epoch, M.old = TEX.epoch, nil end
+        M.tex = entry and TEX.pick(entry, SIZE * V.z) or nil
 
         -- following you
         local me = C.me
@@ -742,7 +767,7 @@ return function (C)
         if ui(G.map_button(dl, '##vm_zout', zx, zy + zs + S(4), zs, zs, G.CP.minus, nil, false, 'Zoom out')) then zoom_about(1 / 1.5, x + w / 2, y + h / 2) end
         if ui(G.map_button(dl, '##vm_zfit', zx, zy + (zs + S(4)) * 2, zs, zs, G.CP.expand, nil, false, 'The whole map')) then CV.fit() end
         -- what the pointer is on, bottom left
-        if f and pointing and hmx >= 0 and hmx <= SIZE and hmy >= 0 and hmy <= SIZE then
+        if f and pointing and hmx >= 16 and hmx < SIZE - 16 and hmy >= 16 and hmy < SIZE - 16 then
             local wx, wy = DATA.to_world(f, hmx, hmy)
             local label = string.format('(%s)    X %.0f   Y %.0f', DATA.grid_of_map(hmx, hmy), wx, wy)
             local tw, th = U.measure(label, F.semi, T.small)

@@ -63,7 +63,7 @@ return function (C)
     end
 
     -- A scrolling list of rows of differing heights, only the ones in view drawn. rows: { { h = , draw = function (dl, x, y, w, h) }, ... }
-    local function list(id, x, y, w, h, rows)
+    local function list(id, x, y, w, h, rows, seek)
         imgui.SetCursorScreenPos({ x, y })
         -- 256: NavFlattened, so the controller's focus moves through the rows as through the window's own
         if imgui.BeginChild(id, { w, h }, 256, 0) then
@@ -75,13 +75,16 @@ return function (C)
                 local at = 0
                 local inner = w - S(10)
                 for _, row in ipairs(rows) do
-                    if at + row.h >= scroll - margin and at <= scroll + h + margin then
-                        row.draw(dl, ox, oy + at, inner, row.h)
+                    local rh = row.units and S(row.units) or row.h
+                    if at + rh >= scroll - margin and at <= scroll + h + margin then
+                        row.draw(dl, ox, oy + at, inner, rh)
                     end
-                    at = at + row.h
+                    at = at + rh
                 end
                 imgui.SetCursorScreenPos({ ox, oy + at })
                 imgui.Dummy({ 1, S(4) })
+                -- (a row asked to be in view: the list turns to it, a third of the way down)
+                if seek then imgui.SetScrollY(math.max(0, seek - h / 3)) end
                 -- the controller's stick scrolls the list
                 if C.pad_on and st.pad_mode == 'list' then
                     local _, _, _, ry = PAD.stick()
@@ -105,8 +108,9 @@ return function (C)
     ---------------------------------------------------------------------------
 
     local function zone_row(row, counts, indent)
-        return { h = S(30), draw = function (dl, x, y, w, h)
+        return { units = 30, zone = row.id, draw = function (dl, x, y, w, h)
             local on = st.zone == row.id
+            local n = pin_counts()[row.id]
             local mine = C.me.ok and C.me.zone == row.id
             imgui.SetCursorScreenPos({ x, y })
             if on and st.pad_seat then seat_first() end
@@ -117,13 +121,12 @@ return function (C)
             elseif hv > 0.01 then
                 dl:AddRectFilled({ x, y }, { x + w, y + h - S(2) }, u32(P.text, 0.07 * hv), S(7))
             end
-            local tx = x + indent
+            local tx = x + S(indent)
             local right = x + w - S(8)
             if mine then
                 G.icon(dl, right - S(6), y + h / 2 - 1, G.CP.locate, P.cyan, T.tiny)
                 right = right - S(18)
             end
-            local n = counts[row.id]
             if n then
                 local label = tostring(n)
                 local tw = U.measure(label, F.semi, T.tiny) + S(20)
@@ -155,7 +158,12 @@ return function (C)
         G.icon(dl, x + w - S(18), y + S(16), G.CP.search, P.faint, T.small)
         local text = (q[1] or ''):lower():gsub('^%s+', ''):gsub('%s+$', '')
         local counts = pin_counts()
-        local rows = {}
+        -- the rows are built when what they show changes (the search, a group folded, a pin added), not every frame
+        local key = text .. '|' .. tostring(C.pins_rev) .. '|' .. tostring(L.fold_rev)
+        local rows = L.zone_rows_key == key and L.zone_rows or nil
+        if rows == nil then
+        rows = {}
+        L.zone_rows, L.zone_rows_key = rows, key
         if text ~= '' then
             -- a flat list of what matches: zones by name, and every zone of a region that matches
             local n = 0
@@ -167,25 +175,25 @@ return function (C)
                         if whole or z.lower:find(text, 1, true) then
                             if not head then
                                 head = true
-                                rows[#rows + 1] = { h = S(24), draw = function (rdl, rx, ry, rw)
+                                rows[#rows + 1] = { units = 24, draw = function (rdl, rx, ry, rw)
                                     U.text_mid(rdl, rx + S(4), ry + S(14), r.name:upper(), P.accent2, F.disp, T.tiny)
                                 end }
                             end
-                            rows[#rows + 1] = zone_row(z, counts, S(12))
+                            rows[#rows + 1] = zone_row(z, counts, 12)
                             n = n + 1
                         end
                     end
                 end
             end
             if n == 0 then
-                rows[#rows + 1] = { h = S(60), draw = function (rdl, rx, ry, rw)
+                rows[#rows + 1] = { units = 60, draw = function (rdl, rx, ry, rw)
                     U.text_center(rdl, rx, ry + S(30), rw, 'No zone matches', P.faint, F.text, T.small)
                 end }
             end
         else
             for gi, g in ipairs(groups()) do
                 local shut = cfg.collapsed[g.name] == true
-                rows[#rows + 1] = { h = S(34), draw = function (rdl, rx, ry, rw, rh)
+                rows[#rows + 1] = { units = 34, draw = function (rdl, rx, ry, rw, rh)
                     imgui.SetCursorScreenPos({ rx, ry + S(4) })
                     local pressed, _, hv = U.hit('##vm_g' .. gi, rw, rh - S(6), S(7))
                     rdl:AddRectFilled({ rx, ry + S(4) }, { rx + rw, ry + rh - S(2) }, u32(P.card, 0.7 + 0.3 * hv), S(7))
@@ -197,22 +205,34 @@ return function (C)
                     U.text_mid(rdl, rx + rw - U.measure(label, F.semi, T.tiny) - S(10), ry + rh / 2 + 1, label, P.faint, F.semi, T.tiny)
                     if pressed then
                         cfg.collapsed[g.name] = not shut or nil
+                        L.fold_rev = (L.fold_rev or 0) + 1
                         C.save()
                     end
                 end }
                 if not shut then
                     for _, r in ipairs(g.regions) do
-                        rows[#rows + 1] = { h = S(24), draw = function (rdl, rx, ry, rw)
+                        rows[#rows + 1] = { units = 24, draw = function (rdl, rx, ry, rw)
                             U.text_mid(rdl, rx + S(12), ry + S(14), r.name:upper(), P.accent2, F.disp, T.tiny)
                             local lw = U.measure(r.name:upper(), F.disp, T.tiny)
                             rdl:AddLine({ rx + S(20) + lw, ry + S(14) }, { rx + rw - S(4), ry + S(14) }, u32(P.line), 1)
                         end }
-                        for _, z in ipairs(r.zones) do rows[#rows + 1] = zone_row(z, counts, S(20)) end
+                        for _, z in ipairs(r.zones) do rows[#rows + 1] = zone_row(z, counts, 20) end
                     end
                 end
             end
         end
-        list('##vm_zones', x, y + S(42), w, h - S(42), rows)
+        end
+        -- the list turns to the map shown when that changes (a zone opened from a pin, a step back, zoning)
+        local seek = nil
+        if L.shown ~= st.zone and text == '' then
+            L.shown = st.zone
+            local at = 0
+            for _, row in ipairs(rows) do
+                if row.zone == st.zone then seek = at break end
+                at = at + (row.units and S(row.units) or row.h)
+            end
+        end
+        list('##vm_zones', x, y + S(42), w, h - S(42), rows, seek)
     end
 
     ---------------------------------------------------------------------------

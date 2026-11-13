@@ -17,7 +17,7 @@ In game (/vmap works as well as /vanamaps):
                             copies the line instead
   /vmap open <code or line> opens a shared pin (what a chat addon runs when its link is clicked)
   /vmap last                opens the pin shared with you most lately
-  /vmap key <key>           the key that opens the map (/vmap key none for no key)
+  /vmap key <key>           the key that opens the map, as /bind spells it: m, ^m (Ctrl+M), f9; none for no key
   /vmap scale <pct|auto>    the window's size, 50 to 250
   /vmap settings            the settings
   /vmap help                this list
@@ -56,9 +56,9 @@ local REG = require('regions')
 local K = require('pins')
 
 local DEFAULTS = {
-    key = 'm', scale = 0, theme = 'aurora', opacity = 100, quality = 2048, w = 1120, h = 800, sidebar = true, side_tab = 'zones',
-    follow = true, party = true, target = true, rulers = true, names = true, cards = true, sound = true, pin_size = 100,
-    collapsed = {}, last = { zone = 0, floor = 0 },
+    key = 'm', scale = 0, theme = 'aurora', opacity = 100, quality = 2048, w = 1030, h = 800, sidebar = true, side_tab = 'zones',
+    follow = true, party = true, target = true, rulers = true, names = true, cards = true, pin_size = 100,
+    collapsed = {}, last = { zone = 0, floor = 0 }, layout_checked = false,
 }
 local config = vana.settings.register({ defaults = DEFAULTS })
 local pins_store = vana.settings.register({ name = 'pins', scope = 'character', defaults = { pins = {}, shared = {}, next_id = 1 } })
@@ -364,7 +364,6 @@ function C.receive(pin, from, own)
     if not own and cfg.cards then
         st.cards[#st.cards + 1] = { entry = entry, at = clock() }
         if #st.cards > 3 then table.remove(st.cards, 1) end
-        if cfg.sound then pcall(vana.system.play_sound, vana.paths.addon .. '\\sounds\\pin.wav') end
     end
     return entry
 end
@@ -394,7 +393,26 @@ end
 local KEYS = { bound = nil, capture = false, note = nil }
 C.KEYS = KEYS
 
-local function spec_of(key) return '%' .. key end -- only while the chat line is closed
+-- cfg.key is the key as /bind spells it, modifiers first ('m', '^m' for Ctrl+M, '!f5'); the bind adds '%': only while
+-- the chat line is closed
+local function split_key(key)
+    key = tostring(key or ''):lower()
+    local mods, name = key:match('^([%^!@#%+~]*)(.-)$')
+    return mods or '', name or ''
+end
+local function spec_of(key) return '%' .. key end
+
+function KEYS.label(key)
+    local mods, name = split_key(key)
+    if name == '' or name == 'none' then return 'No key' end
+    local out = {}
+    if mods:find('^', 1, true) then out[#out + 1] = 'Ctrl' end
+    if mods:find('!', 1, true) then out[#out + 1] = 'Alt' end
+    if mods:find('+', 1, true) or mods:find('~', 1, true) then out[#out + 1] = 'Shift' end
+    if mods:find('@', 1, true) then out[#out + 1] = 'Win' end
+    out[#out + 1] = name:upper()
+    return table.concat(out, ' + ')
+end
 
 function KEYS.unbind()
     if KEYS.bound then
@@ -407,14 +425,16 @@ function KEYS.bind()
     KEYS.unbind()
     KEYS.note = nil
     local key = tostring(cfg.key or ''):lower()
-    if key == '' or key == 'none' then return end
+    local mods, name = split_key(key)
+    if name == '' or name == 'none' then return end
     -- a key the player (or another addon) already gave a job keeps it
     local ok, list = pcall(vana.binds.list)
     if ok and type(list) == 'table' then
+        local ctrl, alt, shift = mods:find('^', 1, true) ~= nil, mods:find('!', 1, true) ~= nil, (mods:find('+', 1, true) or mods:find('~', 1, true)) ~= nil
         for _, b in ipairs(list) do
-            local plain = not (b.ctrl or b.alt or b.shift or b.win or b.apps)
-            if plain and tostring(b.key):lower() == key and not tostring(b.command):find('/vanamaps', 1, true) then
-                KEYS.note = key:upper() .. ' already runs ' .. tostring(b.command)
+            local same = (b.ctrl == true) == ctrl and (b.alt == true) == alt and (b.shift == true) == shift and not b.win and not b.apps
+            if same and tostring(b.key):lower() == name and not tostring(b.command):find('/vanamaps', 1, true) then
+                KEYS.note = KEYS.label(key) .. ' already runs ' .. tostring(b.command)
                 return
             end
         end
@@ -434,6 +454,52 @@ function KEYS.frame()
         KEYS.bind()
     end
 end
+
+-- A keyboard that types straight into the chat line (the game's full-keyboard layout: any letter opens the line with
+-- that letter in it) would lose the letter M to a bare M bind. It can't be asked of the game, so it is watched for:
+-- when plain letters keep opening the chat line (four different ones: a compact keyboard has only a shortcut or two
+-- that do), the map's key becomes Ctrl+M, once, and the player is told. A key the player then picks is theirs.
+local LAYOUT = { at = -1, letter = 0, seen = {}, count = 0 }
+local ffi_ok, ffi = pcall(require, 'ffi')
+if ffi_ok then pcall(ffi.cdef, 'short __stdcall GetKeyState(int key);') end
+local function modifier_down()
+    if not ffi_ok then return false end
+    local ok, down = pcall(function ()
+        local u = ffi.load('user32')
+        return u.GetKeyState(0x11) < 0 or u.GetKeyState(0x12) < 0 or u.GetKeyState(0x5B) < 0
+    end)
+    return ok and down
+end
+
+vana.events.on('key', function (wparam, lparam, blocked)
+    if cfg.layout_checked or blocked or wparam < 0x41 or wparam > 0x5A then return end
+    if lparam < 0 or lparam >= 0x80000000 then return end -- a release
+    local mods, name = split_key(cfg.key)
+    if mods ~= '' or #name ~= 1 then return end -- only a bare letter or digit can swallow typing
+    local okw, world = pcall(vana.game.world)
+    if okw and world and world.chat_open then return end
+    if modifier_down() then return end
+    LAYOUT.at, LAYOUT.letter = clock(), wparam
+end)
+
+vana.events.on('chat_input_open', function ()
+    if cfg.layout_checked or clock() - LAYOUT.at > 0.15 then return end
+    LAYOUT.at = -1
+    if not LAYOUT.seen[LAYOUT.letter] then
+        LAYOUT.seen[LAYOUT.letter] = true
+        LAYOUT.count = LAYOUT.count + 1
+    end
+    if LAYOUT.count >= 4 then
+        local was = KEYS.label(cfg.key)
+        cfg.layout_checked = true
+        cfg.key = '^' .. select(2, split_key(cfg.key))
+        KEYS.bind()
+        config:save()
+        U.toast('accent', 'VanaMaps: the key is ' .. KEYS.label(cfg.key) .. ' now', 'Your keyboard types into chat, so ' .. was .. ' alone would swallow the letter', 9, 'circle-info')
+        say('your keyboard types straight into the chat line, so the map now opens with ' .. KEYS.label(cfg.key) .. ' instead of ' .. was ..
+            ' alone (change it in /vmap settings)')
+    end
+end)
 
 -------------------------------------------------------------------------------
 -- The window
@@ -496,6 +562,7 @@ local function draw_header(dl, x, y, w, t)
     ix = ix - size - S(4)
     if G.icon_button(dl, '##vm_side', ix, iy, size, G.CP.bars, cfg.sidebar and P.accent or P.dim, 'Zones, pins and shared pins', cfg.sidebar) then
         cfg.sidebar = not cfg.sidebar
+        cfg.w = cfg.w + (cfg.sidebar and 298 or -298) -- the map keeps its size: the window grows by the lists' width
         st.settings_open = false
     end
     ix = ix - size - S(4)
@@ -596,7 +663,7 @@ local function settings_body(dl, x, y, w, h, t)
 
     ry = U.section(dl, rx, ry, col, 'KEY AND CONTROLLER', 'gamepad')
     U.text_mid(dl, rx, ry + S(15), 'Open the map with', P.dim, F.text, T.small)
-    local label = KEYS.capture and 'Press a key…' or ((cfg.key == '' or cfg.key == 'none') and 'No key' or tostring(cfg.key):upper())
+    local label = KEYS.capture and 'Press a key…' or KEYS.label(cfg.key)
     if U.button(dl, '##vm_key', rx + S(150), ry, S(130), S(30), label, KEYS.capture and '#FFD166' or P.accent, 'ghost', nil, F.semi, T.small) then
         if KEYS.capture then
             vana.binds.capture_end()
@@ -610,6 +677,7 @@ local function settings_body(dl, x, y, w, h, t)
     if U.button(dl, '##vm_nokey', rx + S(288), ry, S(74), S(30), 'None', P.dim, 'ghost', nil, F.semi, T.small) then
         if KEYS.capture then vana.binds.capture_end() KEYS.capture = false end
         cfg.key = 'none'
+        cfg.layout_checked = true
         KEYS.bind()
         changed = true
     end
@@ -618,7 +686,8 @@ local function settings_body(dl, x, y, w, h, t)
         if cap and cap.done and cap.key then
             vana.binds.capture_end()
             KEYS.capture = false
-            cfg.key = tostring(cap.key):lower()
+            cfg.key = (cap.ctrl and '^' or '') .. (cap.alt and '!' or '') .. (cap.shift and '+' or '') .. tostring(cap.key):lower()
+            cfg.layout_checked = true -- (the player's own pick stands)
             KEYS.bind()
             changed = true
         elseif cap and (cap.cancelled or not cap.active) then
@@ -635,13 +704,33 @@ local function settings_body(dl, x, y, w, h, t)
     local pv2 = U.toggle(dl, '##vm_pad', rx, ry + S(12), 'Controller in addon windows', pad_on)
     if pv2 ~= pad_on then PAD.set_enabled(pv2) end
 
+    -- how the map is worked, across the bottom
+    local hy = math.max(ly, ry) + S(18)
+    if hy + S(150) < y + h - S(46) then
+        hy = U.section(dl, cx, hy, w - S(48), 'HOW IT WORKS', 'circle-info')
+        local tips = {
+            { 'Drag', 'moves the map' }, { 'Wheel', 'zooms about the pointer' }, { 'Double-click', 'centres there and zooms in' },
+            { 'Right-click', 'a menu: pin here, share this spot, centre' }, { 'Click a pin', 'its card: title, note, icon, colour, share' },
+            { 'Left stick', 'the pointer; the right stick moves the map' }, { 'Triggers', 'zoom; the bumpers change floors' },
+            { 'Confirm', 'drops a pin, or opens the one under the pointer' }, { 'Options', 'the lists: zones, pins, shared pins' },
+            { '/vmap share p', 'the selected pin (or where you stand) to party chat' },
+        }
+        local half = math.ceil(#tips / 2)
+        for i, tip in ipairs(tips) do
+            local tx = i <= half and cx or rx
+            local ty = hy + ((i - 1) % half) * S(22)
+            U.text(dl, tx, ty, tip[1], P.text, F.semi, T.small)
+            U.text(dl, tx + S(128), ty, tip[2], P.dim, F.text, T.small)
+        end
+    end
+
     -- the foot
     local fy = y + h - S(46)
     dl:AddLine({ x + S(20), fy }, { x + w - S(20), fy }, U.u32(P.line), 1)
     U.text_mid(dl, x + S(24), fy + S(23), 'VanaMaps ' .. addon.version .. '   ·   /vmap help lists the commands', P.faint, F.text, T.tiny)
     if U.button(dl, '##vm_defaults', x + w - S(24) - S(116), fy + S(10), S(116), S(26), 'Defaults', P.dim, 'ghost', 'rotate-right', F.semi, T.tiny) then
         for k, val in pairs(DEFAULTS) do
-            if k ~= 'last' and k ~= 'collapsed' and k ~= 'sidebar' and k ~= 'side_tab' then cfg[k] = val end
+            if k ~= 'last' and k ~= 'collapsed' and k ~= 'sidebar' and k ~= 'side_tab' and k ~= 'layout_checked' then cfg[k] = val end
         end
         U.apply_theme(cfg.theme)
         TEX.release_all()
@@ -658,8 +747,8 @@ end
 local LEGEND = {
     map = { { 'lstick', 'Pointer' }, { 'rstick', 'Map' }, { 'l2 r2', 'Zoom' }, { 'confirm', 'Pin' }, { 'l1 r1', 'Floor' }, { 'menu', 'Where am I' },
         { 'options', 'Lists' }, { 'cancel', 'Close' } },
-    list = { { 'dpad', 'Move' }, { 'confirm', 'Open' }, { 'l1 r1', 'Tab' }, { 'options', 'Map' }, { 'cancel', 'Back' } },
-    card = { { 'dpad', 'Move' }, { 'confirm', 'Choose' }, { 'cancel', 'Done' } },
+    list = { { 'updown', 'Move' }, { 'confirm', 'Open' }, { 'l1 r1', 'Tab' }, { 'options', 'Map' }, { 'cancel', 'Back' } },
+    card = { { 'updown left right', 'Move' }, { 'confirm', 'Choose' }, { 'cancel', 'Done' } },
 }
 
 local function draw_legend(dl, x, y, w)
@@ -684,7 +773,10 @@ local function pad_buttons()
         local turn = (PAD.pressed('r1') and 1 or 0) - (PAD.pressed('l1') and 1 or 0)
         if turn ~= 0 and C.SB then C.SB.turn(turn) end
     elseif st.pad_mode == 'card' then
-        if PAD.pressed('cancel') then st.pad_mode = 'map' end
+        if PAD.pressed('cancel') then
+            st.pad_mode = 'map'
+            C.CV.close_card()
+        end
     end
 end
 
@@ -855,10 +947,12 @@ vana.events.on('present', function ()
         return
     end
     st.idle_since = nil
+    local started = clock()
     st.kit = U.frame(dt, scale_now() / 100, t)
     if not st.kit then return end
     PAD.frame(t, { id = 'vanamaps', capture = function () return st.open end, hold = (st.open and st.pad_mode == 'map') and 'all' or false })
     U.anim.pad_shown = PAD.shown()
+    G.no_tips = PAD.shown() -- (a hint by the mouse's pointer says nothing of what the controller is on)
     KEYS.frame()
     local ok, err = pcall(track, t)
     if not ok then fail('track', err) end
@@ -873,6 +967,10 @@ vana.events.on('present', function ()
     pcall(G.draw_tip, dt)
     local okt, errt = pcall(U.draw_toasts, t)
     if not okt then fail('toasts', errt) end
+    -- what a frame of the map costs (/vmap stats)
+    local ms = (clock() - started) * 1000
+    st.cost = st.cost and (st.cost + (ms - st.cost) * 0.05) or ms
+    st.cost_max = math.max((st.cost_max or 0) * 0.995, ms)
 end)
 
 -------------------------------------------------------------------------------
@@ -987,11 +1085,12 @@ vana.events.on('command', function (e)
         st.focus_frames = 2
     elseif what == 'key' then
         local key = (args[3] or ''):lower()
-        if key == '' then say('the key is ' .. tostring(cfg.key):upper() .. (KEYS.note and (' (not bound: ' .. KEYS.note .. ')') or '')) return true end
+        if key == '' then say('the key is ' .. KEYS.label(cfg.key) .. (KEYS.note and (' (not bound: ' .. KEYS.note .. ')') or '')) return true end
         cfg.key = key
+        cfg.layout_checked = true
         KEYS.bind()
         config:save()
-        say(KEYS.bound and ('the map opens with ' .. key:upper()) or (key == 'none' and 'no key opens the map now' or ('not bound: ' .. tostring(KEYS.note))))
+        say(KEYS.bound and ('the map opens with ' .. KEYS.label(key)) or (key == 'none' and 'no key opens the map now' or ('not bound: ' .. tostring(KEYS.note))))
     elseif what == 'scale' then
         local v = (args[3] or ''):lower()
         if v == 'auto' or v == '0' then cfg.scale = 0
@@ -1013,8 +1112,8 @@ vana.events.on('command', function (e)
         if next(names) == nil then say(PAD.describe()) else PAD.inject(names, frames) end
     elseif what == 'stats' then
         local s = TEX.stats()
-        say(string.format('%d zones with maps, %d maps; %d textures (%.1f MB), %d loaded, last in %.1f ms', #DATA.order, DATA.count, s.textures,
-            s.bytes / 1048576, s.loads, s.last_ms))
+        say(string.format('%d zones with maps, %d maps; %d textures (%.1f MB), %d loaded, last in %.1f ms; a frame of the map takes %.2f ms (%.2f at most lately)',
+            #DATA.order, DATA.count, s.textures, s.bytes / 1048576, s.loads, s.last_ms, st.cost or 0, st.cost_max or 0))
     else
         for _, line in ipairs(HELP) do vana.chat.write(line, 106) end
     end

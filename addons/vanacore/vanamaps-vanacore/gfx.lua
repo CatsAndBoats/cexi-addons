@@ -54,7 +54,7 @@ end
 -- A hint by the pointer for the thing it is on: said while drawing, drawn by G.draw_tip at the frame's end over
 -- everything (ImGui's own tooltip comes without its background in this theme).
 local TIP = { text = nil, shown = nil, since = 0, alpha = 0 }
-function G.tip(text) TIP.text = text end
+function G.tip(text) if not G.no_tips then TIP.text = text end end
 function G.draw_tip(dt)
     local text = TIP.text
     TIP.text = nil
