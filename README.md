@@ -36,6 +36,25 @@ picks the builds (only `vanacore` for now). The Ashita Party Finder isn't publis
   `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and optionally `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN` for the cache
   purge. The script is [`.github/scripts/publish_r2.py`](.github/scripts/publish_r2.py).
 
+## The launcher's addon list
+
+[`launcher-addons.json`](launcher-addons.json) lists every addon and plugin the launcher can install: its launcher
+row (`launcher`), where its files come from (`source`: this repository or the author's own, followed by release,
+branch or a pinned commit), its folder name (`install`), which client it's for (`targets`: `ashita` or `vanacore`),
+and its `flags` (plugin, auto-enabled on Windows / Steam Deck, locked, hidden on VanaCore). The Ashita addons and
+plugins kept here are in `legacy/ashita/` (Ashita 4.16; 4.30 isn't supported).
+
+## Vetting an addon
+
+Addons are checked against the [addon policy](https://catseyexi.com/addon-policy):
+
+- **Actions → Vet an addon → Run workflow** with the addon's repository and its folder: it clones it, runs ClamAV
+  and the static scan, and has Claude propose a tier with the `addon-policy` skill. The job summary has the verdict;
+  `needs_staff` means a person has to look. Needs the `ANTHROPIC_API_KEY` secret for the Claude step.
+- **Locally:** `python tools/addon_vet/scan.py <addon folder>` prints the scan; in Claude Code opened on this
+  repository, ask it to vet an addon and it uses [`.claude/skills/addon-policy`](.claude/skills/addon-policy).
+- `python tools/addon_vet/sync_policy.py` refreshes `tools/addon_vet/known_addons.json` from the policy page.
+
 ## Layout rules
 
 - **A folder's name is its addon's name.** Clients load `addons\<folder>\<folder>.lua`, and the name is also what
