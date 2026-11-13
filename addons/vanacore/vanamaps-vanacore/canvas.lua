@@ -148,6 +148,8 @@ return function (C)
     local function mine(pin) return pin ~= nil and pin.code == nil end
 
     function CV.close_card() M.card_open = false end
+    -- in the middle of something of the mouse's (a drag of the map, a menu, typing in a card): the map keeps the mouse
+    function CV.busy() return M.drag == true or M.ctx ~= nil or G.typing() end
 
     function CV.select(pin, card)
         st.sel = pin
@@ -488,8 +490,9 @@ return function (C)
     -- The canvas
     ---------------------------------------------------------------------------
 
-    function CV.draw(dl, x, y, w, h, t, dt)
-        local radius = S(12)
+    -- `bare`: the map alone (the bare map's window): no well round the picture, its buttons only while the pointer is on it
+    function CV.draw(dl, x, y, w, h, t, dt, bare)
+        local radius = bare and 0 or S(12)
         local rect = { x = x, y = y, w = w, h = h, radius = radius }
         local resized = V.rect == nil or V.rect.w ~= w or V.rect.h ~= h
         V.rect = rect
@@ -503,7 +506,7 @@ return function (C)
         apply_want()
 
         -- the well the map lies in
-        dl:AddRectFilled({ x, y }, { x + w, y + h }, u32(P.well), radius)
+        if not bare then dl:AddRectFilled({ x, y }, { x + w, y + h }, u32(P.well), radius) end
         local zone = st.zone and DATA.zones[st.zone]
         local f = zone and DATA.floor(st.zone, st.floor)
         local entry, why = nil, nil
@@ -551,8 +554,10 @@ return function (C)
             if why then U.text_center(dl, x, y + h / 2 + S(42), w, U.fit(tostring(why), F.text, T.tiny, w - S(40)), P.faint, F.text, T.tiny) end
         end
         -- a soft edge inside the well, and its rim
-        dl:AddRect({ x, y }, { x + w, y + h }, u32('#000000', 0.35), radius, 15, S(3))
-        dl:AddRect({ x, y }, { x + w, y + h }, u32(P.line, 0.95), radius, 15, 1)
+        if not bare then
+            dl:AddRect({ x, y }, { x + w, y + h }, u32('#000000', 0.35), radius, 15, S(3))
+            dl:AddRect({ x, y }, { x + w, y + h }, u32(P.line, 0.95), radius, 15, 1)
+        end
 
         -- the canvas takes the mouse (so a drag moves the map, not the window); the controls drawn after it lie over it
         imgui.SetCursorScreenPos({ x, y })
@@ -593,7 +598,14 @@ return function (C)
         M.hover_pin = over
 
         if hovered and not PAD.shown() then
-            if io.MouseWheel ~= 0 then zoom_about(1.22 ^ io.MouseWheel, mx, my) end
+            if io.MouseWheel ~= 0 then
+                if bare and io.KeyShift then
+                    cfg.bare_size = math.max(30, math.min(100, (cfg.bare_size or 82) + io.MouseWheel * 4))
+                    M.save_soon = clock() + 1
+                else
+                    zoom_about(1.22 ^ io.MouseWheel, mx, my)
+                end
+            end
             if imgui.IsMouseDoubleClicked(0) and not over then
                 local lo, hi = limits()
                 local nz = math.min(hi, V.tz * 1.8)
@@ -611,7 +623,14 @@ return function (C)
             local dx, dy = io.MouseDelta.x, io.MouseDelta.y
             if not M.drag then M.drag, M.moved = true, 0 end
             M.moved = M.moved + math.abs(dx) + math.abs(dy)
-            if M.moved > S(4) then
+            if M.moved > S(4) and bare and (io.KeyShift or M.moving_window) then
+                -- Shift + drag: the bare map itself goes with the hand
+                local sw, sh = vana.ui.screen()
+                cfg.bare_x = math.max(0, math.min(1, (cfg.bare_x or 0.5) + dx / sw))
+                cfg.bare_y = math.max(0, math.min(1, (cfg.bare_y or 0.5) + dy / sh))
+                M.moving_window, M.save_soon = true, clock() + 1
+                imgui.SetMouseCursor(2)
+            elseif M.moved > S(4) then
                 V.tx, V.ty = V.tx - dx / V.z, V.ty - dy / V.z
                 clamp_target()
                 V.cx, V.cy = V.tx, V.ty -- the map under the hand, no glide
@@ -623,6 +642,7 @@ return function (C)
                 imgui.SetMouseCursor(2)
             end
         elseif M.drag then
+            M.moving_window = nil
             -- let go: a click if it hardly moved
             if M.moved <= S(4) then
                 V.vx, V.vy = 0, 0
@@ -640,7 +660,8 @@ return function (C)
         -- what sits on the map
         ---------------------------------------------------------------------
         dl:PushClipRect({ x, y }, { x + w, y + h }, true)
-        local alpha = C.alpha or 1
+        -- (what's on the map stays clear while the map itself is faded for walking)
+        U.set_window_alpha(C.mark_alpha or 1)
         if f and M.tex then
             -- pins, the hovered and the selected ones last
             local function draw_pin(p, sel)
@@ -724,6 +745,7 @@ return function (C)
             end
         end
 
+        U.set_window_alpha(C.win_alpha or 1)
         -- the grid's letters and numbers, along the edges while the map's own are out of view
         if cfg.rulers and f and M.tex and V.z > V.fit * 1.12 then
             local band = S(18)
@@ -749,6 +771,12 @@ return function (C)
         ---------------------------------------------------------------------
         local over_ui = false
         local function ui(pressed, hov) if hov then over_ui = true end return pressed end
+        -- the bare map shows them only while the pointer is on it (and never while it's letting the mouse through)
+        local inside = mx >= x and mx <= x + w and my >= y and my <= y + h and not C.pass
+        M.ui_f = U.lerp(M.ui_f or 0, inside and 1 or 0, math.min(1, dt * 10))
+        local show_ui = not bare or M.ui_f > 0.03
+        if bare then U.set_window_alpha((C.win_alpha or 1) * M.ui_f) end
+        if show_ui then
         local no_nav = C.pad_on and imgui.PushItemFlag ~= nil
         if no_nav then imgui.PushItemFlag(2, true) end
         -- the floors, top left
@@ -789,7 +817,7 @@ return function (C)
             U.text(dl, bx + S(12), by2 + S(6), label, P.text, F.semi, T.small)
         end
         -- which picture this is, top right
-        if entry then
+        if entry and not bare then
             local label = entry.from == 'game' and "Game's map" or (entry.w .. ' px')
             local tw, th = U.measure(label, F.semi, T.tiny)
             local bx, by2 = x + w - tw - S(30), y + S(12)
@@ -797,6 +825,9 @@ return function (C)
             U.text(dl, bx + S(9), by2 + S(4), label, entry.w >= 1024 and P.ok or P.dim, F.semi, T.tiny)
         end
         if no_nav then imgui.PopItemFlag() end
+        end
+        U.set_window_alpha(C.win_alpha or 1)
+        if M.save_soon and clock() > M.save_soon then M.save_soon = nil C.save() end
 
         draw_card(dl, t)
         if M.card_rect and st.sel and M.card_open then

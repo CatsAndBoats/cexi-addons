@@ -11,6 +11,14 @@ anywhere, drop pins with notes, and share a pin in chat.
   centre and zoom in, right-click for a menu. `M` opens and closes it while the chat line is closed (the key is a
   setting). With a controller: left stick the pointer, right stick the map, triggers zoom, bumpers change floor,
   Confirm drops or opens a pin, Options goes to the lists, Cancel backs out.
+- **See-through while you move.** While your character moves, the map fades (to 40% unless you set otherwise) so the
+  world shows through it, and your clicks and camera drags go through it to the game. It comes back as you stop. Your
+  arrow, your party and your pins stay clear.
+- **The bare map.** `Shift+M` (or `/vmap bare`) shows the map alone: no window, no buttons, no lists, following you,
+  fading the same way as you move. `Shift+M` again closes it; `M` from it goes to the whole window, and `Shift+M` from
+  the window comes back. Its buttons (floors, zoom) show only while the pointer is on it. Shift + drag moves it and
+  Shift + wheel sizes it, and it stays where you put it. The controller is left to the game while it is up, so you can
+  walk by it; Escape is left to the game too.
 - **Pins.** An icon (24), a colour (8), a title and a note, kept per character. They are listed and searchable, and
   each shows its grid square.
 - **Sharing.** A pin goes to say, party, linkshell, shout or a tell as a line anyone can read:
@@ -27,6 +35,7 @@ anywhere, drop pins with notes, and share a pin in chat.
 | | |
 |---|---|
 | `/vmap` | The map on or off |
+| `/vmap bare` | The bare map on or off |
 | `/vmap here` | The zone and floor you are in, centred on you |
 | `/vmap zone <name or id>` | Any zone's map |
 | `/vmap pin [title]` | A pin where you stand |
@@ -34,6 +43,7 @@ anywhere, drop pins with notes, and share a pin in chat.
 | `/vmap open <code or line>` | Opens a shared pin |
 | `/vmap last` | Opens the pin shared with you most lately |
 | `/vmap key <key>` | The key that opens the map, as `/bind` spells it: `m`, `^m` (Ctrl+M), `f9`; `none` for no key |
+| `/vmap barekey <key>` | The same for the bare map (`+m` is Shift+M) |
 | `/vmap scale <pct\|auto>` | The window's size |
 | `/vmap settings` | Theme, size, opacity, map quality, what is drawn on the map, the key |
 | `/vmap stats` | Maps known, textures held, and what a frame of the map costs |
@@ -61,8 +71,8 @@ stays sharp at any window size; textures not shown lately are released.
 ## A keyboard that types straight into chat
 
 On the game's full-keyboard layout any letter opens the chat line with that letter in it, and a bare `M` bind would
-swallow the letter M. VanaMaps watches for that (four different letters each opening the chat line) and moves its key
-to `Ctrl+M`, once, telling you. A key you pick yourself in the settings is left alone.
+swallow the letter M. VanaMaps watches for that (four different letters each opening the chat line) and moves its keys
+to `Ctrl+M` and `Ctrl+Shift+M`, once, telling you. A key you pick yourself in the settings is left alone.
 
 ## Links in chat addons
 
