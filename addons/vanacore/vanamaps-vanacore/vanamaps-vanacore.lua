@@ -1285,6 +1285,7 @@ vana.events.on('zone_change', function ()
 end)
 
 vana.events.on('logout', function ()
+    if st.open then vana.log('logout: the map closes') end
     st.open = false
     st.sel = nil
 end)
