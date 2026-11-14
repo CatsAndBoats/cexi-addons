@@ -678,6 +678,10 @@ return function (C)
         -- what sits on the map
         ---------------------------------------------------------------------
         dl:PushClipRect({ x, y }, { x + w, y + h }, true)
+        -- The names that come up over a signpost or a pin under the pointer are drawn last, over every marker (drawn
+        -- with their marker they came out under whatever was drawn after it: a neighbouring signpost, a pin, your
+        -- arrow), and are kept inside the map: over the marker where there's room, under it at the map's top edge.
+        local labels = {}
         -- (what's on the map stays clear while the map itself is faded for walking)
         U.set_window_alpha(C.mark_alpha or 1)
         if f and M.tex then
@@ -692,9 +696,8 @@ return function (C)
                         U.A.hover['way' .. wy.id] = hv
                         G.way(dl, sx, sy, S(10), hv, t, 1)
                         if hv > 0.05 then
-                            local label = 'To ' .. C.zone_name(wy.to)
-                            local tw = U.measure(label, F.semi, T.small) + S(12)
-                            G.tag(dl, sx - tw / 2, sy - S(26), label, P.cyan, hv, F.semi, T.small)
+                            labels[#labels + 1] = { cx = sx, above = sy - S(10) * (1 + 0.22 * hv) - S(6), below = sy + S(10) * (1 + 0.22 * hv) + S(6),
+                                text = 'To ' .. C.zone_name(wy.to), color = P.cyan, alpha = hv }
                         end
                     end
                 end
@@ -721,8 +724,8 @@ return function (C)
                 local color = K.COLORS[p.color] or K.COLORS[1]
                 local hy = G.pin(dl, sx, sy, pr, icon.cp, color, grow, 1, sel, t, lift)
                 if (hv > 0.05 or sel) and (p.title or '') ~= '' and not (sel and M.card_open) then
-                    local tw = U.measure(p.title, F.semi, T.small) + S(12)
-                    G.tag(dl, sx - tw / 2, hy - pr * grow - S(14), p.title, color, math.max(hv, sel and 1 or 0), F.semi, T.small)
+                    labels[#labels + 1] = { cx = sx, above = hy - pr * grow - S(5), below = sy + S(7), text = p.title, color = color,
+                        alpha = math.max(hv, sel and 1 or 0) }
                 end
             end
             for _, p in ipairs(pins) do if p ~= over and p ~= st.sel then draw_pin(p, false) end end
@@ -782,6 +785,17 @@ return function (C)
                 else
                     G.arrow(dl, sx, sy, S(11), me.heading, P.cyan, t, 1)
                 end
+            end
+        end
+        if #labels > 0 then
+            local top = y + S(4) + ((cfg.rulers and V.z > V.fit * 1.12) and S(26) or 0)
+            for _, lb in ipairs(labels) do
+                local tw, th = U.measure(lb.text, F.semi, T.small)
+                local lw, lh = tw + S(12), th + S(6)
+                local lx = math.max(x + S(4), math.min(x + w - lw - S(4), lb.cx - lw / 2))
+                local cy = lb.above - lh / 2
+                if cy - lh / 2 < top then cy = lb.below + lh / 2 end
+                G.tag(dl, lx, cy, lb.text, lb.color, lb.alpha, F.semi, T.small)
             end
         end
         -- the controller's pointer
