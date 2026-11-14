@@ -43,7 +43,7 @@ Settings: settings\addons\vanamaps\settings.json; pins: settings\addons\vanamaps
 
 addon.name    = 'vanamaps'
 addon.author  = 'Carver'
-addon.version = '1.0'
+addon.version = '1.0.1'
 addon.desc    = 'VanaMaps: interactive maps of every zone, with pins you can share in chat.'
 
 local imgui = vana.imgui

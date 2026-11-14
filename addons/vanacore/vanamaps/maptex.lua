@@ -104,7 +104,27 @@ local function parse(data)
     return { w = w, h = h, kind = 'indexed', at = body, size = w * h }
 end
 
-local function load(path)
+-- A broken 8-bit copy. Twelve of the map pack's pictures (Ranguemont Pass 1, Toraimarai Canal 1-2, Ordelle's Caves
+-- 1-4, Outer Horutoto Ruins 5-6, Fei'Yin 1-3; the same files in its 2048 and 1024 sets) are 512-pixel 8-bit copies
+-- whose colours don't come out of their palette: they draw as a few posterised tones in streaks with a solid red,
+-- white or grey band where the torn edge should be see-through. What gives them away: the picture's outermost ring of
+-- pixels is mostly one opaque colour, where a map's torn edge is the palette's transparent entry. Such a copy is passed
+-- over for the next place the map is (the game's own picture), never when it is the last.
+local function broken_copy(p, pic)
+    if pic.kind ~= 'indexed' then return false end
+    local w, h = pic.w, pic.h
+    local px = p + pic.at + 1024
+    local counts, total = {}, 0
+    local function add(i) counts[i] = (counts[i] or 0) + 1 total = total + 1 end
+    for x = 0, w - 1 do add(px[x]) add(px[(h - 1) * w + x]) end
+    for y = 1, h - 2 do add(px[y * w]) add(px[y * w + w - 1]) end
+    local best, n = nil, 0
+    for i, c in pairs(counts) do if c > n then best, n = i, c end end
+    local alpha = p[pic.at + best * 4 + 3]
+    return alpha ~= 0 and n / total > 0.4
+end
+
+local function load(path, strict)
     local f = io.open(path, 'rb')
     if f == nil then return nil, "can't open the file" end
     local data = f:read('*a')
@@ -112,6 +132,7 @@ local function load(path)
     if data == nil or #data < 128 then return nil, 'an empty file' end
     local pic, why = parse(data)
     if pic == nil then return nil, why end
+    if strict and broken_copy(ffi.cast('const uint8_t*', data), pic) then return nil, 'a broken 8-bit copy (passed over)' end
     local p = ffi.cast('const uint8_t*', data)
     local tex, err, bytes
     if pic.kind == 'dxt3' then
@@ -341,8 +362,8 @@ function X.get(sources)
     end
     local t0 = vana.time.clock()
     local why = nil
-    for _, s in ipairs(sources) do
-        local made, err = load(s.path)
+    for i, s in ipairs(sources) do
+        local made, err = load(s.path, i < #sources)
         if made ~= nil then
             made.from, made.path, made.used = s.from, s.path, X.clock
             X.cache[first.path] = made

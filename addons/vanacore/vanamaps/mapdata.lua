@@ -252,7 +252,9 @@ function M.sources(f, most)
                 list[#list + 1] = { path = o .. '\\' .. rel, from = 'overlay' }
             end
         end
-        if vana.fs.exists(r.game .. '\\' .. rel) then list[#list + 1] = { path = r.game .. '\\' .. rel, from = 'game' } end
+        -- (the game's own picture, read past VanaCore's overlays: they serve every read of the game's folder, an addon's
+        -- too, so a plain path gives the first overlay's copy again; the \\?\ form of the path is left alone)
+        if vana.fs.exists(r.game .. '\\' .. rel) then list[#list + 1] = { path = '\\\\?\\' .. r.game .. '\\' .. rel, from = 'game' } end
     end
     list.rel = rel
     FILES.found[key] = list
