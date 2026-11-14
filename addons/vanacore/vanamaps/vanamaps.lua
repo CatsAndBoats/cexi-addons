@@ -1,5 +1,5 @@
 --[[
-vanamaps-vanacore (VanaMaps): the game's maps as a window you can use. Drag to move the map, turn the wheel to zoom
+vanamaps (VanaMaps): the game's maps as a window you can use. Drag to move the map, turn the wheel to zoom
 about the pointer, double-click to centre; your arrow, your party and your target are on it; any zone's map opens from
 anywhere through the zone browser; and you can drop pins with an icon, a colour, a title and a note, kept per
 character, and share one in chat as a line anyone can read:
@@ -38,17 +38,17 @@ maps when the launcher's Combined Maps is installed (RadialArcana, the FFXI Rema
 Labeled), else the game's own. Which map a zone and floor has, and where a position lands on it, come from the game's
 own map table, read from the client as it runs (found the way the Ashita Minimap plugin by atom0s finds it).
 
-Settings: settings\addons\vanamaps-vanacore\settings.json; pins: settings\addons\vanamaps-vanacore\<Character>\pins.json.
+Settings: settings\addons\vanamaps\settings.json; pins: settings\addons\vanamaps\<Character>\pins.json.
 --]]
 
-addon.name    = 'vanamaps-vanacore'
+addon.name    = 'vanamaps'
 addon.author  = 'Carver'
 addon.version = '1.0'
 addon.desc    = 'VanaMaps: interactive maps of every zone, with pins you can share in chat.'
 
 local imgui = vana.imgui
 if imgui == nil then
-    print('vanamaps-vanacore needs a newer VanaCore.Core.dll (vana.imgui)')
+    print('vanamaps needs a newer VanaCore.Core.dll (vana.imgui)')
     return
 end
 
@@ -97,7 +97,7 @@ VANAMAPS = C -- (this addon's own Lua state: for a test's eyes, through VanaCore
 
 local function clock() return vana.time.clock() end
 local function say(text) vana.chat.write('[VanaMaps] ' .. text, 106) end
-local function fail(where, err) vana.log('vanamaps-vanacore ' .. where .. ': ' .. tostring(err)) end
+local function fail(where, err) vana.log('vanamaps ' .. where .. ': ' .. tostring(err)) end
 C.say, C.fail = say, fail
 
 function C.save() config:save() end

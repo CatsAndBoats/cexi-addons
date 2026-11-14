@@ -72,6 +72,6 @@ for z in sorted(of_zone):
 if row:
     out.append('    ' + ', '.join(row) + ',')
 out += ['}', 'return R', '']
-dst = os.path.join(ROOT, 'addons', 'vanacore', 'vanamaps-vanacore', 'regions.lua')
+dst = os.path.join(ROOT, 'addons', 'vanacore', 'vanamaps', 'regions.lua')
 open(dst, 'w').write('\n'.join(out))
 print('regions.lua written: %d zones in %d regions' % (len(of_zone), len(set(of_zone.values()))))

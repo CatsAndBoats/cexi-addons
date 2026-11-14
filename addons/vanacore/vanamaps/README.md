@@ -77,7 +77,7 @@ The signposts come from the server's zone lines (`tools/make_vanamaps_exits.py` 
 where you arrive, so a zone's way to a neighbour is put where the line coming back sets you down, just inside the
 doorway. In a zone with several maps, which map a doorway is on is the game's to say (it asks the zone's collision):
 the answers gathered by visiting those zones ship in `exits.lua`, and one that is missing is learnt the first time you
-have the map open in that zone (`settings\addons\vanamaps-vanacore\floors.json`). Nothing warps you: a signpost only
+have the map open in that zone (`settings\addons\vanamaps\floors.json`). Nothing warps you: a signpost only
 opens a map.
 
 A large map gets a half-size and a quarter-size copy made in the background the first time it is shown small, so it
@@ -97,8 +97,8 @@ card and in the Shared list.
 
 ## Files
 
-- Settings: `settings\addons\vanamaps-vanacore\settings.json`
-- Pins and the Shared list, per character: `settings\addons\vanamaps-vanacore\<Character>\pins.json`
+- Settings: `settings\addons\vanamaps\settings.json`
+- Pins and the Shared list, per character: `settings\addons\vanamaps\<Character>\pins.json`
 - `ui.lua` and `pad.lua` are the shared kit and controller helper (`tools/make_ui.py` writes them);
   `regions.lua` and `exits.lua` are written by `tools/make_vanamaps_regions.py` and `tools/make_vanamaps_exits.py` from
   the server's source.

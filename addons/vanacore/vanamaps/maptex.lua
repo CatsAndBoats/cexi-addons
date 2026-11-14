@@ -286,7 +286,7 @@ local function work()
         local e = table.remove(WORK.queue, 1)
         if not e.dead and e.source then
             local ok, err = pcall(build_levels, e)
-            if not ok then vana.log('vanamaps-vanacore smaller copies: ' .. tostring(err)) end
+            if not ok then vana.log('vanamaps smaller copies: ' .. tostring(err)) end
         end
         e.source, e.building = nil, nil
     end

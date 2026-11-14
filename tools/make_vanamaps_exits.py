@@ -41,5 +41,5 @@ for zone in sorted(exits):
         parts.append('{ %s, %s, %s, %d%s }' % (('%g' % e[0]), ('%g' % e[1]), ('%g' % e[2]), e[3], '' if f is None else ', %d' % f))
     out.append('    [%d] = { %s },' % (zone, ', '.join(parts)))
 out += ['}', '']
-open(os.path.join(ROOT, 'addons', 'vanacore', 'vanamaps-vanacore', 'exits.lua'), 'w').write('\n'.join(out))
+open(os.path.join(ROOT, 'addons', 'vanacore', 'vanamaps', 'exits.lua'), 'w').write('\n'.join(out))
 print('exits.lua written: %d ways out of %d zones, %d with a floor from vanamaps_exit_floors.json' % (n, len(exits), known))

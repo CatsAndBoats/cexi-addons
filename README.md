@@ -9,6 +9,7 @@ the clients keep them, so a folder copies straight into place.
 | Party Finder 2.2 | VanaCore | [`addons/vanacore/partyfinder-vanacore`](addons/vanacore/partyfinder-vanacore) | The same finder rewritten for VanaCore's native API: glass cards, slots, themes, sound packs |
 | Auction House 1.0 | VanaCore | [`addons/vanacore/auctionhouse-vanacore`](addons/vanacore/auctionhouse-vanacore) | The auction house as its own window: stock, sale history and graphs, watch list, selling, sold notices |
 | Clawmark 1.0 | VanaCore | [`addons/vanacore/clawmark-vanacore`](addons/vanacore/clawmark-vanacore) | Raid-style marks over targets, shared with your party and alliance; folds into an assist bar |
+| VanaMaps 1.0 | VanaCore | [`addons/vanacore/vanamaps`](addons/vanacore/vanamaps) | Every zone's map as a window: pan and zoom, you and your party on it, signposts into neighbouring zones, pins with notes shared in chat, a bare map that fades as you walk |
 
 Each folder has its own README with what it does, its commands and how it talks to the server.
 
@@ -19,7 +20,8 @@ Each folder has its own README with what it does, its commands and how it talks 
   example `/addon load auctionhouse-vanacore`. Add the same line to `Vanacore\scripts\boot.txt` to load it at start.
 
 Party Finder needs the server's Party Finder module (`party_finder` in the CatsEyeXI modules repo) and Clawmark
-its `target_marks` module; the Auction House runs on any LandSandBoat server and needs nothing server-side.
+its `target_marks` module; the Auction House and VanaMaps run on any LandSandBoat server and need nothing server-side.
+VanaMaps shows the XICombinedMaps pack's HD maps when the launcher's Combined Maps is installed, else the game's own.
 
 ## Publishing to the launcher
 
@@ -44,8 +46,9 @@ picks the builds (only `vanacore` for now). The Ashita Party Finder isn't publis
 - **Each addon folder stands alone.** Players install one folder at a time, so its fonts and images live inside it,
   even where two addons carry the same files.
 - **Shared source lives in `tools/`.** [`tools/make_ui.py`](tools/make_ui.py) builds the drawing kit and themes of the
-  Auction House and Clawmark (`<addon>/ui.lua`) from Party Finder's helpers, so they all look the same: change Party
-  Finder, then run `python tools/make_ui.py` from anywhere.
+  Auction House and Clawmark (`<addon>/ui.lua`) from Party Finder's helpers (VanaMaps too), so they all look the same: change Party
+  Finder, then run `python tools/make_ui.py` from anywhere. VanaMaps' `regions.lua` and `exits.lua` are written from the
+  server's source by `tools/make_vanamaps_regions.py` and `tools/make_vanamaps_exits.py`.
 
 ## History
 
