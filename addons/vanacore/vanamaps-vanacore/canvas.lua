@@ -817,71 +817,14 @@ return function (C)
         end
         dl:PopClipRect()
 
-        ---------------------------------------------------------------------
-        -- the map's own controls
-        ---------------------------------------------------------------------
         local over_ui = false
-        local function ui(pressed, hov) if hov then over_ui = true end return pressed end
-        -- the bare map shows them only while the pointer is on it (and never while it's letting the mouse through)
-        local inside = mx >= x and mx <= x + w and my >= y and my <= y + h and not C.pass
-        M.ui_f = U.lerp(M.ui_f or 0, inside and 1 or 0, math.min(1, dt * 10))
-        local show_ui = not bare or M.ui_f > 0.03
-        if bare then U.set_window_alpha((C.win_alpha or 1) * M.ui_f) end
-        if show_ui then
-        local no_nav = C.pad_on and imgui.PushItemFlag ~= nil
-        if no_nav then imgui.PushItemFlag(2, true) end
-        -- the floors, top left
-        if zone and #zone.floors > 1 then
-            local fx, fy = x + S(12), y + S(12)
-            if V.z > V.fit * 1.12 and cfg.rulers then fx, fy = x + S(40), y + S(34) end
-            local bw = S(34)
-            local per_row = math.max(1, math.floor((w - S(120)) / (bw + S(4))))
-            for i, fl in ipairs(zone.floors) do
-                local bx = fx + ((i - 1) % per_row) * (bw + S(4))
-                local by2 = fy + math.floor((i - 1) / per_row) * (S(30) + S(4))
-                local on = fl.floor == st.floor
-                local mine_floor = me.ok and me.zone == st.zone and me.floor == fl.floor
-                if ui(G.map_button(dl, '##vm_floor' .. i, bx, by2, bw, S(30), nil, tostring(i), on, 'Map ' .. i .. ' of ' .. #zone.floors ..
-                        (mine_floor and ' (you are here)' or ''))) and not on then
-                    C.show(st.zone, fl.floor)
-                end
-                if mine_floor then
-                    dl:AddCircleFilled({ bx + bw - S(6), by2 + S(6) }, S(3.5), u32(P.cyan), 12)
-                    dl:AddCircle({ bx + bw - S(6), by2 + S(6) }, S(3.5), u32(P.bg), 12, 1)
-                end
-            end
-        end
-        -- zoom, bottom right
-        local zs = S(34)
-        local zx, zy = x + w - zs - S(12), y + h - S(12) - zs * 3 - S(8)
-        local on_me = me_here and st.follow
-        if ui(G.map_button(dl, '##vm_findme', zx, zy - zs - S(12), zs, zs, G.CP.locate, nil, on_me, me.ok and 'Find me' or nil)) and me.ok then
-            C.here(nil, bare == true)
-        end
-        if ui(G.map_button(dl, '##vm_zin', zx, zy, zs, zs, G.CP.plus, nil, false, 'Zoom in')) then zoom_about(1.5, x + w / 2, y + h / 2) end
-        if ui(G.map_button(dl, '##vm_zout', zx, zy + zs + S(4), zs, zs, G.CP.minus, nil, false, 'Zoom out')) then zoom_about(1 / 1.5, x + w / 2, y + h / 2) end
-        if ui(G.map_button(dl, '##vm_zfit', zx, zy + (zs + S(4)) * 2, zs, zs, G.CP.expand, nil, false, 'The whole map')) then CV.fit() end
-        -- what the pointer is on, bottom left
+        -- (the floors, the zoom buttons and the readout are drawn off the picture: CV.floor_control and CV.toolbar)
+        M.read = nil
         if f and pointing and hmx >= 16 and hmx < SIZE - 16 and hmy >= 16 and hmy < SIZE - 16 then
             local wx, wy = DATA.to_world(f, hmx, hmy)
-            local label = string.format('(%s)    X %.0f   Y %.0f', DATA.grid_of_map(hmx, hmy), wx, wy)
-            local tw, th = U.measure(label, F.semi, T.small)
-            local bx, by2, bh = x + S(12), y + h - S(12) - th - S(12), th + S(12)
-            dl:AddRectFilled({ bx, by2 }, { bx + tw + S(24), by2 + bh }, u32(P.bg, 0.86), bh / 2)
-            dl:AddRect({ bx, by2 }, { bx + tw + S(24), by2 + bh }, u32(P.line, 0.9), bh / 2, 15, 1)
-            U.text(dl, bx + S(12), by2 + S(6), label, P.text, F.semi, T.small)
+            M.read = string.format('(%s)    X %.0f   Y %.0f', DATA.grid_of_map(hmx, hmy), wx, wy)
         end
-        -- which picture this is, top right
-        if entry and not bare then
-            local label = entry.from == 'game' and "Game's map" or (entry.w .. ' px')
-            local tw, th = U.measure(label, F.semi, T.tiny)
-            local bx, by2 = x + w - tw - S(30), y + S(12)
-            dl:AddRectFilled({ bx, by2 }, { bx + tw + S(18), by2 + th + S(8) }, u32(P.bg, 0.7), (th + S(8)) / 2)
-            U.text(dl, bx + S(9), by2 + S(4), label, entry.w >= 1024 and P.ok or P.dim, F.semi, T.tiny)
-        end
-        if no_nav then imgui.PopItemFlag() end
-        end
-        U.set_window_alpha(C.win_alpha or 1)
+        M.entry, M.me_here = entry, me_here
         if M.save_soon and clock() > M.save_soon then M.save_soon = nil C.save() end
 
         draw_card(dl, t)
@@ -891,6 +834,99 @@ return function (C)
         end
         M.over_ui = over_ui
         context_menu()
+    end
+
+    ---------------------------------------------------------------------------
+    -- The map's controls, drawn off the picture: nothing sits on the map's art but what is on the map (you, your
+    -- party, your target, pins, signposts), so its title banner and corners stay clear
+    ---------------------------------------------------------------------------
+
+    -- How strongly the bare map's strips show: they come with the pointer (anywhere over the map or the strips) and go
+    -- with it, and never show while the map lets the mouse through
+    function CV.ui_alpha(x, y, w, h, dt)
+        local mx, my = imgui.GetMousePos()
+        local inside = mx >= x and mx <= x + w and my >= y and my <= y + h and not C.pass
+        M.ui_f = U.lerp(M.ui_f or 0, inside and 1 or 0, math.min(1, dt * 10))
+        return M.ui_f
+    end
+
+    -- The floors of the zone shown, centred on cy from x: a button each up to six, a drop-down past that (some zones
+    -- have eighteen maps). Returns the width it took (0 for a zone of one map).
+    function CV.floor_control(dl, x, cy)
+        local zone = st.zone and DATA.zones[st.zone]
+        if zone == nil or #zone.floors < 2 then return 0 end
+        local me = C.me
+        local n = #zone.floors
+        if n > 6 then
+            local options = {}
+            for i, fl in ipairs(zone.floors) do
+                local mine = me.ok and me.zone == st.zone and me.floor == fl.floor
+                options[i] = { id = fl.floor, name = '  Map ' .. i .. ' of ' .. n .. (mine and '   ·   you are here' or '') } -- (the spaces: the list's rows have no inset of their own)
+            end
+            local w = S(190)
+            local pick = U.dropdown(dl, '##vm_floor_pick', x, cy, w, options, st.floor)
+            if pick ~= st.floor then C.show(st.zone, pick) end
+            return w
+        end
+        local bw, bh = S(30), S(24)
+        for i, fl in ipairs(zone.floors) do
+            local bx, by = x + (i - 1) * (bw + S(3)), cy - bh / 2
+            local on = fl.floor == st.floor
+            local mine = me.ok and me.zone == st.zone and me.floor == fl.floor
+            imgui.SetCursorScreenPos({ bx, by })
+            local pressed, hovered, hv = U.hit('##vm_floor' .. i, bw, bh, S(7))
+            if on then
+                dl:AddRectFilled({ bx, by }, { bx + bw, by + bh }, u32(P.accent, 0.32), S(7))
+                dl:AddRect({ bx, by }, { bx + bw, by + bh }, u32(P.accent, 0.95), S(7), 15, 1)
+            else
+                dl:AddRectFilled({ bx, by }, { bx + bw, by + bh }, u32(P.text, 0.05 + 0.1 * hv), S(7))
+                dl:AddRect({ bx, by }, { bx + bw, by + bh }, u32(P.line, 0.9 + 0.1 * hv), S(7), 15, 1)
+            end
+            U.text_center(dl, bx, cy, bw, tostring(i), on and P.text or mix(P.dim, P.text, hv), F.semi, T.small)
+            if mine then
+                dl:AddCircleFilled({ bx + bw - S(4), by + S(4) }, S(3.5), u32(P.cyan), 12)
+                dl:AddCircle({ bx + bw - S(4), by + S(4) }, S(3.5), u32(P.bg), 12, 1)
+            end
+            if hovered then G.tip('Map ' .. i .. ' of ' .. n .. (mine and ' (you are here)' or '')) end
+            if pressed and not on then C.show(st.zone, fl.floor) end
+        end
+        return n * (bw + S(3)) - S(3)
+    end
+
+    -- The strip of the map's controls: at the left what the pointer is on; at the right find me, zoom and the whole
+    -- map, and which picture is shown.
+    function CV.toolbar(dl, x, y, w, h, bare)
+        local cy = y + h / 2
+        local bs = S(28)
+        local by = y + (h - bs) / 2
+        local bx = x + w - bs
+        if G.map_button(dl, '##vm_zfit', bx, by, bs, bs, G.CP.expand, nil, false, 'The whole map') then CV.fit() end
+        bx = bx - bs - S(4)
+        local r = V.rect
+        if G.map_button(dl, '##vm_zin', bx, by, bs, bs, G.CP.plus, nil, false, 'Zoom in') and r then zoom_about(1.5, r.x + r.w / 2, r.y + r.h / 2) end
+        local zw = S(48)
+        bx = bx - zw
+        U.text_center(dl, bx, cy, zw, string.format('%d%%', math.floor(V.tz / math.max(0.0001, V.fit) * 100 + 0.5)), P.dim, F.semi, T.tiny)
+        bx = bx - bs
+        if G.map_button(dl, '##vm_zout', bx, by, bs, bs, G.CP.minus, nil, false, 'Zoom out') and r then zoom_about(1 / 1.5, r.x + r.w / 2, r.y + r.h / 2) end
+        bx = bx - bs - S(12)
+        local me = C.me
+        if G.map_button(dl, '##vm_findme', bx, by, bs, bs, G.CP.locate, nil, M.me_here and st.follow, me.ok and 'Find me' or nil) and me.ok then
+            C.here(nil, bare == true)
+        end
+        -- which picture this is
+        local entry = M.entry
+        if entry then
+            local label = entry.from == 'game' and "the game's map" or (entry.w .. ' px')
+            local tw = U.measure(label, F.semi, T.tiny)
+            bx = bx - tw - S(14)
+            U.text_mid(dl, bx, cy, label, entry.w >= 1024 and P.ok or P.faint, F.semi, T.tiny)
+        end
+        if M.read then
+            U.text_mid(dl, x + S(6), cy, M.read, P.text, F.semi, T.small)
+        elseif bx - x > S(430) then
+            U.text_mid(dl, x + S(6), cy, 'Drag to move   ·   wheel to zoom   ·   right-click for a menu', P.faint, F.text, T.tiny)
+        end
     end
 
     return CV

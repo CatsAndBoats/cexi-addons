@@ -63,7 +63,7 @@ local REG = require('regions')
 local K = require('pins')
 
 local DEFAULTS = {
-    key = 'm', scale = 0, theme = 'aurora', opacity = 100, quality = 2048, w = 1030, h = 800, sidebar = true, side_tab = 'zones',
+    key = 'm', scale = 0, theme = 'aurora', opacity = 100, quality = 2048, w = 1030, h = 800, layout_rev = 0, sidebar = true, side_tab = 'zones',
     follow = true, party = true, target = true, rulers = true, names = true, cards = true, pin_size = 100,
     collapsed = {}, last = { zone = 0, floor = 0 }, layout_checked = false,
     -- the bare map (the map alone, for finding your way) and what moving does to either window
@@ -88,6 +88,11 @@ local C = {
     zone_names = {},
 }
 local cfg, st = C.cfg, C.st
+-- (the strip under the map came later: the window grows by its height once, so the map keeps its size)
+if (cfg.layout_rev or 0) < 2 then
+    cfg.h = (cfg.h or 800) + 34
+    cfg.layout_rev = 2
+end
 VANAMAPS = C -- (this addon's own Lua state: for a test's eyes, through VanaCore's MCP)
 
 local function clock() return vana.time.clock() end
@@ -694,17 +699,27 @@ local function draw_header(dl, x, y, w, t)
     local right = x + w - S(22) - (S(32) + S(4)) * 7
     local title = U.fit(name:upper(), F.dispb, T.title, right - (x + S(78)) - S(8))
     U.gradient_text(dl, x + S(78), y + S(9), title, P.cyan, P.accent2, F.dispb, T.title)
-    local parts = {}
-    local z = zone and DATA.zones[zone]
+    -- under the name: the region, the zone's floors (a button each, or a drop-down), and whether you are there
     if zone then
-        parts[#parts + 1] = C.region_name(zone) or 'Uncharted'
-        if z and #z.floors > 1 then
-            local f = DATA.floor(zone, st.floor)
-            parts[#parts + 1] = 'Map ' .. f.place .. ' of ' .. #z.floors
+        local sx, cy = x + S(80), y + S(54)
+        local region = C.region_name(zone) or 'Uncharted'
+        U.text_mid(dl, sx, cy, region, P.dim, F.text, T.small)
+        sx = sx + U.measure(region, F.text, T.small) + S(14)
+        local z = DATA.zones[zone]
+        if z and #z.floors > 1 and C.CV then
+            local label = 'Map'
+            U.text_mid(dl, sx, cy, label, P.faint, F.text, T.small)
+            sx = sx + U.measure(label, F.text, T.small) + S(8)
+            sx = sx + C.CV.floor_control(dl, sx, cy) + S(14)
         end
-        if C.me.ok and C.me.zone == zone then parts[#parts + 1] = 'You are here' end
+        if C.me.ok and C.me.zone == zone then
+            local here = 'You are here'
+            if sx + U.measure(here, F.text, T.small) + S(14) < right then
+                dl:AddCircleFilled({ sx + S(3), cy }, S(3), U.u32(P.cyan), 12)
+                U.text_mid(dl, sx + S(12), cy, here, P.dim, F.text, T.small)
+            end
+        end
     end
-    U.text(dl, x + S(80), y + S(45), table.concat(parts, '   ·   '), P.dim, F.text, T.small)
     local pulse = 0.55 + 0.45 * math.sin(t * 2)
     dl:AddRectFilledMultiColor({ x + S(16), y + h - 1 }, { x + w - S(16), y + h + 1 }, U.u32(P.cyan, 0), U.u32(P.cyan, 0.9 * pulse),
         U.u32(P.accent2, 0.9 * pulse), U.u32(P.accent, 0))
@@ -982,11 +997,14 @@ end
 local function draw_bare(t, dt)
     local sw, sh = vana.ui.screen()
     cfg.bare_size = math.max(30, math.min(100, cfg.bare_size or 82))
-    local side = math.floor(math.min(sw, sh) * cfg.bare_size / 100)
+    -- (room is kept above and below the picture for its strips: the floors over it, the controls under it)
+    local strip = math.floor(S(40))
+    local side = math.floor(math.min(sw, sh - strip * 2 - 8) * cfg.bare_size / 100)
+    side = math.min(side, sh - strip * 2 - 8)
     local x = math.floor(math.max(0, math.min(sw - side, sw * (cfg.bare_x or 0.5) - side / 2)))
-    local y = math.floor(math.max(0, math.min(sh - side, sh * (cfg.bare_y or 0.5) - side / 2)))
-    imgui.SetNextWindowPos({ x, y }, U.ALWAYS)
-    imgui.SetNextWindowSize({ side, side }, U.ALWAYS)
+    local y = math.floor(math.max(strip + 4, math.min(sh - side - strip - 4, sh * (cfg.bare_y or 0.5) - side / 2)))
+    imgui.SetNextWindowPos({ x, y - strip }, U.ALWAYS)
+    imgui.SetNextWindowSize({ side, side + strip * 2 }, U.ALWAYS)
     local fade = U.ease(st.anim)
     local alpha, pass = C.fade_now(fade)
     U.set_window_alpha(alpha)
@@ -997,6 +1015,27 @@ local function draw_bare(t, dt)
             st.pad_focused = false
             C.pad_on = false -- (the controller stays the game's: the bare map is for walking by)
             C.CV.draw(dl, x, y, side, side, t, dt, true)
+            -- its controls, off the picture and only while the pointer is here: the floors over the top edge, the rest
+            -- under the bottom edge, each on a dark bar so it reads over the world behind
+            local a = C.CV.ui_alpha(x, y - strip, side, side + strip * 2, dt)
+            if a > 0.03 then
+                U.set_window_alpha(alpha * a)
+                local z = DATA.zones[st.zone or -1]
+                if z and #z.floors > 1 then
+                    local fw = (#z.floors > 6) and S(190) or (#z.floors * S(33) - S(3))
+                    local bw2, bh2 = fw + S(64), S(34)
+                    local bx2, by2 = x, y - bh2 - S(4)
+                    dl:AddRectFilled({ bx2, by2 }, { bx2 + bw2, by2 + bh2 }, U.u32(P.bg, 0.9), S(10))
+                    dl:AddRect({ bx2, by2 }, { bx2 + bw2, by2 + bh2 }, U.u32(P.line, 0.9), S(10), 15, 1)
+                    U.text_mid(dl, bx2 + S(12), by2 + bh2 / 2, 'Map', P.dim, F.text, T.small)
+                    C.CV.floor_control(dl, bx2 + S(48), by2 + bh2 / 2)
+                end
+                local ty, th = y + side + S(4), S(34)
+                dl:AddRectFilled({ x, ty }, { x + side, ty + th }, U.u32(P.bg, 0.9), S(10))
+                dl:AddRect({ x, ty }, { x + side, ty + th }, U.u32(P.line, 0.9), S(10), 15, 1)
+                C.CV.toolbar(dl, x + S(8), ty + S(2), side - S(16), th - S(4), true)
+                U.set_window_alpha(alpha)
+            end
         end)
         if not drew then
             fail('bare map', err)
@@ -1071,7 +1110,11 @@ local function draw_main(t, dt)
                     C.SB.draw(dl, bx, by, sbw, bh, t, dt)
                     bx, bw = bx + sbw + S(12), bw - sbw - S(12)
                 end
-                C.CV.draw(dl, bx, by, bw, bh, t, dt, false)
+                local strip = S(30)
+                C.CV.draw(dl, bx, by, bw, bh - strip - S(6), t, dt, false)
+                if no_nav then imgui.PushItemFlag(2, true) end
+                C.CV.toolbar(dl, bx, by + bh - strip, bw, strip, false)
+                if no_nav then imgui.PopItemFlag() end
             end
             -- the corner that sizes the window
             local gs = S(18)

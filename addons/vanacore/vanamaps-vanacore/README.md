@@ -5,6 +5,11 @@ anywhere, drop pins with notes, and share a pin in chat.
 
 - **Every zone, every floor.** The zone browser lists each zone that has a map, grouped by region, with a search box.
   Floors have their own buttons; back and forward step through what you looked at; "Where am I?" comes back to you.
+- **Nothing on the map's art.** Only what is on the map sits on the picture: you, your party, your target, pins and
+  signposts. The floors are in the window's header (a button each; a drop-down for a zone of more than six maps), and
+  the pointer's square and coordinates, find me, zoom and the picture's size are in a strip under the map. On the bare
+  map the floors hang over its top edge and the strip under its bottom edge, and both show only while the pointer is
+  there. (Zoomed in, the grid's letters and numbers run along the edges, where the map's own have gone out of view.)
 - **You are on it.** Your arrow with the way you face, your party and alliance members in the zone, and your target.
   The map follows you until you move it, and changes floor and zone with you.
 - **Mouse, keys and controller.** Drag to pan (a thrown map glides), wheel to zoom about the pointer, double-click to
