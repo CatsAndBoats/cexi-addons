@@ -176,6 +176,17 @@ function G.reticle(dl, x, y, r, color, t, alpha)
     dl:AddCircleFilled({ x, y }, S(2), u32(color, alpha), 12)
 end
 
+-- a way into a neighbouring zone: a small dark signpost badge (not a pin's drop, so the two never read as each other)
+function G.way(dl, x, y, r, hv, t, alpha)
+    alpha = alpha or 1
+    r = r * (1 + 0.22 * hv)
+    dl:AddCircleFilled({ x, y + S(1.5) }, r + S(1), u32('#000000', 0.4 * alpha), 24)
+    dl:AddCircleFilled({ x, y }, r, u32(mix(P.bg, P.cyan, 0.12 + 0.2 * hv), 0.94 * alpha), 24)
+    dl:AddCircle({ x, y }, r, u32(mix(P.cyan, '#FFFFFF', hv), (0.75 + 0.25 * hv) * alpha), 24, S(1.4))
+    if hv > 0.02 then dl:AddCircle({ x, y }, r + S(3), u32(P.cyan, 0.35 * hv * alpha), 24, S(2)) end
+    G.icon(dl, x, y, G.CP.signs, mix(P.cyan, '#FFFFFF', 0.3 + 0.7 * hv), r * 1.0 / math.max(0.01, U.scale()), alpha)
+end
+
 -- a name tag beside a marker: a dark pill, so it reads over a parchment map or a blue one
 function G.tag(dl, x, cy, label, color, alpha, font, size)
     font, size = font or F.semi, size or T.tiny

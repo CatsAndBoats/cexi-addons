@@ -26,7 +26,8 @@ In game (/vmap works as well as /vanamaps):
   /vmap help                this list
 
 The map: drag to pan, wheel to zoom, double-click to centre and zoom in, right-click for a menu (pin here, share this
-spot, centre). Click a pin to open its card. With a controller: the left stick moves the pointer, the right stick the
+spot, centre). Click a pin to open its card. A signpost marks each way into a neighbouring zone: click it and that zone's
+map opens, with a ring where you would come out. The crosshair button on the map finds you again. With a controller: the left stick moves the pointer, the right stick the
 map, the triggers zoom, Confirm drops or opens a pin, Cancel backs out, the bumpers change floors.
 
 While your character moves, either map fades (to the strength set) so the world shows through it, and lets your clicks
@@ -66,10 +67,13 @@ local DEFAULTS = {
     follow = true, party = true, target = true, rulers = true, names = true, cards = true, pin_size = 100,
     collapsed = {}, last = { zone = 0, floor = 0 }, layout_checked = false,
     -- the bare map (the map alone, for finding your way) and what moving does to either window
+    exits = true,
     bare_key = '+m', bare_size = 82, bare_x = 0.5, bare_y = 0.5, bare_tip = false, move_alpha = 40, move_pass = true,
 }
 local config = vana.settings.register({ defaults = DEFAULTS })
 local pins_store = vana.settings.register({ name = 'pins', scope = 'character', defaults = { pins = {}, shared = {}, next_id = 1 } })
+-- (the floors of zones' ways out that the game was asked about on this PC: see the ways, below)
+local learned = vana.settings.register({ name = 'floors', defaults = { exits = {} } })
 
 -- what every part of the addon shares (canvas.lua, sidebar.lua)
 local C = {
@@ -199,6 +203,7 @@ local function track(t)
         end
     end
     me.floor, me.floor_zone = f or 0, zone
+    if TRACK.floors.me ~= nil and C.learn_ways then C.learn_ways(zone) end
 
     if not st.open then return end
     local list = {}
@@ -421,7 +426,100 @@ function C.open_shared(entry)
     entry.seen = true
     C.show(entry.zone, entry.floor, { at = { entry.mx, entry.my }, zoom = 2.2 })
     if C.CV then C.CV.select(entry) else st.sel = entry end -- (with its card: Save pin, Share)
-    st.ping = { mx = entry.mx, my = entry.my, at = clock() }
+    st.pings = { { mx = entry.mx, my = entry.my, at = clock() } }
+    return true
+end
+
+-------------------------------------------------------------------------------
+-- Ways into the neighbouring zones
+-------------------------------------------------------------------------------
+
+-- exits.lua has each zone's ways out (where the server sets you down coming from the neighbour, which is just inside
+-- the doorway). Which map of a zone with several one is on is the game's to say: exits.lua carries what it said when
+-- the zones were visited, and one it hasn't got is asked of the game the first time you are in that zone, and kept.
+local EXITS = require('exits')
+local WAYS = { cache = {}, rev = 0, tried = {}, done = nil }
+local function way_key(zone, e) return string.format('%d:%.1f:%.1f', zone, e[1], e[2]) end
+
+-- a zone's ways out: { x, y, h, to, floor, zone, key, id }, floor nil while it isn't known
+function C.ways(zone)
+    local hit = WAYS.cache[zone]
+    if hit and hit.rev == WAYS.rev then return hit.list end
+    local z = DATA.zones[zone]
+    local list = {}
+    if z then
+        for i, e in ipairs(EXITS[zone] or {}) do
+            if DATA.zones[e[4]] then
+                local key = way_key(zone, e)
+                local floor = e[5]
+                if floor == nil or z.by_floor[floor] == nil then floor = learned.data.exits[key] end
+                if #z.floors == 1 then floor = z.floors[1].floor end
+                if floor ~= nil and z.by_floor[floor] == nil then floor = nil end
+                list[#list + 1] = { x = e[1], y = e[2], h = e[3], to = e[4], floor = floor, zone = zone, key = key, id = zone .. '/' .. i }
+            end
+        end
+    end
+    WAYS.cache[zone] = { rev = WAYS.rev, list = list }
+    return list
+end
+
+-- In the zone you are in: the floor of one way out that isn't known yet, asked of the game (one a frame; the answer
+-- is the collision's under that spot). Returns how many it has learnt this time round.
+local function learn_ways(zone)
+    local z = DATA.zones[zone]
+    if z == nil or #z.floors < 2 or WAYS.done == zone then return 0 end
+    for _, w in ipairs(C.ways(zone)) do
+        if w.floor == nil and not WAYS.tried[w.key] then
+            WAYS.tried[w.key] = true
+            local f = DATA.floor_at(w.x, w.y, w.h)
+            if f ~= nil and z.by_floor[f] ~= nil then
+                learned.data.exits[w.key] = f
+                WAYS.rev = WAYS.rev + 1
+                WAYS.save = true
+                return 1
+            end
+            return 0
+        end
+    end
+    WAYS.done = zone
+    if WAYS.save then WAYS.save = nil learned:save() end
+    return 0
+end
+C.learn_ways = learn_ways
+
+-- every way out of the zone you are in with its floor, as the game gives it now: { key = floor } (for the table the
+-- addon ships: tools/vanamaps_exit_floors.json)
+function C.ways_floors_here()
+    local out = {}
+    local ok, id, zone = pcall(vana.game.self)
+    if not ok or id == nil or vana.game.zoning() then return out, nil end
+    local z = DATA.zones[zone]
+    for _, e in ipairs(EXITS[zone] or {}) do
+        local f = DATA.floor_at(e[1], e[2], e[3])
+        if f ~= nil and z and z.by_floor[f] ~= nil then out[way_key(zone, e)] = f end
+    end
+    return out, zone
+end
+
+-- Opens the neighbour a way leads to: its whole map, on the floor you would come out on, a ring spreading from each
+-- place you could come out
+function C.go_way(w)
+    local out, floor = {}, nil
+    for _, o in ipairs(C.ways(w.to)) do
+        if o.to == w.zone then
+            out[#out + 1] = o
+            if floor == nil and o.floor ~= nil then floor = o.floor end
+        end
+    end
+    if not C.show(w.to, floor, { follow = false }) then return false end
+    local f = DATA.floor(w.to, st.floor)
+    st.pings = {}
+    for _, o in ipairs(out) do
+        if o.floor == nil or o.floor == st.floor then
+            local mx, my = DATA.to_map(f, o.x, o.y)
+            st.pings[#st.pings + 1] = { mx = mx, my = my, at = clock() }
+        end
+    end
     return true
 end
 
@@ -725,6 +823,7 @@ local function settings_body(dl, x, y, w, h, t)
     tog('##vm_names', 'Their names', 'names')
     tog('##vm_target', 'My target', 'target')
     tog('##vm_rulers', 'Grid letters and numbers along the edges', 'rulers')
+    tog('##vm_exits', 'Ways into neighbouring zones (click one to open its map)', 'exits')
     ry = ry + S(8)
     ry = U.section(dl, rx, ry, col, 'SHARED PINS', 'paper-plane')
     tog('##vm_cards', 'A card when someone shares a pin', 'cards')
@@ -784,11 +883,12 @@ local function settings_body(dl, x, y, w, h, t)
 
     -- how the map is worked, across the bottom
     local hy = math.max(ly, ry) + S(18)
-    if hy + S(165) < y + h - S(46) then
+    if hy + S(185) < y + h - S(46) then
         hy = U.section(dl, cx, hy, w - S(48), 'HOW IT WORKS', 'circle-info')
         local tips = {
             { 'Drag', 'moves the map' }, { 'Wheel', 'zooms about the pointer' }, { 'Double-click', 'centres there and zooms in' },
             { 'Right-click', 'a menu: pin here, share this spot, centre' }, { 'Click a pin', 'its card: title, note, icon, colour, share' },
+            { 'Click a signpost', 'opens the neighbouring zone\'s map; the crosshair finds you again' },
             { 'Left stick', 'the pointer; the right stick moves the map' }, { 'Triggers', 'zoom; the bumpers change floors' },
             { 'Confirm', 'drops a pin, or opens the one under the pointer' }, { 'Options', 'the lists: zones, pins, shared pins' },
             { '/vmap share p', 'the selected pin (or where you stand) to party chat' },
@@ -1138,6 +1238,7 @@ end)
 vana.events.on('zone_change', function ()
     TRACK.floors = {}
     C.me.floor = nil
+    WAYS.done = nil
 end)
 
 vana.events.on('logout', function ()

@@ -11,6 +11,9 @@ anywhere, drop pins with notes, and share a pin in chat.
   centre and zoom in, right-click for a menu. `M` opens and closes it while the chat line is closed (the key is a
   setting). With a controller: left stick the pointer, right stick the map, triggers zoom, bumpers change floor,
   Confirm drops or opens a pin, Options goes to the lists, Cancel backs out.
+- **Ways into the next zone.** A signpost marks each way out of a zone, where its doorway is. Click one and the
+  neighbour's map opens, with a ring where you would come out; back takes you back. The crosshair button on the map
+  finds you again from anywhere, and when you are off the edge of the view a small arrow at the edge points to you.
 - **See-through while you move.** While your character moves, the map fades (to 40% unless you set otherwise) so the
   world shows through it, and your clicks and camera drags go through it to the game. It comes back as you stop. Your
   arrow, your party and your pins stay clear.
@@ -65,6 +68,13 @@ client as it runs, so the grid square VanaMaps names is the one `<pos>` gives. T
 Ashita **Minimap** plugin by **atom0s** uses for it. The Ashita world map **UberMap** by **Seekey** was read for ideas
 (nothing of it is used here).
 
+The signposts come from the server's zone lines (`tools/make_vanamaps_exits.py` writes `exits.lua`). A zone line says
+where you arrive, so a zone's way to a neighbour is put where the line coming back sets you down, just inside the
+doorway. In a zone with several maps, which map a doorway is on is the game's to say (it asks the zone's collision):
+the answers gathered by visiting those zones ship in `exits.lua`, and one that is missing is learnt the first time you
+have the map open in that zone (`settings\addons\vanamaps-vanacore\floors.json`). Nothing warps you: a signpost only
+opens a map.
+
 A large map gets a half-size and a quarter-size copy made in the background the first time it is shown small, so it
 stays sharp at any window size; textures not shown lately are released.
 
@@ -85,7 +95,8 @@ card and in the Shared list.
 - Settings: `settings\addons\vanamaps-vanacore\settings.json`
 - Pins and the Shared list, per character: `settings\addons\vanamaps-vanacore\<Character>\pins.json`
 - `ui.lua` and `pad.lua` are the shared kit and controller helper (`tools/make_ui.py` writes them);
-  `regions.lua` is written by `tools/make_vanamaps_regions.py` from the server's source.
+  `regions.lua` and `exits.lua` are written by `tools/make_vanamaps_regions.py` and `tools/make_vanamaps_exits.py` from
+  the server's source.
 
 ## The code in a pin's line
 

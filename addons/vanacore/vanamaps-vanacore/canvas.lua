@@ -472,6 +472,8 @@ return function (C)
             local got = M.hover_pin
             if got then
                 CV.select(got)
+            elseif M.hover_way then
+                C.go_way(M.hover_way)
             else
                 local mx, my = to_map(cur.x, cur.y)
                 if mx >= 0 and mx <= SIZE and my >= 0 and my <= SIZE then got = new_pin(mx, my) end
@@ -596,6 +598,21 @@ return function (C)
             if st.sel and not mine(st.sel) and st.sel.zone == st.zone and st.sel.floor == st.floor then try(st.sel) end
         end
         M.hover_pin = over
+        -- the way into a neighbouring zone under the pointer (a pin there comes first)
+        local ways = (f and cfg.exits) and C.ways(st.zone) or {}
+        local over_way = nil
+        if pointing and not over then
+            local reach, nearest = (S(14)) ^ 2, nil
+            for _, wy in ipairs(ways) do
+                if wy.floor == st.floor then
+                    local wmx, wmy = DATA.to_map(f, wy.x, wy.y)
+                    local sx, sy = to_screen(wmx, wmy)
+                    local d = (px - sx) ^ 2 + (py - sy) ^ 2
+                    if d <= reach and (nearest == nil or d < nearest) then over_way, nearest = wy, d end
+                end
+            end
+        end
+        M.hover_way = over_way
 
         if hovered and not PAD.shown() then
             if io.MouseWheel ~= 0 then
@@ -617,7 +634,7 @@ return function (C)
             if imgui.IsMouseClicked(1) then
                 M.ctx = { open = true, mx = hmx, my = hmy, pin = over, square = DATA.grid_of_map(hmx, hmy) }
             end
-            if over then imgui.SetMouseCursor(7) end
+            if over or over_way then imgui.SetMouseCursor(7) end
         end
         if active and imgui.IsMouseDown(0) then
             local dx, dy = io.MouseDelta.x, io.MouseDelta.y
@@ -648,13 +665,14 @@ return function (C)
                 V.vx, V.vy = 0, 0
                 if M.skip_click then M.skip_click = false
                 elseif M.press_pin then CV.select(M.press_pin)
+                elseif M.press_way and M.press_way == over_way then C.go_way(M.press_way)
                 elseif st.sel then st.sel = nil end
             elseif math.abs(V.vx) + math.abs(V.vy) < 40 then
                 V.vx, V.vy = 0, 0
             end
             M.drag = false
         end
-        if imgui.IsItemActivated() then M.press_pin = over end
+        if imgui.IsItemActivated() then M.press_pin, M.press_way = over, over_way end
 
         ---------------------------------------------------------------------
         -- what sits on the map
@@ -663,6 +681,24 @@ return function (C)
         -- (what's on the map stays clear while the map itself is faded for walking)
         U.set_window_alpha(C.mark_alpha or 1)
         if f and M.tex then
+            -- the ways into neighbouring zones
+            for _, wy in ipairs(ways) do
+                if wy.floor == st.floor then
+                    local wmx, wmy = DATA.to_map(f, wy.x, wy.y)
+                    local sx, sy = to_screen(wmx, wmy)
+                    if sx > x - S(20) and sx < x + w + S(20) and sy > y - S(20) and sy < y + h + S(20) then
+                        local hv = U.A.hover['way' .. wy.id] or 0
+                        hv = U.lerp(hv, wy == over_way and 1 or 0, math.min(1, dt * 14))
+                        U.A.hover['way' .. wy.id] = hv
+                        G.way(dl, sx, sy, S(10), hv, t, 1)
+                        if hv > 0.05 then
+                            local label = 'To ' .. C.zone_name(wy.to)
+                            local tw = U.measure(label, F.semi, T.small) + S(12)
+                            G.tag(dl, sx - tw / 2, sy - S(26), label, P.cyan, hv, F.semi, T.small)
+                        end
+                    end
+                end
+            end
             -- pins, the hovered and the selected ones last
             local function draw_pin(p, sel)
                 local sx, sy = to_screen(p.mx, p.my)
@@ -693,17 +729,24 @@ return function (C)
             if over and over ~= st.sel then draw_pin(over, false) end
             if st.sel and st.sel.zone == st.zone and st.sel.floor == st.floor then draw_pin(st.sel, true) end
 
-            -- a shared pin just opened: rings spreading from it
-            if st.ping then
-                local age = clock() - st.ping.at
-                if age > 3.2 then st.ping = nil
-                else
-                    local sx, sy = to_screen(st.ping.mx, st.ping.my)
-                    for i = 0, 2 do
-                        local a = ((age * 0.9) + i / 3) % 1
-                        dl:AddCircle({ sx, sy }, S(10) + a * S(70), u32('#FFD166', (1 - a) * 0.8 * math.min(1, 3.2 - age)), 48, S(2))
+            -- rings spreading from a place just opened: a shared pin, or where a way from the last map comes out
+            if st.pings then
+                local live = false
+                for _, ping in ipairs(st.pings) do
+                    local age = clock() - ping.at
+                    if age <= 3.2 then
+                        live = true
+                        local sx, sy = to_screen(ping.mx, ping.my)
+                        for i = 0, 2 do
+                            local a = ((age * 0.9) + i / 3) % 1
+                            -- (a dark ring under the gold one: gold alone is lost on a parchment map)
+                            local fadeout = (1 - a) * math.min(1, 3.2 - age)
+                            dl:AddCircle({ sx, sy }, S(10) + a * S(70), u32('#000000', 0.45 * fadeout), 48, S(5))
+                            dl:AddCircle({ sx, sy }, S(10) + a * S(70), u32('#FFD166', 0.95 * fadeout), 48, S(2.5))
+                        end
                     end
                 end
+                if not live then st.pings = nil end
             end
 
             -- your party and alliance
@@ -727,10 +770,18 @@ return function (C)
                 G.reticle(dl, sx, sy, member and S(15) or S(9), P.danger, t, 1)
                 if cfg.names and tg.name ~= '' and not member then G.tag(dl, sx + S(15), sy, tg.name, P.danger, 0.95) end
             end
-            -- you
+            -- you; out of view, a small arrow at the edge points the way to you
             if me_here then
                 local sx, sy = to_screen(mmx, mmy)
-                G.arrow(dl, sx, sy, S(11), me.heading, P.cyan, t, 1)
+                local inset = S(20)
+                if sx < x + inset or sx > x + w - inset or sy < y + inset or sy > y + h - inset then
+                    local ex, ey = math.max(x + inset, math.min(x + w - inset, sx)), math.max(y + inset, math.min(y + h - inset, sy))
+                    local ang = math.atan2(sy - ey, sx - ex)
+                    dl:AddCircleFilled({ ex, ey }, S(14), u32(P.bg, 0.8), 24)
+                    G.arrow(dl, ex, ey, S(8), ang, P.cyan, t, 1)
+                else
+                    G.arrow(dl, sx, sy, S(11), me.heading, P.cyan, t, 1)
+                end
             end
         end
         -- the controller's pointer
@@ -803,6 +854,10 @@ return function (C)
         -- zoom, bottom right
         local zs = S(34)
         local zx, zy = x + w - zs - S(12), y + h - S(12) - zs * 3 - S(8)
+        local on_me = me_here and st.follow
+        if ui(G.map_button(dl, '##vm_findme', zx, zy - zs - S(12), zs, zs, G.CP.locate, nil, on_me, me.ok and 'Find me' or nil)) and me.ok then
+            C.here(nil, bare == true)
+        end
         if ui(G.map_button(dl, '##vm_zin', zx, zy, zs, zs, G.CP.plus, nil, false, 'Zoom in')) then zoom_about(1.5, x + w / 2, y + h / 2) end
         if ui(G.map_button(dl, '##vm_zout', zx, zy + zs + S(4), zs, zs, G.CP.minus, nil, false, 'Zoom out')) then zoom_about(1 / 1.5, x + w / 2, y + h / 2) end
         if ui(G.map_button(dl, '##vm_zfit', zx, zy + (zs + S(4)) * 2, zs, zs, G.CP.expand, nil, false, 'The whole map')) then CV.fit() end
