@@ -43,7 +43,7 @@ Settings: settings\addons\vanamaps\settings.json; pins: settings\addons\vanamaps
 
 addon.name    = 'vanamaps'
 addon.author  = 'Carver'
-addon.version = '1.0.1'
+addon.version = '1.0.2'
 addon.desc    = 'VanaMaps: interactive maps of every zone, with pins you can share in chat.'
 
 local imgui = vana.imgui
@@ -56,6 +56,7 @@ local U = require('ui') -- Party Finder's drawing kit (tools/make_ui.py)
 local P, F, T = U.P, U.fonts(), U.sizes()
 local S = U.S
 local PAD = require('pad')
+local bit = require('bit')
 local G = require('gfx')
 local DATA = require('mapdata')
 local TEX = require('maptex')
@@ -68,7 +69,7 @@ local DEFAULTS = {
     collapsed = {}, last = { zone = 0, floor = 0 }, layout_checked = false,
     -- the bare map (the map alone, for finding your way) and what moving does to either window
     exits = true,
-    bare_key = '+m', bare_size = 82, bare_x = 0.5, bare_y = 0.5, bare_tip = false, move_alpha = 40, move_pass = true,
+    bare_key = '+m', pad_key = 'none', bare_pad_key = 'none', bare_size = 82, bare_x = 0.5, bare_y = 0.5, bare_tip = false, move_alpha = 40, move_pass = true,
 }
 local config = vana.settings.register({ defaults = DEFAULTS })
 local pins_store = vana.settings.register({ name = 'pins', scope = 'character', defaults = { pins = {}, shared = {}, next_id = 1 } })
@@ -557,7 +558,9 @@ function KEYS.label(key)
 end
 
 -- the two keys: the map's, and the bare map's
-local SLOTS = { { id = 'main', cfg = 'key', cmd = '/vanamaps toggle' }, { id = 'bare', cfg = 'bare_key', cmd = '/vanamaps bare' } }
+local SLOTS = { { id = 'main', cfg = 'key', pad = 'pad_key', cmd = '/vanamaps toggle' },
+    { id = 'bare', cfg = 'bare_key', pad = 'bare_pad_key', cmd = '/vanamaps bare' } }
+local SLOT = { main = SLOTS[1], bare = SLOTS[2] }
 KEYS.bound, KEYS.notes = {}, {}
 
 function KEYS.unbind()
@@ -607,6 +610,93 @@ function KEYS.frame()
         KEYS.held = nil
         KEYS.bind()
     end
+end
+
+-- "Press a key or a button": one capture for both. VanaCore's capture, once a key has answered it, keeps every key from
+-- the game until it is ended, so it is ended whatever way the settings page goes (the window closed by B, Escape, the
+-- close button or the key, a zone change, the addon unloaded): the page marks each frame it draws the row, and a
+-- capture whose row went undrawn is ended at the next frame.
+function KEYS.end_capture()
+    if KEYS.capture then
+        pcall(vana.binds.capture_end)
+        KEYS.quiet_until = math.max(KEYS.quiet_until or -1, clock() + 0.25) -- (Escape, B: the window doesn't take them too)
+    end
+    KEYS.capture = false
+    KEYS.bind()
+end
+
+-- while a press of the controller's was taken (a capture's answer or a bound button), the window's own controller
+-- handling rests a moment: the same press is in the controller's read the window works from (PAD), and Start would
+-- open the settings, B close the window
+KEYS.quiet_until, KEYS.taken = -1, {}
+function KEYS.quiet() return KEYS.capture ~= false or clock() < KEYS.quiet_until end
+
+-- a controller button: 'pad:start' (XInput), 'joy:7' (a DirectInput controller's eighth button)
+local PAD_NAME = { [0] = 'up', [1] = 'down', [2] = 'left', [3] = 'right', [4] = 'start', [5] = 'back', [6] = 'l3', [7] = 'r3',
+    [8] = 'l1', [9] = 'r1', [12] = 'a', [13] = 'b', [14] = 'x', [15] = 'y', [16] = 'l2', [17] = 'r2' }
+local PAD_LABEL = { up = 'D-pad up', down = 'D-pad down', left = 'D-pad left', right = 'D-pad right', start = 'Start', back = 'Back',
+    l3 = 'L3', r3 = 'R3', l1 = 'LB (L1)', r1 = 'RB (R1)', a = 'A (Cross)', b = 'B (Circle)', x = 'X (Square)', y = 'Y (Triangle)',
+    l2 = 'LT (L2)', r2 = 'RT (R2)' }
+function KEYS.pad_label(id)
+    id = tostring(id or '')
+    local kind, name = id:match('^(%a+):(.+)$')
+    if kind == 'pad' then return PAD_LABEL[name] or name end
+    if kind == 'joy' and tonumber(name) then return 'Button ' .. (tonumber(name) + 1) end
+    return nil
+end
+
+-- a press or release of a control; true keeps it from the game (and from ImGui: VanaCore feeds ImGui what the game gets)
+local function pad_control(id, down, rest)
+    if KEYS.taken[id] then
+        -- a press that was ours stays ours until the control is at rest again: the game never sees half of it
+        if rest then KEYS.taken[id] = nil return false end
+        return true
+    end
+    if not down then return false end
+    if KEYS.capture then
+        local slot = SLOT[KEYS.capture]
+        KEYS.taken[id] = true
+        KEYS.quiet_until = clock() + 0.4
+        if slot then
+            cfg[slot.pad] = id
+            for _, other in ipairs(SLOTS) do
+                if other ~= slot and cfg[other.pad] == id then cfg[other.pad] = 'none' end
+            end
+            config:save()
+        end
+        KEYS.end_capture()
+        return true
+    end
+    for _, slot in ipairs(SLOTS) do
+        if cfg[slot.pad] == id then
+            local okw, world = pcall(vana.game.world)
+            if (okw and world and world.chat_open) or G.typing() then return false end
+            KEYS.taken[id] = true
+            KEYS.quiet_until = clock() + 0.4
+            KEYS.fire = slot.id
+            return true
+        end
+    end
+    return false
+end
+
+local TRIGGER_DOWN = 100
+function KEYS.on_xinput_button(e)
+    local control, v = tonumber(e.button) or -1, tonumber(e.state) or 0
+    local name = PAD_NAME[control]
+    if name == nil then return false end
+    local down = control >= 16 and v > TRIGGER_DOWN or (control < 16 and v ~= 0)
+    return pad_control('pad:' .. name, down, v == 0)
+end
+
+function KEYS.on_dinput_button(e)
+    local off, v = tonumber(e.button) or -1, tonumber(e.state) or 0
+    if off == 32 and KEYS.capture then
+        return v >= 0 and v < 36000 -- the hat (the D-pad) waits while a button is asked for
+    end
+    if off < 48 or off >= 48 + 128 then return false end
+    local down = bit.band(v, 0x80) ~= 0
+    return pad_control('joy:' .. (off - 48), down, not down)
 end
 
 -- A keyboard that types straight into the chat line (the game's full-keyboard layout: any letter opens the line with
@@ -846,23 +936,25 @@ local function settings_body(dl, x, y, w, h, t)
 
     ry = U.section(dl, rx, ry, col, 'KEY AND CONTROLLER', 'gamepad')
     local function key_row(slot, field, label)
+        local pad_field = SLOT[slot].pad
         U.text_mid(dl, rx, ry + S(15), label, P.dim, F.text, T.small)
         local capturing = KEYS.capture == slot
-        local shown = capturing and 'Press a key…' or KEYS.label(cfg[field])
+        if capturing then KEYS.drawn_at = imgui.GetFrameCount() end
+        local shown = capturing and 'Press a key or button…' or KEYS.label(cfg[field])
         if U.button(dl, '##vm_key_' .. slot, rx + S(150), ry, S(150), S(30), shown, capturing and '#FFD166' or P.accent, 'ghost', nil, F.semi, T.small) then
             if KEYS.capture then
-                vana.binds.capture_end()
-                KEYS.capture = false
-                KEYS.bind()
+                KEYS.end_capture()
             else
                 KEYS.unbind()
                 vana.binds.capture_begin()
                 KEYS.capture = slot
+                KEYS.drawn_at = imgui.GetFrameCount()
             end
         end
         if U.button(dl, '##vm_nokey_' .. slot, rx + S(308), ry, S(64), S(30), 'None', P.dim, 'ghost', nil, F.semi, T.small) then
-            if KEYS.capture then vana.binds.capture_end() KEYS.capture = false end
+            if KEYS.capture then KEYS.end_capture() end
             cfg[field] = 'none'
+            cfg[pad_field] = 'none'
             cfg.layout_checked = true
             KEYS.bind()
             changed = true
@@ -870,19 +962,20 @@ local function settings_body(dl, x, y, w, h, t)
         if capturing then
             local cap = vana.binds.capture()
             if cap and cap.done and cap.key then
-                vana.binds.capture_end()
-                KEYS.capture = false
                 cfg[field] = (cap.ctrl and '^' or '') .. (cap.alt and '!' or '') .. (cap.shift and '+' or '') .. tostring(cap.key):lower()
                 cfg.layout_checked = true -- (the player's own pick stands)
-                KEYS.bind()
+                KEYS.end_capture()
                 changed = true
             elseif cap and (cap.cancelled or not cap.active) then
-                vana.binds.capture_end()
-                KEYS.capture = false
-                KEYS.bind()
+                KEYS.end_capture()
             end
         end
         ry = ry + S(36)
+        local pad = KEYS.pad_label(cfg[pad_field])
+        if pad then
+            U.text(dl, rx + S(150), ry - S(4), 'Controller: ' .. pad, P.dim, F.text, T.tiny)
+            ry = ry + S(18)
+        end
         if KEYS.notes[slot] then
             U.text(dl, rx, ry - S(2), 'Not bound: ' .. KEYS.notes[slot], P.warn, F.text, T.tiny)
             ry = ry + S(18)
@@ -891,6 +984,8 @@ local function settings_body(dl, x, y, w, h, t)
     key_row('main', 'key', 'The map')
     key_row('bare', 'bare_key', 'The bare map')
     U.text(dl, rx, ry, 'Only while the chat line is closed. /vmap and /vmap bare open them too.', P.faint, F.text, T.tiny)
+    ry = ry + S(18)
+    U.text(dl, rx, ry, 'A controller button you pick is the map\'s alone: the game no longer gets it.', P.faint, F.text, T.tiny)
     ry = ry + S(24)
     local pad_on = PAD.enabled()
     local pv2 = U.toggle(dl, '##vm_pad', rx, ry + S(12), 'Controller in addon windows', pad_on)
@@ -1082,7 +1177,7 @@ local function draw_main(t, dt)
             dl:PopClipRect()
             U.panel(dl, x, y, w, h, P.bg, 1, S(16), P.line)
             st.pad_focused = imgui.IsWindowFocused(3)
-            C.pad_on = PAD.capturing() and st.pad_focused
+            C.pad_on = PAD.capturing() and st.pad_focused and not KEYS.quiet()
             if C.pad_on then
                 pad_buttons()
                 PAD.claim()
@@ -1132,7 +1227,7 @@ local function draw_main(t, dt)
                 dl:AddLine({ x + w - S(5), y + h - S(5) - o }, { x + w - S(5) - o, y + h - S(5) }, U.u32(hot and P.accent or P.dim, hot and 0.9 or 0.5), 1)
             end
             if imgui.IsItemDeactivated() then config:save() end
-            if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and not G.typing() and not KEYS.capture then
+            if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and not G.typing() and not KEYS.quiet() then
                 if st.sel then st.sel = nil elseif st.settings_open then st.settings_open = false else C.open(false) end
             end
         end)
@@ -1211,6 +1306,13 @@ vana.events.on('present', function ()
     local dt = math.max(0.001, math.min(0.1, imgui.GetIO().DeltaTime or 0.016))
     st.anim = U.lerp(st.anim, st.open and 1 or 0, math.min(1, dt * (st.open and 9 or 14)))
     if st.anim < 0.02 and not st.open then st.anim = 0 end
+    -- a key capture whose settings row wasn't drawn (the window or the page closed) is ended: see KEYS.end_capture
+    if KEYS.capture and imgui.GetFrameCount() - (KEYS.drawn_at or -100) > 2 then KEYS.end_capture() end
+    if KEYS.fire then
+        local slot = KEYS.fire
+        KEYS.fire = nil
+        C.toggle(slot == 'bare')
+    end
     local busy = st.open or st.anim > 0 or #st.cards > 0 or #U.anim.toasts > 0
     if not busy then
         -- nothing of ours on the screen: the textures go after a while, and nothing else is done
@@ -1411,6 +1513,8 @@ end)
 vana.events.on('load', function ()
     U.apply_theme(cfg.theme)
     PAD.setup('vanamaps', U)
+    vana.events.on('xinput_button', KEYS.on_xinput_button, 'vm_keys_x')
+    vana.events.on('dinput_button', KEYS.on_dinput_button, 'vm_keys_d')
     C.CV = require('canvas')(C)
     C.SB = require('sidebar')(C)
     KEYS.bind()
@@ -1418,8 +1522,9 @@ vana.events.on('load', function ()
 end)
 
 vana.events.on('unload', function ()
-    KEYS.unbind()
     if KEYS.capture then pcall(vana.binds.capture_end) end
+    KEYS.capture = false
+    KEYS.unbind()
     pcall(PAD.teardown, 'vanamaps')
     pcall(TEX.release_all)
     pcall(U.release_textures)

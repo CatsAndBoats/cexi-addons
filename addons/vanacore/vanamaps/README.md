@@ -14,7 +14,8 @@ anywhere, drop pins with notes, and share a pin in chat.
   The map follows you until you move it, and changes floor and zone with you.
 - **Mouse, keys and controller.** Drag to pan (a thrown map glides), wheel to zoom about the pointer, double-click to
   centre and zoom in, right-click for a menu. `M` opens and closes it while the chat line is closed (the key is a
-  setting). With a controller: left stick the pointer, right stick the map, triggers zoom, bumpers change floor,
+  setting, and a controller button can open it too: press the button when the settings ask for a key; the game no
+  longer gets that button). With a controller: left stick the pointer, right stick the map, triggers zoom, bumpers change floor,
   Confirm drops or opens a pin, Options goes to the lists, Cancel backs out.
 - **Ways into the next zone.** A signpost marks each way out of a zone, where its doorway is. Click one and the
   neighbour's map opens, with a ring where you would come out; back takes you back. The crosshair button on the map
