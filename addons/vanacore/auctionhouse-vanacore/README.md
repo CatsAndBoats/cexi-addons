@@ -24,7 +24,7 @@ to `Vanacore\scripts\boot.txt`. Needs VanaCore 0.7.47 or newer (its `vana.imgui`
 
 **Buy.** Categories are grouped on the left (Weapons, Armor, Scrolls, Items, Materials, Food, Others); a count
 beside each category is how many of its items are up right now. The list shows each item's icon, level and jobs,
-how many singles and stacks are up, and the last sale once it's known; sort it by name, level or stock (names A to Z, level and stock highest first; click the sort in use again
+how many singles and stacks are up, and the last sale once it's known; sort it by name, level or stock (names A to Z, level and stock highest first; a scroll's level is the one its spell is learned at, your main job's when it learns it, else your sub job's, else the lowest any job learns it at, shown under its name as **Lv 14 · RDM**; click the sort in use again
 to turn it round, and its arrow shows which way it runs), and the
 **In stock** chip hides everything with nothing up, and the **Usable** chip hides gear your current main job,
 at its level, and your race can't wear, and spell scrolls (and Geomancy's Indi- plates) neither your main job nor your sub job can learn at
@@ -59,7 +59,7 @@ lately, when the record is shorter), the median, a sparkline of the last thirty 
 Watched items are checked every five minutes while you play, house open or not, and a sale under your price or
 stock coming back shows as a notice. Clicking a row opens its card.
 
-**Sell.** Your bag, with the items the house doesn't take greyed (the **Sellable** chip above the bag hides them
+**Sell.** Your bag, with the items the house doesn't take greyed, along with anything priced in your bazaar or worn, each saying why (the server answers a fee request for those with nothing at all, so the window doesn't ask) (the **Sellable** chip above the bag hides them
 instead, and is remembered). The two buttons beside it show the bag as icons or as a list with each item's name,
 how many you have, its category and the last price it sold for once you've looked at it (also remembered). **Bag** /
 **Name** beside those keeps the bag's own order or sorts it by name (click **Name** again for Z to A), the box in the

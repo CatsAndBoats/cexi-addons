@@ -14,7 +14,7 @@
 
 addon.name    = 'auctionhouse-vanacore'
 addon.author  = 'Carver'
-addon.version = '1.3'
+addon.version = '1.3.1'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -398,11 +398,26 @@ local function refresh_inventory()
         local it = inv[i]
         if it and it.id and it.id ~= 0 then
             if it.id == 65535 then st.gil = it.count or 0
-            else list[#list + 1] = { slot = it.index or i, id = it.id, count = it.count or 1, flags = it.flags or 0 } end
+            else list[#list + 1] = { slot = it.index or i, id = it.id, count = it.count or 1, flags = it.flags or 0, price = it.price or 0 } end
         end
     end
     st.inventory = list
     st.inv_at = clock()
+end
+
+-- why a slot of your bag can't go to the house as it stands (nil when it can): the server's lock on it, which the
+-- game keeps per slot (the item packet's LockFlg) along with the bazaar price. The server answers a fee request for
+-- a locked item with nothing at all (auctionutils::SellingItems returns), so the window says why instead of waiting
+-- on a reply that never comes. 0x19: priced in your bazaar; 0x13: a linkshell worn; 0x1B: on a mannequin; 0x05 (and
+-- anything else): locked, which in the bag means worn. Returns the reason in full, and short (for the bag's rows)
+local function held_why(it)
+    if it == nil then return nil end
+    local f = it.flags or 0
+    if (it.price or 0) > 0 or f == 0x19 then return LANG.t('In your bazaar: take it out to sell it'), LANG.t('In your bazaar') end
+    if f == 0 then return nil end
+    if f == 0x13 then return LANG.t('A linkshell you have on'), LANG.t('Linkshell worn') end
+    if f == 0x1B then return LANG.t('On a mannequin'), LANG.t('On a mannequin') end
+    return LANG.t('Equipped: take it off to sell it'), LANG.t('Equipped')
 end
 
 local function forget_history(item)
@@ -898,6 +913,26 @@ local function name_has(name, words)
     return true
 end
 
+-- the level a scroll's spell is learned at, for the Level sort and the row's line (a scroll has no level of its own, so
+-- the sort had nothing to go by): your main job's when it learns the spell, else your sub job's, else the lowest any
+-- job learns it at. Returns the level and the job; nil for anything that isn't a spell's scroll. Over 99 is the job
+-- points spent before the spell is learned (the game's own way of saying it)
+local function scroll_level(id)
+    if not SCROLL_CATS[I.category_of(id) or 0] then return nil end
+    local lv = I.scroll_levels(id)
+    if lv == nil then return nil end
+    local w = wearer()
+    local function at(job) local n = job and job > 0 and lv[job] or nil return (n ~= nil and n >= 1) and n or nil end
+    if at(w.job) then return at(w.job), w.job end
+    if at(w.sub) then return at(w.sub), w.sub end
+    local best, bj = nil, nil
+    for j = 1, 23 do
+        local n = at(j)
+        if n and (best == nil or n < best) then best, bj = n, j end
+    end
+    return best, bj
+end
+
 -------------------------------------------------------------------------------
 -- Where you are: the zone, the counter
 --
@@ -976,6 +1011,13 @@ end
 
 local function do_ask(slot, item, price, stack)
     if not may_trade() then refuse_trade() return end
+    for _, it in ipairs(st.inventory) do
+        if it.slot == slot then
+            local why = held_why(it)
+            if why then U.toast('danger', LANG.t("Can't sell that"), why, 6, 'ban') return end
+            break
+        end
+    end
     if price > 999999999 then U.toast('danger', 'Too high', 'The house takes prices up to 999,999,999 gil', 4, 'ban') return end
     st.sell.pending = true
     st.sell.at = clock()
@@ -1027,7 +1069,7 @@ local function relist_step()
         local need = rl.stack and I.get(rl.id).stack or 1
         local slot = nil
         for _, it in ipairs(st.inventory) do
-            if it.id == rl.id and it.count >= need then slot = it.slot break end
+            if it.id == rl.id and it.count >= need and held_why(it) == nil then slot = it.slot break end
         end
         if slot then
             rl.stage, rl.at = 'quote', clock()
@@ -1953,6 +1995,11 @@ local function item_sub_lines(id, max_w, size)
     size = size or T.tiny
     local r = I.get(id)
     local line = I.jobs_line(id)
+    if line == '' then
+        -- a scroll: the level its spell is learned at (yours, when your job learns it), as the Level sort has it
+        local n, job = scroll_level(id)
+        if n then line = (n > 99 and (LANG.t('Job points') .. ' ' .. n) or ('Lv ' .. n)) .. '  ·  ' .. LANG.job_label(job, U.JOBS[job] or '?') end
+    end
     if r.stack > 1 then line = (line ~= '' and (line .. '  ·  ') or '') .. 'Stacks of ' .. r.stack end
     if LANG.lang() ~= 'ja' or line == '' or measure(line, F.text, size) <= max_w then return { line } end
     local lines = wrap(line, F.text, size, math.max(S(40), max_w))
@@ -2091,7 +2138,8 @@ local function draw_list(dl, x, y, w, h, t)
             ids = copy
         end
         if settings.sort == 'level' then
-            by(function (id) return I.get(id).level or 0 end)
+            -- gear by the level it's worn at, scrolls by the level their spell is learned at (scroll_level)
+            by(function (id) local r = I.get(id) return (r.level or 0) > 0 and r.level or scroll_level(id) or 0 end)
         elseif settings.sort == 'stock' then
             by(function (id) local s1, s2 = stock_of(id) return (s1 or 0) + (s2 or 0) end)
         elseif desc then
@@ -2282,7 +2330,7 @@ local function draw_list(dl, x, y, w, h, t)
         local r = I.get(row_id)
         local sort = settings.sort or 'name'
         local label, small
-        if sort == 'level' then label, small = tostring(r.level or 0), LANG.t('LEVEL')
+        if sort == 'level' then label, small = tostring((r.level or 0) > 0 and r.level or scroll_level(row_id) or 0), LANG.t('LEVEL')
         elseif sort == 'stock' then
             local s1, s2 = stock_of(row_id)
             label, small = tostring((s1 or 0) + (s2 or 0)), LANG.t('UP NOW')
@@ -2597,9 +2645,12 @@ local function draw_sell(dl, x, y, w, h, t)
         -- sellable as the game's own window judges it: not NOAUCTION-flagged in the client's item data. Not by the house's
         -- category lists: only the categories you've opened are asked for, so an item missing from them may still be
         -- one the house takes (the fee quote says so when it doesn't)
-        local sellable = bit.band(r.flags, 0x40) == 0
+        -- and not held (in your bazaar, worn): the server won't quote a fee for those, nor answer at all
+        local held, held_short = held_why(it)
+        local sellable = bit.band(r.flags, 0x40) == 0 and held == nil
+        local no = LANG.t('The house does not take this')
         if settings.sellable_only and not sellable then hidden = hidden + 1
-        else items[#items + 1] = { it = it, r = r, sellable = sellable } end
+        else items[#items + 1] = { it = it, r = r, sellable = sellable, why = held or (not sellable and no) or nil, short = held_short or (not sellable and no) or nil } end
     end
     -- the header box's words: only what has them in its name
     local words = filter_words('sell')
@@ -2671,7 +2722,7 @@ local function draw_sell(dl, x, y, w, h, t)
         text_center(cdl, x, gy + S(40), bagw, 'Nothing in your bag the house takes', P.dim, F.disp, T.body)
     end
     for _, entry in ipairs(items) do
-        local it, r, sellable = entry.it, entry.r, entry.sellable
+        local it, r, sellable, why, short_why = entry.it, entry.r, entry.sellable, entry.why, entry.short
         local key = '##bag' .. it.slot
         imgui.SetCursorScreenPos({ cx, cy })
         local seat = st.pad_first and n == 0 and PAD.capturing()
@@ -2693,7 +2744,7 @@ local function draw_sell(dl, x, y, w, h, t)
             text(cdl, nx, cy + S(5), fit(r.name, F.disp, T.body, cw_ - ch_ - S(150)), sellable and P.text or P.faint, F.disp, T.body)
             local sub = it.count > 1 and ('x' .. it.count .. (r.stack > 1 and ('  ·  ' .. LANG.t('stacks of') .. ' ' .. r.stack) or '')) or ''
             local cat = I.category_of(it.id)
-            local cn = sellable and (cat and LANG.t(I.CATEGORY_NAME[cat] or '') or '') or LANG.t('The house does not take this')
+            local cn = sellable and (cat and LANG.t(I.CATEGORY_NAME[cat] or '') or '') or short_why or ''
             if cn ~= '' then sub = sub ~= '' and (sub .. '  ·  ' .. cn) or cn end
             text(cdl, nx, cy + S(26), fit(sub, F.text, T.tiny, cw_ - ch_ - S(150)), P.dim, F.text, T.tiny, a_)
             local hs = sellable and history_of(it.id, false)
@@ -2715,7 +2766,7 @@ local function draw_sell(dl, x, y, w, h, t)
         -- which have no names, and after a moment on a row
         if hovered then
             st.hover_id, st.hover_rect, st.hover_fast = it.id, nil, not listed_view
-            st.hover_count, st.hover_note = it.count, (not sellable) and LANG.t('The house does not take this') or nil
+            st.hover_count, st.hover_note = it.count, why
         end
         if pressed and sellable then
             st.sell.slot, st.sell.item, st.sell.count = it.slot, it.id, it.count
@@ -2787,12 +2838,17 @@ local function draw_sell(dl, x, y, w, h, t)
         text(dl, sx + pw - S(32) - measure(verdict, F.text, T.tiny), label_y + S(2), verdict, vcol, F.text, T.tiny)
     end
     local short = st.sell.stack and (st.sell.count or 0) < r.stack -- looking at stack prices without a full stack
-    local can = may_trade() and price > 0 and not st.sell.pending and not short
+    -- the slot picked, as the bag has it now (put in the bazaar or worn since it was picked, it can't go)
+    local held = nil
+    for _, it in ipairs(st.inventory) do if it.slot == st.sell.slot then held = held_why(it) break end end
+    local can = may_trade() and price > 0 and not st.sell.pending and not short and held == nil
     -- one button, named for the price: the house is asked its fee, and its answer opens the card with the whole
     -- transaction (the price, the fee paid now, the payout) to say yes to; a fee already known opens it at once
     local known = st.sell.asked and st.sell.asked.price == price and st.sell.asked.stack == st.sell.stack
     if not may_trade() then
         text(dl, sx, sy, (trade_block() or LANG.t('Talk to an auction clerk to trade')) .. '  ·  ' .. LANG.t('listing needs one'), P.warn, F.text, T.small)
+    elseif held then
+        text(dl, sx, sy, fit(held, F.text, T.small, pw - S(32)), P.warn, F.text, T.small)
     elseif short then
         text(dl, sx, sy, string.format(LANG.t('You have %d of %d: a stack lists once you have a full one'), st.sell.count, r.stack), P.warn, F.text, T.small)
     elseif known then
@@ -3901,7 +3957,7 @@ local function tick()
     end
     if st.sell.pending and clock() - st.sell.at > LIMITS.reply then
         st.sell.pending = false
-        U.toast('danger', 'No answer', LANG.t('The house did not answer'), 5, 'hourglass-end')
+        U.toast('danger', 'No answer', st.sell.asked == nil and LANG.t('The house did not answer: it says nothing about an item that is worn or in your bazaar') or LANG.t('The house did not answer'), 6, 'hourglass-end')
     end
     if st.cancel_pending ~= nil and clock() - (st.cancel_at or 0) > LIMITS.reply then
         st.cancel_pending, st.cancel_what = nil, nil
