@@ -14,7 +14,7 @@
 
 addon.name    = 'auctionhouse-vanacore'
 addon.author  = 'Carver'
-addon.version = '1.3.1'
+addon.version = '1.3.2'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
@@ -4105,11 +4105,79 @@ vana.events.on('packet_in', function (e)
     end
 end)
 
+-- The game's auto-translate in a typed line: 0xFD, a type, a language byte, two bytes, 0xFD. Type 0x02 is a phrase
+-- (category, index: what the chat line's Tab offers); 0x07 an item, its id high byte first, with a zero byte sent as
+-- 0xFF and the type 0x09 (high) or 0x0A (low) instead; 0x13, 0x15 and 0x16 a key item the same way. The line comes to
+-- the command event as typed, markers and all, and an id byte can be 0x20, which splitting on spaces would cut. So each
+-- is taken out before the words are split: a phrase becomes its words (the game's own decoder), an item the marker
+-- \1 with its id kept aside, a key item \2, anything else nothing. Returns the line and the item ids, in order
+local function decode_line(line)
+    local items = {}
+    local out = line:gsub('\253(.)(.)(.)(.)\253', function (t, _, a, b)
+        t, a, b = t:byte(), a:byte(), b:byte()
+        if t == 0x02 then
+            local ok, text = pcall(vana.ashita.parse_auto_translate, string.char(0xFD, t, 0x02, a, b, 0xFD), false)
+            return ok and type(text) == 'string' and (' ' .. text:gsub('[%z\1-\31\253]', '') .. ' ') or ' '
+        end
+        if t == 0x07 or t == 0x09 or t == 0x0A then
+            if t == 0x09 then a = 0 elseif t == 0x0A then b = 0 end
+            items[#items + 1] = a * 256 + b
+            return ' \1 '
+        end
+        if t == 0x13 or t == 0x15 or t == 0x16 then return ' \2 ' end
+        return ' '
+    end)
+    return out, items
+end
+
+-- an item named exactly (an id, or an auto-translated item): its card on the Buy tab, in its category. Its category is
+-- the house's own answer when it has given one, else VanaCore's item table (the server's, so it's known before the
+-- category has ever been opened here); an item the house never sells says so
+local function pick_exact(id)
+    local cat = I.category_of(id)
+    if cat == nil then
+        local ok, row = pcall(function () return vana.gamedata.items[id] end)
+        local ah = ok and type(row) == 'table' and tonumber(row.ah) or nil
+        if ah and ah > 0 and I.CATEGORY_NAME[ah] then cat = ah end
+    end
+    local r = I.get(id)
+    if cat == nil or bit.band(r.flags or 0, 0x40) ~= 0 then
+        say((r.placeholder and ('Item ' .. id) or r.name) .. " isn't sold at the auction house")
+        return false
+    end
+    open_window()
+    st.tab, st.settings_open = 'buy', false
+    st.results, st.query[1] = nil, ''
+    st.category, st.group = cat, I.group_of(cat).id
+    st.group_open[st.group] = true
+    local g = I.group_of(cat)
+    if g.sub and g.sub.cats[cat] then st.sub_open = st.sub_open or {} st.sub_open[g.id] = true end
+    fetch_list(cat)
+    select_item(id)
+    return true
+end
+
 vana.events.on('command', function (e)
+    local line, at_items = decode_line(e.command or '')
     local words = {}
-    for word in e.command:gmatch('%S+') do words[#words + 1] = word end
+    for word in line:gmatch('%S+') do words[#words + 1] = word end
     local cmd = (words[1] or ''):lower()
-    if cmd ~= '/ah' and cmd ~= '//ah' then return false end
+    if cmd ~= '/ah' and cmd ~= '//ah' and cmd ~= '/auctionhouse' and cmd ~= '//auctionhouse' then return false end
+    -- an auto-translated item in a search or a pick is that very item; a key item never goes to the house
+    local sub = (words[2] or ''):lower()
+    if sub == 'search' or sub == 's' or sub == 'pick' or sub == 'watch' then
+        if at_items[1] then
+            if sub == 'watch' then
+                if I.rows[at_items[1]] or pick_exact(at_items[1]) then toggle_watch(at_items[1], false) end
+            else
+                pick_exact(at_items[1])
+            end
+            return true
+        end
+        for i = 3, #words do
+            if words[i] == '\2' then say("Key items aren't sold at the auction house") return true end
+        end
+    end
     local what = (words[2] or ''):lower()
     if what == '' or what == 'toggle' then
         if st.open then st.open = false else open_window() end
@@ -4145,21 +4213,15 @@ vana.events.on('command', function (e)
             say('Search server: ' .. st.search_where)
         end
     elseif what == 'pick' and words[3] then
-        open_window()
-        st.tab = 'buy'
         local id = tonumber(words[3])
-        if id == nil then
+        if id then
+            pick_exact(id)
+        else
+            open_window()
+            st.tab = 'buy'
             local hits = I.search(I.client_text(table.concat(words, ' ', 3)), 1)
             id = hits[1]
-        end
-        if id and I.rows[id] then
-            local cat = I.category_of(id)
-            st.category, st.group = cat, I.group_of(cat).id
-            st.group_open[st.group] = true
-            fetch_list(cat)
-            select_item(id)
-        else
-            say('No such item in the house')
+            if id and I.rows[id] then pick_exact(id) else say('No such item in the house') end
         end
     elseif what == 'sellpick' and tonumber(words[3]) then
         open_window()
@@ -4275,7 +4337,7 @@ vana.events.on('command', function (e)
         if st.lists[st.category] then for _ in pairs(st.lists[st.category].items) do listed = listed + 1 end end
         say(string.format('category %d: %d items, %d up, %d known zero, %d unknown, %d rows in the list reply, in_stock %s', st.category, #ids, up, zero, unknown, listed, tostring(settings.in_stock)))
     else
-        say('/ah [show|hide|buy|sell|listings|activity|watch [<id or name>]|search <name>|pick <id or name>|settings|theme <name>|server <host[:port]|auto>|scale <percent>|opacity <percent>|refresh|debug]')
+        say('/ah (or /auctionhouse) [show|hide|buy|sell|listings|activity|watch [<id or name>]|search <name>|pick <id or name>|settings|theme <name>|server <host[:port]|auto>|scale <percent>|opacity <percent>|refresh|debug]; an auto-translated item after search, pick or watch is that item')
     end
     return true
 end)

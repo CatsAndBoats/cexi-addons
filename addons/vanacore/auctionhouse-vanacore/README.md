@@ -166,6 +166,11 @@ The Japanese localization is Hando's work (cexi-addons PR #11) — thank you.
 | `/ah lang auto\|en\|ja` | The window's language: the client's own, English, or Japanese |
 | `/ah scale <percent>` | Window size, 50 to 300 |
 | `/ah opacity <percent>` | Window opacity, 40 to 100 |
+
+`/auctionhouse` is the same command as `/ah`. An auto-translate phrase typed after `search`, `pick` or `watch` (the chat
+line's Tab) counts as its words. An auto-translated item in the line, as a chat addon can build one (the game's own Tab
+offers phrases only), is that very item: its card opens in its category, as `/ah pick <id>` does, even before that
+category has been opened here, and an item the house never sells, or a key item, gets a line saying so.
 | `/ah refresh` | Forget fetched lists and histories |
 | `/ah debug` | Counters, the search server, the zone and whether it has a counter, the nearest clerk, the last error |
 | `/ah pad [on\|off\|<button>]` | The controller: its state, the setting, or a press of `a`, `b`, `x`, `y`, `up`, `down`, `left`, `right`, `l1`, `r1`, `l2`, `r2`, `start`, `back`; `/ah pad stick <x> <y> [frames]` a stick |
