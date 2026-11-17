@@ -1,0 +1,76 @@
+name: Release addon packages
+
+# Each VanaCore addon in addons/vanacore/ gets its own GitHub release, tagged <name>-v<version> (its addon.version), with
+# its .vcaddon as the one asset: what players double-click, install with /vana > Addons > Install from file, or open from
+# a web page as vanacore://install/<the asset's address>. A push to main that changes an addon releases it only when its
+# addon.version is new; an unchanged version is passed over. See .github/scripts/release_vcaddon.py and tools/vcaddon/.
+#
+# Nothing outlives the run but the releases: packages are built in the runner's temp folder, uploaded and deleted, no
+# workflow artifact is ever uploaded, and the last step deletes any artifact the run has all the same.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "addons/vanacore/**"
+  workflow_dispatch:
+    inputs:
+      addons:
+        description: Comma-separated addon folder names (blank = every addon in addons/vanacore)
+        type: string
+        default: ""
+      force:
+        description: Replace the package on a version already released
+        type: boolean
+        default: false
+      dry_run:
+        description: Say what would be released and upload nothing
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-vcaddon
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    name: Release addon packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Guards pack.py's checks (the same as VanaCore's installer): if they're broken, nothing is released
+      - name: Self-check
+        run: python3 tools/vcaddon/test_pack.py
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ONLY: ${{ inputs.addons }}
+          FORCE: ${{ inputs.force }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          flags=()
+          if [ "$FORCE" = "true" ]; then flags+=(--force); fi
+          if [ "$DRY_RUN" = "true" ]; then flags+=(--dry-run); fi
+          python3 .github/scripts/release_vcaddon.py --only "$ONLY" --work "$RUNNER_TEMP/vcaddon" "${flags[@]}"
+
+      - name: Clean up
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf "$RUNNER_TEMP/vcaddon"
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[].id'); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+            echo "deleted artifact $id"
+          done

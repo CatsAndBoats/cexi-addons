@@ -23,6 +23,22 @@ Party Finder needs the server's Party Finder module (`party_finder` in the CatsE
 its `target_marks` module; the Auction House and VanaMaps run on any LandSandBoat server and need nothing server-side.
 VanaMaps shows the XICombinedMaps pack's HD maps when the launcher's Combined Maps is installed, else the game's own.
 
+## Addon packages (.vcaddon)
+
+Each VanaCore addon is also released on its own as a `.vcaddon`, one file a player double-clicks (Windows), installs
+with /vana > Addons > **Install from file**, or opens from a web page as `vanacore://install/<the file's address>`.
+
+- **Releasing:** bump `addon.version` in the addon's Lua and push to main. **Release addon packages** releases every
+  addon whose version is new as `<folder>-v<version>` (for example `vanamaps-v1.0.2`), with its `.vcaddon` and the
+  `vanacore://` link in the notes; an addon whose version is released already is passed over. **Actions → Release addon
+  packages → Run workflow** does the same by hand: *addons* narrows it, *force* replaces the package on a version
+  that's out, *dry run* only says what it would do.
+- **Nothing else is kept:** packages are built in the runner's temp folder and deleted once uploaded, no workflow
+  artifact is uploaded, and the run's last step deletes any it has. The releases are the only output.
+- **Locally:** `python3 tools/vcaddon/pack.py addons/vanacore/<folder> -o <dir>` makes one; `--check <file>` says
+  whether VanaCore would install it. `pack.py`, `test_pack.py` and the format's README are copies of the launcher's
+  `conflux/tools/vcaddon/` (CatsAndBoats/launcher): change them there and copy them here.
+
 ## Publishing to the launcher
 
 **Actions → Publish to R2 → Run workflow** puts the VanaCore addons into the launcher's VanaCore build, at
