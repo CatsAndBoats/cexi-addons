@@ -3,7 +3,8 @@ name: Release addon packages
 # Each VanaCore addon in addons/vanacore/ gets its own GitHub release, tagged <name>-v<version> (its addon.version), with
 # its .vcaddon as the one asset: what players double-click, install with /vana > Addons > Install from file, or open from
 # a web page as vanacore://install/<the asset's address>. A push to main that changes an addon releases it only when its
-# addon.version is new; an unchanged version is passed over. See .github/scripts/release_vcaddon.py and tools/vcaddon/.
+# addon.version is new; an unchanged version is passed over. Each addon also has a <name>-latest release whose one asset,
+# <name>.vcaddon, every new version replaces: a fixed address the README links. See .github/scripts/release_vcaddon.py.
 #
 # Nothing outlives the run but the releases: packages are built in the runner's temp folder, uploaded and deleted, no
 # workflow artifact is ever uploaded, and the last step deletes any artifact the run has all the same.

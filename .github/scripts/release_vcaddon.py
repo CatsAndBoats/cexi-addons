@@ -57,6 +57,51 @@ def notes(manifest: dict, repo: str, tag: str, asset: str, change: str) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+VERSION_MARK = "<!-- vcaddon version: "
+
+
+def latest_version(latest_tag: str) -> str | None:
+    """The version <name>-latest holds (from the mark in its notes), or None when there's no such release."""
+    r = gh("release", "view", latest_tag, "--json", "body", "--jq", ".body", check=False)
+    if r.returncode != 0:
+        return None
+    start = r.stdout.find(VERSION_MARK)
+    if start < 0:
+        return ""
+    start += len(VERSION_MARK)
+    return r.stdout[start:r.stdout.find(" -->", start)].strip()
+
+
+def update_latest(repo: str, target: str, latest_tag: str, had: str | None, path: str, manifest: dict,
+                  title: str) -> None:
+    """<name>-latest: one release per addon whose asset is always <name>.vcaddon, the newest version, so its address
+    never changes (the README links it). Made the first time, then its asset replaced and its tag moved."""
+    name = manifest["name"]
+    fixed = os.path.join(os.path.dirname(path), f"{name}.vcaddon")
+    shutil.copyfile(path, fixed)
+    url = f"https://github.com/{repo}/releases/download/{latest_tag}/{name}.vcaddon"
+    body = (f"{VERSION_MARK}{manifest['version']} -->\n"
+            f"Always the newest {manifest.get('title', name)}, now {manifest['version']}, at an address that doesn't "
+            f"change:\n\n{url}\n\nA web page can link it as:\n\n```\nvanacore://install/{url}\n```\n\n"
+            f"Every version has its own release too ({name}-v<version>).\n")
+    latest_title = f"{title} (latest)"
+    try:
+        if had is None:
+            create = ["release", "create", latest_tag, fixed, "--title", latest_title, "--notes-file", "-",
+                      "--latest=false"]
+            if target:
+                create += ["--target", target]
+            gh(*create, stdin=body)
+        else:
+            gh("release", "upload", latest_tag, fixed, "--clobber")
+            gh("release", "edit", latest_tag, "--title", latest_title, "--notes-file", "-", stdin=body)
+            if target:
+                gh("api", "-X", "PATCH", f"repos/{repo}/git/refs/tags/{latest_tag}", "-f", f"sha={target}",
+                   "-F", "force=true")
+    finally:
+        os.remove(fixed)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--only", default="", help="comma-separated addon folder names (blank: every addon)")
@@ -75,27 +120,39 @@ def main() -> int:
             folder = os.path.join(ADDONS, name)
             try:
                 manifest = pack.manifest_for(folder, name)
-                tag = f"{name}-v{manifest['version']}"
+                version = manifest["version"]
+                tag, latest_tag = f"{name}-v{version}", f"{name}-latest"
                 exists = release_exists(tag)
-                if exists and not args.force:
-                    print(f"{name}: {tag} is released already, passed over")
+                latest = latest_version(latest_tag)
+                do_version = not exists or args.force
+                do_latest = latest != version or args.force
+                if not do_version and not do_latest:
+                    print(f"{name}: {tag} is released already and {latest_tag} is {version}, passed over")
                     continue
                 path = pack.pack(folder, work)
                 info = pack.check(path)
                 asset = os.path.basename(path)
                 what = f"{asset} ({info['files']} files, {os.path.getsize(path):,} bytes)"
                 if args.dry_run:
-                    print(f"{name}: would {'replace the package on' if exists else 'release'} {tag}: {what}")
-                elif exists:
+                    if do_version:
+                        print(f"{name}: would {'replace the package on' if exists else 'release'} {tag}: {what}")
+                    if do_latest:
+                        print(f"{name}: would {'make' if latest is None else 'update'} {latest_tag} ({latest or 'none'} -> {version})")
+                    os.remove(path)
+                    continue
+                title = f"{manifest.get('title', name)} {version}"
+                if do_version and exists:
                     gh("release", "upload", tag, path, "--clobber")
                     print(f"{name}: {tag}'s package replaced: {what}")
-                else:
-                    title = f"{manifest.get('title', name)} {manifest['version']}"
+                elif do_version:
                     create = ["release", "create", tag, path, "--title", title, "--notes-file", "-", "--latest=false"]
                     if target:
                         create += ["--target", target]
                     gh(*create, stdin=notes(manifest, repo, tag, asset, last_change(folder)))
                     print(f"{name}: released {tag}: {what}")
+                if do_latest:
+                    update_latest(repo, target, latest_tag, latest, path, manifest, title)
+                    print(f"{name}: {latest_tag} is {version}")
                 os.remove(path)
             except (pack.Problem, OSError) as e:
                 print(f"{name}: {e}", file=sys.stderr)
