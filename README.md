@@ -28,11 +28,11 @@ VanaMaps shows the XICombinedMaps pack's HD maps when the launcher's Combined Ma
 Each VanaCore addon is also released on its own as a `.vcaddon`, one file a player double-clicks (Windows), installs
 with /vana > Addons > **Install from file**, or opens from a web page as `vanacore://install/<the file's address>`.
 
-- **Releasing:** bump `addon.version` in the addon's Lua and push to main. **Release addon packages** releases every
-  addon whose version is new as `<folder>-v<version>` (for example `vanamaps-v1.0.2`), with its `.vcaddon` and the
-  `vanacore://` link in the notes; an addon whose version is released already is passed over. **Actions → Release addon
-  packages → Run workflow** does the same by hand: *addons* narrows it, *force* replaces the package on a version
-  that's out, *dry run* only says what it would do.
+- **Releasing (by hand only):** bump `addon.version` in the addon's Lua, push, then **Actions → Release addon
+  packages → Run workflow**. It releases every addon whose version is new as `<folder>-v<version>` (for example
+  `vanamaps-v1.0.2`), with its `.vcaddon` and the `vanacore://` link in the notes; an addon whose version is released
+  already is passed over. *addons* narrows it, *force* replaces the package on a version that's out, *dry run* only
+  says what it would do. A push never releases anything by itself.
 - **Fixed download links:** each addon also has a release `<folder>-latest` whose one file, `<folder>.vcaddon`, is
   replaced by every new version, so its address never changes: the Download column above links those. A web page
   can link the same address as `vanacore://install/https://github.com/CatsAndBoats/cexi-addons/releases/download/<folder>-latest/<folder>.vcaddon`
