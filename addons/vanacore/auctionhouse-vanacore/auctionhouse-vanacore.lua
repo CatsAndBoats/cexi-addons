@@ -14,7 +14,7 @@
 
 addon.name    = 'auctionhouse-vanacore'
 addon.author  = 'Carver'
-addon.version = '1.3.2'
+addon.version = '1.3.3'
 addon.desc    = "CatsEyeXI's Auction House: browse, buy, sell and watch your sales from one window."
 
 local imgui = vana.imgui
