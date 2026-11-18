@@ -1,0 +1,47 @@
+# Operating system and editor files
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.DS_Store
+._*
+*.swp
+*~
+.vscode/
+.idea/
+*.code-workspace
+
+# Python (tools/)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Left over from merges, patches and editors
+*.orig
+*.rej
+*.bak
+*.tmp
+
+# Logs and crash dumps
+*.log
+*.dmp
+
+# Secrets and local settings: never commit these
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+secrets.*
+.claude/settings.local.json
+
+# Archives and builds made locally (releases go up as release assets, not commits)
+*.zip
+*.7z
+*.pdb
+
+# The "Vet an addon" workflow's working folder, when run locally
+_vet/

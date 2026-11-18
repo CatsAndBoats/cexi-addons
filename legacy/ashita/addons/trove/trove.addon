@@ -1,0 +1,7 @@
+[addon]
+name=trove
+author=Loxley
+version=1.0.0
+desc=Modular storage and progression tool with plugin support
+link=https://github.com/LoxleyX/trove
+file=trove.lua

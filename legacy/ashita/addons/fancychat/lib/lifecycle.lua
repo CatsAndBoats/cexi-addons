@@ -1,0 +1,677 @@
+-- lib/lifecycle.lua — addon load / unload / Init / SaveSettings /
+-- DumpChat + the load and packet event callbacks.
+
+require('common')
+local chat     = require('chat')
+local imgui    = require('imgui')
+local ffi      = require('ffi')
+local settings = require('settings')
+local utils    = require('utils')
+local gdi      = require('gdifonts.include')
+local state    = require('lib.state')
+
+local fcw            = state.fcw
+local uiw            = state.uiw
+local mvc            = state.mvc
+local tab            = state.tab
+local set            = state.set
+local dw             = state.dw
+local par            = state.par
+local b              = state.b
+local fo             = state.fo
+local ro             = state.ro
+local allSettings    = state.allSettings
+local defaultColors  = state.defaultColors
+local gamepadButtons = state.gamepadButtons
+
+local M = {}
+
+-- Exposed as a global; callers still reach for SaveSettings() by name.
+function M.SaveSettings()
+	settings.save('allSettings')
+end
+_G.SaveSettings = M.SaveSettings
+
+-- Validate that the active filter file for `kind` ('combat' or
+-- 'other') still exists on disk.  Sets the matching missing-flag on
+-- `set` so the Filters tab can render its red warning, and on the
+-- transition  exists -> missing  auto-disables the master toggle for
+-- that kind + prints a one-shot /echo notice.
+-- Idempotent: safe to call from any detection point (tab open,
+-- Refresh, Reload, master-toggle-on, init).  When the file reappears
+-- the flag is cleared on the next call, no notice (only the missing
+-- transition is loud).
+local FILTER_KIND_KEYS = {
+	combat = {
+		selected = 'SelectedCombatFilter',
+		master   = 'CustomFilters',
+		missing  = 'filterFileMissing',
+		label    = 'combat',
+	},
+	other = {
+		selected = 'SelectedOtherFilter',
+		master   = 'OtherFilters',
+		missing  = 'otherFilterFileMissing',
+		label    = 'other',
+	},
+}
+
+function M.CheckActiveFilter(kind)
+	local k = FILTER_KIND_KEYS[kind]
+	if not k then return end
+	local fname       = allSettings[k.selected]
+	local exists      = utils.FilterFileExists(kind, fname)
+	local was_missing = set[k.missing]
+	set[k.missing] = not exists
+	if not exists and not was_missing then
+		if allSettings[k.master][1] then
+			allSettings[k.master][1] = false
+			M.SaveSettings()
+		end
+		print('FancyChat: '..k.label..' filter file "'..tostring(fname)..'" no longer exists - chat filtering disabled.')
+	end
+end
+_G.CheckActiveFilter = M.CheckActiveFilter
+
+-- Back-compat shim: anything that imported the old global keeps
+-- working.  Equivalent to CheckActiveFilter('combat').
+function M.CheckActiveCombatFilter()
+	M.CheckActiveFilter('combat')
+end
+_G.CheckActiveCombatFilter = M.CheckActiveCombatFilter
+
+-- Replay OriginalBuffer back through the chat manager.  Used at
+-- unload-time auto-dump and by the `/fchat savelogs` flow.
+function M.DumpChat(closingline)
+	par.dumping = true
+	for i = 1, #b.OriginalBuffer do
+		local msg = b.OriginalBuffer[i]:sub(b.OriginalBuffer[i]:find('|') + 1)
+		for _, FWDchar in ipairs(utils.fwdchars) do
+			if msg:endswith(FWDchar) then
+				msg = msg:gsub(FWDchar, '')
+				break
+			end
+		end
+		AshitaCore:GetChatManager():AddChatMessage(
+			tonumber(b.OriginalBuffer[i]:sub(1, b.OriginalBuffer[i]:find('|') - 1)),
+			false,
+			msg
+		)
+	end
+	if closingline then
+		print(closingline)
+	end
+	par.dumping = false
+end
+_G.DumpChat = M.DumpChat
+
+-- Post-login one-shot: build BigMode objects, size chat windows.
+function M.Init()
+	local dsize = imgui.GetIO().DisplaySize
+
+	-- Rebuild tab.Tabs once per Init based on the SplitLinkshellTab
+	-- setting.  In split mode the single 'Linkshell' tab is replaced
+	-- with two consecutive 'L1' / 'L2' entries (kept at the same
+	-- position so the tab order stays consistent).  This is the
+	-- restart-required half of the toggle - flipping it requires
+	-- /addon reload which re-runs Init().
+	if allSettings.SplitLinkshellTab[1] then
+		local newTabs = T{}
+		for i = 1, #tab.Tabs do
+			if tab.Tabs[i] == 'Linkshell' then
+				newTabs[#newTabs + 1] = 'L1'
+				newTabs[#newTabs + 1] = 'L2'
+			else
+				newTabs[#newTabs + 1] = tab.Tabs[i]
+			end
+		end
+		tab.Tabs = newTabs
+		-- Replace 'Linkshell' in the persisted SelectedTab / SelectedTab2
+		-- with 'L1' so the user doesn't land on a no-longer-existent tab
+		-- after toggling the setting on.
+		if allSettings.SelectedTab  == 'Linkshell' then allSettings.SelectedTab  = 'L1' end
+		if allSettings.SelectedTab2 == 'Linkshell' then allSettings.SelectedTab2 = 'L1' end
+		if tab.NextTab  == 'Linkshell' then tab.NextTab  = 'L1' end
+		if tab.NextTab2 == 'Linkshell' then tab.NextTab2 = 'L1' end
+	else
+		-- Inverse correction: if the user is turning split OFF and had
+		-- previously selected L1 / L2, fall back to plain 'Linkshell'.
+		if allSettings.SelectedTab  == 'L1' or allSettings.SelectedTab  == 'L2' then
+			allSettings.SelectedTab = 'Linkshell'
+		end
+		if allSettings.SelectedTab2 == 'L1' or allSettings.SelectedTab2 == 'L2' then
+			allSettings.SelectedTab2 = 'Linkshell'
+		end
+		if tab.NextTab  == 'L1' or tab.NextTab  == 'L2' then tab.NextTab  = 'Linkshell' end
+		if tab.NextTab2 == 'L1' or tab.NextTab2 == 'L2' then tab.NextTab2 = 'Linkshell' end
+	end
+
+	fo.BigMode = gdi:create_object(allSettings.fontSettings, false)
+	fo.BigMode:set_font_height(allSettings.fontSettings.font_height - 2)
+	fo.BigMode:set_text('Big Mode')
+	fo.BigMode:set_font_color(0xFAD1F4FF)
+	fo.BigMode:set_visible(false)
+	ro.BigMode = gdi:create_rect(allSettings.rectSettings, false)
+	ro.BigMode:set_fill_color(0x00000000)
+
+	fcw[3].BG_W      = allSettings.chatLineMaxL * allSettings.fontSettings.font_height * 0.59
+	fcw[3].BG_H      = math.floor(dsize.y * 0.8)
+	fcw[3].ChatLines = math.floor(fcw[3].BG_H / allSettings.fontSettings.font_height)
+	fcw[3].HLeft     = fcw[3].BG_H - (fcw[3].ChatLines * allSettings.fontSettings.font_height)
+	fcw[3].BG_H      = math.floor(allSettings.fontSettings.font_height * fcw[3].ChatLines * fcw[1].BGScale)
+
+	local last_fo = allSettings.SecondChat[1] and 2 or 1
+	if fo.Aux[last_fo] ~= nil then
+		fcw[1].InitDone = true
+		ChangeTab(1, tab.NextTab)
+		if allSettings.SecondChat[1] then ChangeTab(2, tab.NextTab2) end
+	end
+
+	fcw[1].BG_W = allSettings.chatLineMaxL * allSettings.fontSettings.font_height * 0.59
+	fcw[1].BG_H = math.floor(allSettings.fontSettings.font_height * allSettings.ChatLines * fcw[1].BGScale)
+	ro.RectBG[1]:set_fill_color(allSettings.rectSettings.fill_color)
+	ro.RectBG[1]:set_width(allSettings.chatLineMaxL * allSettings.fontSettings.font_height * 0.59)
+	ro.RectBG[1]:set_height(allSettings.fontSettings.font_height * (allSettings.ChatLines + 1) + (allSettings.fontSettings.font_height / 5))
+
+	if allSettings.SecondChat[1] then
+		fcw[2].BG_W = allSettings.chatLineMaxL * allSettings.fontSettings.font_height * 0.59
+		fcw[2].BG_H = math.floor(allSettings.fontSettings.font_height * allSettings.ChatLines * fcw[2].BGScale)
+		ro.RectBG[2]:set_fill_color(allSettings.rectSettings.fill_color)
+		ro.RectBG[2]:set_width(allSettings.chatLineMaxL * allSettings.fontSettings.font_height * 0.59)
+		ro.RectBG[2]:set_height(allSettings.fontSettings.font_height * (allSettings.ChatLines + 1) + (allSettings.fontSettings.font_height / 5))
+	end
+
+	fcw[1].RoRectBaseX = ((allSettings.fontSettings.font_height * 2.5) / allSettings.fontSettings.font_height)
+	fcw[1].RoRectBaseY = (allSettings.ChatLines * allSettings.fontSettings.font_height) + (allSettings.fontSettings.font_height / (allSettings.fontSettings.font_height - 100)) - (allSettings.fontSettings.font_height / 10)
+	fcw[2].RoRectBaseY = (allSettings.ChatLines * allSettings.fontSettings.font_height) + (allSettings.fontSettings.font_height / (allSettings.fontSettings.font_height - 100)) - (allSettings.fontSettings.font_height / 10)
+	fcw[3].RoRectBaseY = (fcw[3].ChatLines    * allSettings.fontSettings.font_height) + (allSettings.fontSettings.font_height / (allSettings.fontSettings.font_height - 100)) - (allSettings.fontSettings.font_height / 10)
+	fcw[1].FWDBaseX    = (allSettings.fontSettings.font_height / 1.35) + (allSettings.chatLineMaxL * allSettings.fontSettings.font_height / 400)
+	fcw[1].BKWBaseY    = (allSettings.fontSettings.font_height * allSettings.ChatLines) - ((allSettings.fontSettings.font_height * 5) / allSettings.fontSettings.font_height)
+	fcw[1].BKWBaseX    = ((allSettings.fontSettings.font_height * 1.5) / allSettings.fontSettings.font_height)
+
+	-- Build a lowercased zone-name lookup once at init time so the
+	-- right-click /sea tooltip in render.lua can scan chat lines
+	-- without repeatedly hitting the resource manager.  IDs run
+	-- 0..~340 with gaps; skip the empty / "none" rows.  Stored on
+	-- set.zoneNames as { [lowercased_name] = canonical_name }.
+	if not next(set.zoneNames) then
+		local rm = AshitaCore:GetResourceManager()
+		for id = 0, 350 do
+			local name = rm:GetString('zones.names', id)
+			if name and name ~= '' and name:lower() ~= 'none' then
+				set.zoneNames[name:lower()] = name
+			end
+		end
+	end
+end
+_G.Init = M.Init
+
+function M.register()
+
+	-- ---------------------------------------------------------------------
+	-- FFXiMain.dll pattern scans, extracted so they can be re-run after
+	-- the game finishes initialising.  Pulled out of the load callback
+	-- because on some FFXi distributions (notably the CatsEyeXI client)
+	-- the DLL is patched / relocated at runtime after Ashita addons
+	-- finish loading; the scans that ran during 'load' would resolve
+	-- against a not-yet-final code layout, leaving menu-overlap
+	-- detection silently broken until /addon reload from in-game.
+	-- See the matching d3d_present rescan registration below.
+	-- ---------------------------------------------------------------------
+	local function scan_memory_pointers()
+		-- DEREF-AT-READ CONVERSION: this function now caches ONLY code
+		-- addresses returned by ashita.memory.find().  The old version
+		-- also collapsed the first dereference here (reading the imm32/
+		-- disp32 operand out of the code bytes, or even the value inside
+		-- the static slot the operand points at).  Those scan-time
+		-- snapshots froze whatever the game had mid-login; on clients
+		-- whose runtime patching / UI initialisation settles AFTER the
+		-- login-time addon reload, features consuming the snapshots
+		-- ("Prevent obstructing FFXI UI", legacy-chat detection, R0
+		-- warning) stayed silently dead for the whole session.  The
+		-- consumers in render.lua now re-read the operand chains every
+		-- frame (matching the idiom XIUI / HXUI / xitools use for the
+		-- same byte signatures), which self-heals the moment the game
+		-- settles - so WHEN this scan runs no longer matters, only
+		-- that the code bytes themselves were found.
+
+		-- Menu-state object: operand at +16 of the match is the disp32
+		-- of 'cmp eax,[g_pMenu]'.  render.lua re-reads it per frame.
+		uiw.MenuPtr = ashita.memory.find('FFXiMain.dll', 0, '8B480C85C974??8B510885D274??3B05', 16, 0)
+
+		-- Zone/netstat struct: store the two code-derived parts; the
+		-- heap pointer inside the static slot is resolved per use in
+		-- render.lua (it is null until zone-in completes).  Guarded:
+		-- this function also runs from event callbacks (one-shot
+		-- rescan + every zone-in), where a failed pattern match must
+		-- not turn into a near-null read.
+		local patternAddr = ashita.memory.find('FFXiMain.dll', 0, '8935????????81C6????????56E8', 0, 0)
+		if patternAddr ~= nil and patternAddr ~= 0 then
+			uiw.NetStatBase   = ashita.memory.read_uint32(patternAddr + 0x02)
+			uiw.NetStatOffset = ashita.memory.read_uint32(patternAddr + 0x08)
+		end
+
+		-- UI size globals: cache the instruction addresses; render.lua
+		-- re-reads operand + value per frame.
+		uiw.UISizeYPtr = ashita.memory.find('FFXiMain.dll', 0, 'A1????????3BF07E??8BF0', 0, 0)
+		uiw.UISizeXPtr = ashita.memory.find('FFXiMain.dll', 0, 'BF????????F3??0FBF4C24', 0, 0)
+
+		-- NPC-dialog byte flag ('A0 disp32' = mov al,[flag]); operand
+		-- re-read per use in render.lua.
+		uiw.DialogPtr = ashita.memory.find('FFXiMain.dll', 0, 'A0????????53565784C08BF1', 0, 0)
+
+		uiw.EventPtr  = ashita.memory.find('FFXiMain.dll', 0, 'A0????????84C0741AA1????????85C0741166A1????????663B05????????0F94C0C3', 0, 0)
+
+		-- "Is the interface hidden" bool getter, for the
+		-- Hide-chat-when-UI-is-hidden option.  Cache the code address
+		-- only; render.lua re-walks the operand chain per frame, so a
+		-- scan that ran before the client finished patching itself
+		-- self-heals on the next rescan.
+		uiw.UiHiddenPtr = ashita.memory.find('FFXiMain.dll', 0, '8B4424046A016A0050B9????????E8????????F6D81BC040C3', 0, 0)
+
+		-- Legacy chat-window draw function (moved here from load_cb so
+		-- the zone-in / one-shot rescans refresh it too); the two
+		-- window-object slot addresses at +0x01 / +0x0B are re-read
+		-- per frame in render.lua.
+		uiw.DrawMessageWindowPtr = ashita.memory.find('FFXiMain.dll', 0, 'A1????????C64059018B0D????????C6415901C20800', 0, 0)
+	end
+
+	-- One-shot re-scan latch.  Flipped to true after the d3d_present
+	-- handler below sees a populated player entity and re-runs the
+	-- pattern scans (auto-equivalent of the user typing /addon reload
+	-- once they're logged in).
+	local _pointers_rescanned = false
+	ashita.events.register('d3d_present', 'ptr_rescan_cb', function ()
+		if _pointers_rescanned then return end
+		local pe = GetPlayerEntity()
+		if pe and pe.ServerId and pe.ServerId ~= 0 then
+			scan_memory_pointers()
+			_pointers_rescanned = true
+		end
+	end)
+
+	-- =====================================================================
+	-- Addon load: scan FFXiMain.dll for required pointers, load saved
+	-- settings, instantiate GDI font / rect objects for both chat windows.
+	-- =====================================================================
+	ashita.events.register('load', 'load_cb', function ()
+
+		-- Initial scan; may resolve against a not-yet-final code layout
+		-- if Ashita brought the addon up before FFXi's runtime patches
+		-- settled.  The d3d_present-driven re-scan above corrects that.
+		scan_memory_pointers()
+
+		-- Settings load + repair ----------------------------------------------
+		-- Snapshot the *defaults* schema (deep copy) BEFORE settings.load
+		-- merges user data in-place.  Used below as the reference shape
+		-- when RepairSettings prunes obsolete keys after a version bump.
+		local allSettingsOG = utils.cloneTable(allSettings)
+		allSettings.colors  = utils.cloneTable(defaultColors)
+
+		-- In-place merge so module aliases (lib/state.lua, lib/ui_panels.lua,
+		-- ...) continue to see the same table reference.
+		state.replace_allSettings(settings.load(allSettings, 'allSettings'))
+
+		-- Safety net: ensure every default-colour key is present in the
+		-- loaded allSettings.colors.  This matters when default_colors()
+		-- gains a new entry between addon versions (e.g. the new
+		-- error1 / error slots for Error (main) / Error (other)).
+		-- (Previously this loop had `.k` instead of `[k]`, which wrote
+		-- to a literal key called "k" and silently dropped new defaults.)
+		local addedAny = false
+		for k, v in pairs(defaultColors) do
+			if not allSettings.colors[k] then
+				allSettings.colors[k] = utils.cloneTable(v)
+				addedAny = true
+			end
+		end
+		if addedAny then M.SaveSettings() end
+
+		-- RepairSettings prunes obsolete keys and fixes type
+		-- mismatches before Sugar's table.merge runs on logout.
+		state.replace_allSettings(utils.RepairSettings(allSettingsOG, allSettings))
+
+		if not allSettings.ver or allSettings.ver ~= addon.version then
+			allSettings.ver = addon.version
+			M.SaveSettings()
+			print('Version change detected('..addon.version..'): Settings table restored')
+		end
+
+		-- Refresh the defaults settings file so a future logout's
+		-- table.merge sees the current (repaired) schema.  We flip
+		-- the settings-lib flags so save() targets the defaults folder.
+		do
+			local settingslib = require('settings')
+			local was_in   = settingslib.logged_in
+			local was_name = settingslib.name
+			local was_sid  = settingslib.server_id
+			settingslib.logged_in = false
+			settingslib.name      = ''
+			settingslib.server_id = 0
+			settings.save('allSettings')
+			settingslib.logged_in = was_in
+			settingslib.name      = was_name
+			settingslib.server_id = was_sid
+		end
+
+
+		ResetAutoHideTimer()
+		set.alertList     = utils.stringsplit(allSettings.alertwords, ',')
+		set.alertBuffer[1] = allSettings.alertwords
+		par.customFilters = utils.LoadFilters('combat', allSettings.SelectedCombatFilter)
+		par.otherFilters  = utils.LoadFilters('other',  allSettings.SelectedOtherFilter)
+		-- Detection point: addon load.  If a persisted active filter
+		-- file was deleted while the addon was offline, this raises
+		-- the matching missing flag and forces the master toggle off
+		-- so we don't boot up in the silently-broken "enabled but
+		-- empty" state.
+		M.CheckActiveFilter('combat')
+		M.CheckActiveFilter('other')
+
+		fcw[1].PlayerName = allSettings.PlayerName
+
+		-- Schema migration: older saved configs predate the L1 / L2
+		-- Custom-tab slots ([6] = L1, [7] = L2).  Pad with `false` so
+		-- the parser's matching branch and the Settings UI checkboxes
+		-- can address those slots without a NIL guard.  Idempotent.
+		while #allSettings.CustomTabModes < 7 do
+			allSettings.CustomTabModes[#allSettings.CustomTabModes + 1] = false
+		end
+
+		-- Mirror persisted settings into the live `set.*` working copy used
+		-- by the Settings UI's pending-edit fields.
+		set.SecondChat[1]        = allSettings.SecondChat[1]
+		set.ChatLineMaxL         = allSettings.chatLineMaxL
+		set.PlateBGColor         = allSettings.rectSettings.fill_color
+		set.FontHeight           = allSettings.fontSettings.font_height
+		set.ChatLines            = allSettings.ChatLines
+		set.InstantChatScroll[1] = allSettings.InstantChatScroll[1]
+		set.SplitLinkshellTab[1] = allSettings.SplitLinkshellTab[1]
+		for ct = 1, #allSettings.CustomTabModes do
+			set.CustomTabModes[ct] = allSettings.CustomTabModes[ct]
+		end
+
+		fcw[1].ChatShift           = allSettings.fontSettings.font_height
+		fcw[1].ChatShiftScale      = fcw[1].ChatShiftScale_Min
+		fcw[2].ChatShiftScale_Base = allSettings.fontSettings.font_height * 2
+		fcw[2].ChatShiftScale_Min  = allSettings.fontSettings.font_height * 2
+		fcw[2].ChatShift           = allSettings.fontSettings.font_height
+		fcw[2].ChatShiftScale      = fcw[2].ChatShiftScale_Min
+
+		-- Cache D3D8 texture pointers as ImGui-compatible uint32 ids.
+		fcw[1].TextureIDBorder   = tonumber(ffi.cast('uint32_t', fcw[1].Textures.border))
+		fcw[1].TextureIDSettings = tonumber(ffi.cast('uint32_t', fcw[1].Textures.settings))
+		fcw[1].TextureIDGuideMe  = tonumber(ffi.cast('uint32_t', fcw[1].Textures.guideme))
+		fcw[1].TextureIDLogs     = tonumber(ffi.cast('uint32_t', fcw[1].Textures.logs))
+		fcw[1].TextureIDLoading  = tonumber(ffi.cast('uint32_t', fcw[1].Textures.loading))
+		fcw[1].TextureIDRefresh  = tonumber(ffi.cast('uint32_t', fcw[1].Textures.refresh))
+		fcw[1].TextureIDFolder   = tonumber(ffi.cast('uint32_t', fcw[1].Textures.folder))
+		fcw[1].TextureIDCompact  = tonumber(ffi.cast('uint32_t', fcw[1].Textures.compact))
+		fcw[1].TextureIDManual   = tonumber(ffi.cast('uint32_t', fcw[1].Textures.manual))
+		fcw[1].TextureIDInfo     = tonumber(ffi.cast('uint32_t', fcw[1].Textures.info))
+		fcw[1].TextureIDNotepad  = tonumber(ffi.cast('uint32_t', fcw[1].Textures.notepad))
+		fcw[1].TextureIDDumpchat = tonumber(ffi.cast('uint32_t', fcw[1].Textures.dumpchat))
+		fcw[1].TextureIDLogo     = tonumber(ffi.cast('uint32_t', fcw[1].Textures.logo))
+
+		-- Legacy chat-window pointer is scanned in scan_memory_pointers
+		-- now (so rescans refresh it); render.lua re-reads the window
+		-- slot operands per frame.  Just validate the scan found it.
+		if uiw.DrawMessageWindowPtr == nil or uiw.DrawMessageWindowPtr == 0 then
+			error(chat.header(addon.name):append(chat.error('Error: Failed to locate a required pointer.')))
+		end
+		uiw.WinPtr1 = ashita.memory.read_uint32(uiw.DrawMessageWindowPtr + 0x01)
+		uiw.WinPtr2 = ashita.memory.read_uint32(uiw.DrawMessageWindowPtr + 0x0B)
+
+		-- GDI font/rect object construction ----------------------------------
+		local dsize = imgui.GetIO().DisplaySize
+
+		gdi:set_auto_render(false)
+
+		ro.Scroll[1] = gdi:create_rect(allSettings.rectSettings, false)
+		ro.Scroll[1]:set_width(10)
+		ro.Scroll[1]:set_height(10)
+		ro.Scroll[1]:set_fill_color(0x88FFFFFF)
+		ro.Scroll[1]:set_z_order(1)
+		ro.Scroll[1]:set_visible(false)
+		ro.RectBG[1] = gdi:create_rect(allSettings.rectSettings, false)
+		-- Chat plates crop rather than squash: the window's proportions
+		-- change with the font size, the line count and the width
+		-- slider, so a stretched background would distort differently
+		-- for every player.  'cover' keeps the artwork's own proportions
+		-- and trims the overflow evenly, centred.  The input bar stays
+		-- on 'stretch' - it is a thin strip whose art is authored for
+		-- that shape.
+		ro.RectBG[1]:set_image_fit('cover')
+		fo.Fwd[1]    = gdi:create_object(allSettings.fontSettings, false)
+		fo.Fwd[1]:set_text(utf8.char(0x25bc))
+		fo.Bkw[1]    = gdi:create_object(allSettings.fontSettings, false)
+		fo.Bkw[1]:set_font_height(allSettings.fontSettings.font_height - 2)
+		fo.Bkw[1]:set_font_color(0xFAD1F4FF)
+		fo.Bkw[1]:get_background():set_fill_color(0x22000000)
+		fo.Bkw[1]:set_bg_overlap(0)
+		fo.Bkw[1]:set_text(utf8.char(0x2004)..utf8.char(0x25b2)..' Scrolling chat history...')
+
+		-- Custom input chat bar (gdi mirror of the native input line).
+		-- Hidden until the render loop shows it while the chat input
+		-- is open.  z-orders: plate above the main chat content (1),
+		-- text above its own plate (2), so the bar reads cleanly even
+		-- when dragged over the chat windows.
+		ro.InputBarBG = gdi:create_rect(allSettings.rectSettings, false)
+		-- Optional image-backed plate.  The chosen file (if any) and
+		-- its alpha-only tint are applied per frame in render.lua so
+		-- picker changes are live; this just sets the fit mode and the
+		-- fallback fill colour used when no image is selected.
+		-- Experiment: take the top `height` PIXELS of the texture at
+		-- native vertical resolution and stretch only the width, so a
+		-- tall source is sampled from its top-left corner rather than
+		-- squashed into the strip.  Revert to 'stretch' to compare.
+		ro.InputBarBG:set_image_fit('topband')
+		ro.InputBarBG:set_fill_color(allSettings.InputBarBGColor)
+		ro.InputBarBG:set_width(math.floor(allSettings.InputBarChars * allSettings.InputBarFontHeight * 0.59))
+		ro.InputBarBG:set_height(allSettings.InputBarFontHeight + 4 + (allSettings.InputBarPadding * 2))
+		ro.InputBarBG:set_z_order(1)
+		ro.InputBarBG:set_visible(false)
+		fo.InputBar = gdi:create_object(allSettings.fontSettings, false)
+		fo.InputBar:set_font_height(allSettings.InputBarFontHeight)
+		fo.InputBar:set_z_order(2)
+		fo.InputBar:set_visible(false)
+		-- The caret is its OWN object, drawn over the text rather than
+		-- spliced into it: a caret inside the string shifts every
+		-- character to its right by a column as the player arrows
+		-- through the line, which reads as the text jittering.
+		fo.InputBarCaret = gdi:create_object(allSettings.fontSettings, false)
+		fo.InputBarCaret:set_font_height(allSettings.InputBarFontHeight)
+		fo.InputBarCaret:set_text('|')
+		fo.InputBarCaret:set_z_order(3)
+		fo.InputBarCaret:set_visible(false)
+
+		local customSettings = allSettings.fontSettings
+		customSettings.bg_overlap = 0
+
+		for L_i = 1, allSettings.ChatLines do
+			table.insert(fo.Chat[1], gdi:create_object(allSettings.fontSettings, false))
+			table.insert(fo.Aux[1],  gdi:create_object(allSettings.fontSettings, false))
+
+			fo.Chat[1][L_i]:set_font_height(allSettings.fontSettings.font_height)
+			fo.Aux[1][L_i]:set_font_height(allSettings.fontSettings.font_height)
+			fo.Chat[1][L_i]:set_position_x(fcw[1].Anchor_X)
+			fo.Chat[1][L_i]:set_position_y(fcw[1].Anchor_Y - (allSettings.fontSettings.font_height * (L_i - 1)))
+			if fo.Chat[1][L_i].rect ~= nil then
+				fo.Aux[1][L_i]:set_position_x(fcw[1].Anchor_X + fo.Chat[1][L_i].rect.right)
+			else
+				fo.Aux[1][L_i]:set_position_x(fcw[1].Anchor_X)
+				fo.Aux[1][L_i]:set_visible(false)
+			end
+			fo.Aux[1][L_i]:set_position_y(fcw[1].Anchor_Y - (allSettings.fontSettings.font_height * (L_i - 1)))
+		end
+
+		if allSettings.SecondChat[1] then
+			ro.Scroll[2] = gdi:create_rect(allSettings.rectSettings, false)
+			ro.Scroll[2]:set_width(10)
+			ro.Scroll[2]:set_height(10)
+			ro.Scroll[2]:set_fill_color(0x88FFFFFF)
+			ro.Scroll[2]:set_z_order(1)
+			ro.Scroll[2]:set_visible(false)
+			ro.RectBG[2] = gdi:create_rect(allSettings.rectSettings, false)
+			ro.RectBG[2]:set_image_fit('cover')
+			fo.Fwd[2]    = gdi:create_object(allSettings.fontSettings, false)
+			fo.Fwd[2]:set_text(utf8.char(0x25bc))
+			fo.Bkw[2]    = gdi:create_object(allSettings.fontSettings, false)
+			fo.Bkw[2]:set_font_height(allSettings.fontSettings.font_height - 2)
+			fo.Bkw[2]:set_font_color(0xFAD1F4FF)
+			fo.Bkw[2]:get_background():set_fill_color(0x22000000)
+			fo.Bkw[2]:set_bg_overlap(0)
+			fo.Bkw[2]:set_text(utf8.char(0x2004)..utf8.char(0x25b2)..' Scrolling chat history...')
+
+			for L_i = 1, allSettings.ChatLines do
+				table.insert(fo.Chat[2], gdi:create_object(allSettings.fontSettings, false))
+				table.insert(fo.Aux[2],  gdi:create_object(customSettings, false))
+				fo.Chat[2][L_i]:set_font_height(allSettings.fontSettings.font_height)
+				fo.Aux[2][L_i]:set_font_height(allSettings.fontSettings.font_height)
+				fo.Chat[2][L_i]:set_position_x(fcw[2].Anchor_X)
+				fo.Chat[2][L_i]:set_position_y(fcw[2].Anchor_Y - (allSettings.fontSettings.font_height * (L_i - 1)))
+				if fo.Chat[2][L_i].rect ~= nil then
+					fo.Aux[2][L_i]:set_position_x(fcw[2].Anchor_X + fo.Chat[2][L_i].rect.right)
+				else
+					fo.Aux[2][L_i]:set_position_x(fcw[2].Anchor_X)
+					fo.Aux[1][L_i]:set_visible(false)
+				end
+				fo.Aux[2][L_i]:set_position_y(fcw[2].Anchor_Y - (allSettings.fontSettings.font_height * (L_i - 1)))
+			end
+		end
+
+		-- Seed both primary and secondary chat with a welcome line.
+		-- Strip the inline color marking when the user has disabled
+		-- EnableFCColorMarking — the line stays the same content,
+		-- just rendered in the single buffer colour instead.
+		local welcome = '--Welcome to \\§FF44CCFFç\\Fancy Chat--\\§--------ç\\'
+		if not allSettings.EnableFCColorMarking[1] then
+			welcome = utils.cleanMC(welcome)
+		end
+		for W_i = 1, 2 do
+			table.insert(b.ChatBuffer[W_i][2].text,     welcome)
+			table.insert(b.ChatBuffer[W_i][2].color,    0xFFFFFFFF)
+			table.insert(b.ChatBuffer[W_i][2].auxText,  '')
+			table.insert(b.ChatBuffer[W_i][2].auxColor, 0xFF44CCFF)
+			table.insert(b.ChatBuffer[W_i][2].url,      0)
+		end
+		b.ChatBufferN_All    = 1
+		b.ChatBufferN_AllAlt = 1
+
+		-- Initial tab selection.
+		if allSettings.SelectedTab  ~= 'All' then tab.NextTab  = allSettings.SelectedTab  end
+		if allSettings.SelectedTab2 ~= 'All' then tab.NextTab2 = allSettings.SelectedTab2 end
+		if allSettings.HideCombatFromAll[1] then
+			tab.Tabs[1] = 'AllAlt'
+			if allSettings.SelectedTab == 'All' then tab.NextTab = 'AllAlt' end
+			if allSettings.SecondChat[1] and allSettings.SelectedTab2 == 'All' then
+				tab.NextTab2 = 'AllAlt'
+			end
+		else
+			tab.Tabs[1] = 'All'
+			if allSettings.SelectedTab == 'AllAlt' then tab.NextTab = 'All' end
+			if allSettings.SecondChat[1] and allSettings.SelectedTab2 == 'AllAlt' then
+				tab.NextTab2 = 'All'
+			end
+		end
+
+		-- NOTE: fcw[1].MoveChatPos1..5 (menu-avoidance offsets) are now
+		-- recomputed every frame in render.lua from the LIVE UI size.
+		-- The old load_cb-only derivation here was the root cause of
+		-- "Prevent obstructing FFXI UI" staying dead after login for
+		-- players whose clients hadn't populated the UI-size globals
+		-- yet: the stale offsets were never recomputed by any rescan.
+
+		fcw[1].PositionLinesRequest = {true, true}
+		PositionLines(1)
+		if allSettings.SecondChat[1] then
+			fcw[2].PositionLinesRequest = {true, true}
+			PositionLines(2)
+		end
+	end)
+
+	-- =====================================================================
+	-- Addon unload: optionally dump the FancyChat backlog into the legacy
+	-- chat for the next addon to pick up, then tear down GDI and persist.
+	-- =====================================================================
+	ashita.events.register('unload', 'unload_cb', function ()
+		if allSettings.autoDumpChat[1] then
+			M.DumpChat()
+		end
+		fcw[1].Closing = true
+		gdi:destroy_interface()
+		M.SaveSettings()
+	end)
+
+	-- =====================================================================
+	-- Packet 0x052: NPC dialog frame.  Hide forward/back arrows and
+	-- record dialog timing.
+	-- Packet 0x000B: zone-out begin.  Suspend rendering.
+	-- Packet 0x000A: zone-in complete.  Resume.
+	-- =====================================================================
+	local combat_packets = require('lib.combat_packets')
+	ashita.events.register('packet_in', 'zonename_packet_in', function(e)
+		-- Packet-based combat filter: if enabled in settings, the
+		-- 0x0028 action packet is inspected and may have its chat
+		-- message fields zeroed (preserving animations) and the
+		-- 0x0029 action-message packet may be blocked entirely.
+		-- dispatch() routes both packet IDs.
+		combat_packets.dispatch(e)
+
+		-- "Is the server actually talking to us?" signal for the
+		-- /servmes injection in render.lua.  We count non-injected
+		-- (i.e., real-from-server) packets up to a cap; once the
+		-- counter crosses the threshold render.lua uses (currently
+		-- 30), the post-reload settle timer can fire /servmes
+		-- knowing the connection is warm.  Capping at 200 keeps
+		-- the increment cheap on long sessions.
+		--local bit = require('bit')
+		--print('in: '..bit.tohex(e.id))
+		if e.id == 0x052 then
+			if fo.Fwd[1] ~= nil then fo.Fwd[1]:set_visible(false) end
+			if fo.Fwd[2] ~= nil then fo.Fwd[2]:set_visible(false) end
+			par.IsInConv = false
+			-- Guarded: ashita.memory.find returns 0 on a failed match,
+			-- which would turn this into a read at address 1.
+			par.InEvent = false
+			if uiw.EventPtr ~= nil and uiw.EventPtr ~= 0 then
+				local evSlot = ashita.memory.read_uint32(uiw.EventPtr + 1)
+				par.InEvent = (evSlot ~= 0) and (ashita.memory.read_uint8(evSlot) == 1)
+			end
+			uiw.DialogCDStart = os.clock()
+		elseif e.id == 0x000B then
+			fcw[1].Zoning = true
+			fcw[1].HasDoneServMes = true
+			uiw.MenuList = {}
+		elseif e.id == 0x000A then
+			fcw[1].Zoning = false
+			uiw.DialogShown = false
+			-- Late-stage pointer re-scan: 0x000A fires when zone-in
+			-- is fully complete, which on private-server clients
+			-- (notably CatsEyeXI) is AFTER any client-side patches
+			-- to FFXiMain.dll have settled.  The load-time scan and
+			-- the d3d_present-based rescan can fire earlier - between
+			-- character-select and zone-in - and resolve against a
+			-- not-yet-patched code layout.  Rescanning on every zone
+			-- transition guarantees the pointers match the current
+			-- code state, which is what makes menu-overlap detection
+			-- work without the user having to Restart & apply.
+			scan_memory_pointers()
+		elseif e.id == 0x00E0 and not fcw[1].HasDoneServMes and fcw[1].WaitingServMes == 0 then
+			fcw[1].WaitingServMes = os.clock()
+		end
+
+	end)
+
+	-- =====================================================================
+	-- Packet 0x0026: emote.  Reset menu cache.
+	-- =====================================================================
+	ashita.events.register('packet_out', 'packet_out_callback1', function (e)
+		--print('out: '..bit.tohex(e.id))
+		if e.id == 0x0026 then
+			uiw.MenuList = {}
+		end
+	end)
+end
+
+return M

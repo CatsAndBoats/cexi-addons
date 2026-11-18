@@ -1,0 +1,962 @@
+{
+  "source": "https://catseyexi.com/addon-policy",
+  "fetched": "2026-11-12T15:59:46Z",
+  "count": 135,
+  "addons": [
+    {
+      "name": "ashitachat",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "aspect",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "autojoin",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "autorespond",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "balloon",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "cfhblock",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "chainbuilder",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "changecall",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "cleancs",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "clock",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "config",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "customcolors",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "drawdistance",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "fastcs",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "filterless",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "filters",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "filterscan",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "fps",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "freemem",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "geocompass",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "hardwaremouse",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "hideconsole",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "hideui",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "HXUI",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "ibar",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "ime",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "imguistyle",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "instantchat",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "libs",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "links",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "logincmd",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "logs",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "macrofix",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "mapdot",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "minimap",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "move",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "nolock",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "NoMount",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "noname",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "renamer",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "screenshot",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "sexchange",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "simplelog",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "singlerace",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "stfu",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "targetlines",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "timestamp",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "tokens",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "xipivot",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "xivbar",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "zonename",
+      "status": "approved",
+      "tier": "T0",
+      "label": "Cosmetic",
+      "desc": ""
+    },
+    {
+      "name": "ashitabars",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "ashitacast",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "ashitaframes",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "ashitainventory",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "ashitastreamdeck",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "autora",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "blusets",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "CurePlease",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "debuff",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "enternity",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "FancyTrusts",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "jobhelper",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "lootwhore",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "luashitacast",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "multisend",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "oddtranslate",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "pupdex",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "pupsets",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "rune-helper",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "sellit",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "shorthand",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "sparks",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "tcrossbar",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "yunagearopt",
+      "status": "approved",
+      "tier": "T1",
+      "label": "Sanctioned",
+      "desc": ""
+    },
+    {
+      "name": "ahprofit",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "ashitaguide",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "ashitamcp",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "ashitaminimap",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "avhelper",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "blucheck",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "blumon",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "chains",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "chatmon",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "checker",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "craftmon",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "deeps",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "distance",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "duration",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "easyTH",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "equipmon",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "find",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "findall",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "gainz",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "itemwatch",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "kazenoeye",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "minimapmon",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "mobdb",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "motiontracker",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "npcit",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "partybuffs",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "partyfinder",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "partypets",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "petinfo",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "petsreborn",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "points",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "recast",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "RollTracker",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "scoreboard",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "skilluptracker",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "smnbar",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "status",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "statustimers",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "timers",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "tparty",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "TrackMeBooty",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "TravelPlanner",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "trove",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "ventures",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "watchexp",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "xicamera",
+      "status": "approved",
+      "tier": "T2",
+      "label": "Information",
+      "desc": ""
+    },
+    {
+      "name": "bellhop",
+      "status": "prohibited",
+      "tier": "T3",
+      "label": "Botting",
+      "desc": ""
+    },
+    {
+      "name": "onevent",
+      "status": "prohibited",
+      "tier": "T3",
+      "label": "Botting",
+      "desc": ""
+    },
+    {
+      "name": "repeater",
+      "status": "prohibited",
+      "tier": "T3",
+      "label": "Botting",
+      "desc": ""
+    },
+    {
+      "name": "Silmaril",
+      "status": "prohibited",
+      "tier": "T3",
+      "label": "Botting",
+      "desc": ""
+    },
+    {
+      "name": "ahgo",
+      "status": "prohibited",
+      "tier": "T4",
+      "label": "Cheating",
+      "desc": "Lets the player open and use the Auction House from any zone. The game normally only allows AH transactions inside the AH zones (cities, Mog Houses, etc.).Contextual T4: permanent ban when used in the field (e.g. selling drops mid-camp). 14-day suspension on first offense when used purely for convenience inside a city.",
+      "t4_kind": "contextual"
+    },
+    {
+      "name": "casper",
+      "status": "prohibited",
+      "tier": "T4",
+      "label": "Cheating",
+      "desc": "Lets the player walk through other players. Local-only — the server still tracks the player’s actual position.Categorical T4: always permanent. Breaks a player-to-player interaction rule even though the effect is local.",
+      "t4_kind": "categorical"
+    },
+    {
+      "name": "fastswap",
+      "status": "prohibited",
+      "tier": "T4",
+      "label": "Cheating",
+      "desc": "Defeats the gear-swap rate limit, allowing faster equipment changes than the game allows. Distinct from approved gear-swap addons (ashitacast, gearswap), which respect the rate limit.Contextual T4: permanent ban when used in combat. Lesser penalty applies only when the addon was loaded but had no in-combat effect.",
+      "t4_kind": "contextual"
+    },
+    {
+      "name": "gateway",
+      "status": "prohibited",
+      "tier": "T4",
+      "label": "Cheating",
+      "desc": "Makes closed or locked doors appear open. Encourages exploit attempts.Categorical T4: always permanent. Defeats content gating.",
+      "t4_kind": "categorical"
+    },
+    {
+      "name": "instantah",
+      "status": "prohibited",
+      "tier": "T4",
+      "label": "Cheating",
+      "desc": "Defeats the rate limit on Auction House transactions. Lets the player buy or sell faster than the game allows.Categorical T4: always permanent. Directly attacks the auction-house economy as a shared system.",
+      "t4_kind": "categorical"
+    },
+    {
+      "name": "ja0wait",
+      "status": "prohibited",
+      "tier": "T4",
+      "label": "Cheating",
+      "desc": "Lets a player use job abilities while moving, circumventing the games built in animation lockContextual T4: permanent ban when used during combat or while progressing the character. Lesser penalty applies only when the addon was clearly loaded but produced no in-combat benefit.",
+      "t4_kind": "contextual"
+    },
+    {
+      "name": "paranormal",
+      "status": "prohibited",
+      "tier": "T4",
+      "label": "Cheating",
+      "desc": "Allows the player to issue commands while dead. The game normally blocks all actions until the player is raised or returns home.Categorical T4: always permanent. Defeats a core combat-state rule.",
+      "t4_kind": "categorical"
+    },
+    {
+      "name": "peekaboo",
+      "status": "prohibited",
+      "tier": "T4",
+      "label": "Cheating",
+      "desc": "Reveals players and NPCs that should be hidden.Categorical T4: always permanent on first offense. Sister addon to truesight.",
+      "t4_kind": "categorical"
+    },
+    {
+      "name": "skeletonkey",
+      "status": "prohibited",
+      "tier": "T4",
+      "label": "Cheating",
+      "desc": "Lets the player pass through doors that should require a key item.Categorical T4: always permanent. Defeats content gating.",
+      "t4_kind": "categorical"
+    },
+    {
+      "name": "truesight",
+      "status": "prohibited",
+      "tier": "T4",
+      "label": "Cheating",
+      "desc": "Reveals hidden GMs, hidden players, and invisible entities.Categorical T4: always permanent on first offense. Directly undermines staff moderation.",
+      "t4_kind": "categorical"
+    }
+  ]
+}
