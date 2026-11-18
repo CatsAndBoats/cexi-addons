@@ -74,6 +74,11 @@ jobs:
   vet:
     name: Vet ${{ inputs.repo }}
     runs-on: ubuntu-latest
+    # pull-requests: write only for posting the report on the caller's pull request (comment_repo / comment_pr). A
+    # called workflow can only narrow its caller's token, so without this line the comment is refused (HTTP 403).
+    permissions:
+      contents: read
+      pull-requests: write
     timeout-minutes: 45
     outputs:
       outcome: ${{ steps.verdict.outputs.outcome }}
