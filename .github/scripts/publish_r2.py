@@ -52,6 +52,8 @@ BUILD_ADDONS = "addons\\vanacore\\"
 
 KEY_LAUNCHER = "launcher/launcher.json"
 KEY_STATE = "launcher/build_{tag}_{name}.gz"
+# {addon folder: commit of this repository it was last published from}; not read by the launcher
+KEY_PUBLISHED = "launcher/cexi_addons_published.json"
 PUBLIC_ORIGIN = "https://launcher.catseyexi.com"
 
 # The Manager caps recent_updates at 300. A list already longer than that (others' entries) is never shortened.
@@ -528,7 +530,20 @@ def report(plans, dry_run, summary):
             f.write("\n".join(lines) + "\n")
 
 
-def publish(r2, cfg, addons, tags, dry_run=False, summary=None, now=None):
+def record_published(r2, addons, commit):
+    """Notes in R2 which commit of this repository each addon of the run is now live from."""
+    if not commit:
+        return
+    raw = r2.get(KEY_PUBLISHED)
+    record = json.loads(raw) if raw else {}
+    for a in addons:
+        record[a.name] = commit
+    r2.put(KEY_PUBLISHED, data=(json.dumps(dict(sorted(record.items())), indent=2) + "\n").encode("utf-8"),
+           content_type="application/json")
+    log(f"Recorded {len(addons)} addon(s) as published from {commit[:12]}.")
+
+
+def publish(r2, cfg, addons, tags, dry_run=False, summary=None, now=None, commit=None):
     """Steps 2 to 6. Returns the exit code."""
     launcher, builds = read_remote(r2, tags)
     now = int(time.time()) if now is None else now
@@ -536,6 +551,8 @@ def publish(r2, cfg, addons, tags, dry_run=False, summary=None, now=None):
     report(plans, dry_run, summary)
     if all(c.empty for changes in plans.values() for c in changes):
         log("Nothing to publish: R2 already has these files.")
+        if not dry_run:
+            record_published(r2, addons, commit)
         return 0
     if dry_run:
         log("Dry run: nothing written.")
@@ -554,6 +571,7 @@ def publish(r2, cfg, addons, tags, dry_run=False, summary=None, now=None):
     changed = [tag for tag, changes in plans.items() if not all(c.empty for c in changes)]
     if not changed:
         log("Nothing left to publish: R2 had these files by the time they were up.")
+        record_published(r2, addons, commit)
         return 0
 
     log("Uploading launcher.json...")
@@ -565,6 +583,7 @@ def publish(r2, cfg, addons, tags, dry_run=False, summary=None, now=None):
         r2.put(key, data=make_state(builds[tag][1]), content_type="application/gzip")
         keys.append(key)
     purged = purge(cfg, keys)
+    record_published(r2, addons, commit)
 
     log(f"Published to {', '.join(f'{t}/{BUILD_NAME}' for t in changed)}.")
     if not purged:
@@ -584,6 +603,7 @@ def main(argv=None):
     ap.add_argument("--tags", default=DEFAULT_TAGS, help=f"comma-separated build tags (default: {DEFAULT_TAGS})")
     ap.add_argument("--dry-run", action="store_true", help="list what would change and write nothing")
     ap.add_argument("--check", action="store_true", help="check the addons' files only, without R2")
+    ap.add_argument("--commit", default="", help="the commit of this repository being published, for R2's record")
     args = ap.parse_args(argv)
 
     try:
@@ -595,7 +615,8 @@ def main(argv=None):
         if not tags:
             raise Stop("no build tags")
         cfg = config_from_env()
-        return publish(R2(cfg), cfg, addons, tags, args.dry_run, os.environ.get("GITHUB_STEP_SUMMARY"))
+        return publish(R2(cfg), cfg, addons, tags, args.dry_run, os.environ.get("GITHUB_STEP_SUMMARY"),
+                       commit=args.commit or None)
     except Stop as e:
         log(f"publish_r2: {e}")
         return 1

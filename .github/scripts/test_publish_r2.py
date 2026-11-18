@@ -152,6 +152,22 @@ class Publish(Base):
         # Files first, then launcher.json, then the state
         self.assertEqual(self.r2.puts[-2:], [p.KEY_LAUNCHER, STATE_KEY])
 
+    def test_commit_recorded_last(self):
+        addons = p.gather(self.root, [])
+        self.assertEqual(p.publish(self.r2, {}, addons, ["vanacore"], now=100, commit="a" * 40), 0)
+        self.assertEqual(self.r2.puts[-1], p.KEY_PUBLISHED)
+        record = json.loads(self.r2.objects[p.KEY_PUBLISHED])
+        self.assertEqual(record, {"auctionhouse-vanacore": "a" * 40, "partyfinder-vanacore": "a" * 40})
+        # A later run of one addon from another commit moves only its line
+        self.write("partyfinder-vanacore/images/bell.png", "png2")
+        p.publish(self.r2, {}, p.gather(self.root, ["partyfinder-vanacore"]), ["vanacore"], now=200, commit="b" * 40)
+        record = json.loads(self.r2.objects[p.KEY_PUBLISHED])
+        self.assertEqual(record, {"auctionhouse-vanacore": "a" * 40, "partyfinder-vanacore": "b" * 40})
+
+    def test_dry_run_records_nothing(self):
+        p.publish(self.r2, {}, p.gather(self.root, []), ["vanacore"], dry_run=True, now=100, commit="a" * 40)
+        self.assertNotIn(p.KEY_PUBLISHED, self.r2.objects)
+
     def test_rerun_writes_nothing(self):
         self.run_publish()
         self.r2.puts.clear()
