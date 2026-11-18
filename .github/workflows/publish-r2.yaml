@@ -8,9 +8,17 @@ name: Publish to R2
 # Secrets, the launcher repository's: R2_S3_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, and optionally
 # CLOUDFLARE_ZONE_ID + CLOUDFLARE_API_TOKEN for the cache purge.
 
+# Publishes one named commit of main, never "whatever main is now": the dry run prints the commit, and the real run
+# is given the same one. R2 records which commit each addon is live from (launcher/cexi_addons_published.json).
+# The job runs in the "release" environment: its R2 secrets are only handed over once a reviewer approves the run.
+
 on:
   workflow_dispatch:
     inputs:
+      commit:
+        description: The commit of main to publish (full hash; the dry run prints it)
+        type: string
+        required: true
       dry_run:
         description: List what would change and write nothing
         type: boolean
@@ -39,10 +47,24 @@ jobs:
     name: Publish addons
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment: release
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+
+      # Only a commit that is on main, given in full: a branch name or a commit off main is refused.
+      - name: The commit is on main
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::commit must be a full 40-character hash"; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$COMMIT" ] || { echo "::error::checked out $(git rev-parse HEAD), not $COMMIT"; exit 1; }
+          git merge-base --is-ancestor "$COMMIT" origin/main || { echo "::error::$COMMIT isn't on main"; exit 1; }
+          echo "Publishing $COMMIT ($(git log -1 --format=%s "$COMMIT"))"
 
       # Guards the diff and the file checks themselves: if either is broken, this fails before R2 is touched
       - name: Self-check
@@ -59,7 +81,8 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
           ONLY: ${{ inputs.addons }}
           TAGS: ${{ inputs.tags }}
+          COMMIT: ${{ inputs.commit }}
         run: |
           flags=()
           if [ "$DRY_RUN" = "true" ]; then flags+=(--dry-run); fi
-          python3 .github/scripts/publish_r2.py --only "$ONLY" --tags "$TAGS" "${flags[@]}"
+          python3 .github/scripts/publish_r2.py --only "$ONLY" --tags "$TAGS" --commit "$COMMIT" "${flags[@]}"
