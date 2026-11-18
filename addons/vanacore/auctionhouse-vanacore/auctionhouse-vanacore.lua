@@ -846,6 +846,13 @@ local function wearer()
     if w and clock() - w.at < 1 then return w end
     local okp, party = pcall(vana.game.party)
     local m = okp and type(party) == 'table' and type(party.members) == 'table' and party.members[1] or nil
+    -- Some clients report zero jobs/levels in the party entry.
+    if not m or (m.main_job or 0) == 0 or (m.main_job_level or 0) == 0 then
+        local ok, p = pcall(vana.game.player)
+        if ok and type(p) == 'table' and (p.main_job or 0) > 0 and (p.main_job_level or 0) > 0 then
+            m = p
+        end
+    end
     local e = me()
     w = { job = m and m.main_job or 0, level = m and m.main_job_level or 0, sub = m and m.sub_job or 0,
           sub_level = m and m.sub_job_level or 0, race = e and e.race or 0, at = clock() }
