@@ -3,13 +3,13 @@
 The client addons made for the CatsEyeXI server, for Ashita and for VanaCore, each in its own folder laid out the way
 the clients keep them, so a folder copies straight into place.
 
-| Addon | For | Folder | What it is |
-|---|---|---|---|
-| Party Finder 2.14 | Ashita | [`addons/ashita/partyfinder`](addons/ashita/partyfinder) | LFG/LFM listings, Duty Roulette, Mission Help and Venture parties |
-| Party Finder 2.2 | VanaCore | [`addons/vanacore/partyfinder-vanacore`](addons/vanacore/partyfinder-vanacore) | The same finder rewritten for VanaCore's native API: glass cards, slots, themes, sound packs |
-| Auction House 1.0 | VanaCore | [`addons/vanacore/auctionhouse-vanacore`](addons/vanacore/auctionhouse-vanacore) | The auction house as its own window: stock, sale history and graphs, watch list, selling, sold notices |
-| Clawmark 1.0 | VanaCore | [`addons/vanacore/clawmark-vanacore`](addons/vanacore/clawmark-vanacore) | Raid-style marks over targets, shared with your party and alliance; folds into an assist bar |
-| VanaMaps 1.0 | VanaCore | [`addons/vanacore/vanamaps`](addons/vanacore/vanamaps) | Every zone's map as a window: pan and zoom, you and your party on it, signposts into neighbouring zones, pins with notes shared in chat, a bare map that fades as you walk |
+| Addon | For | Folder | Download | What it is |
+|---|---|---|---|---|
+| Party Finder 2.14 | Ashita | [`addons/ashita/partyfinder`](addons/ashita/partyfinder) | | LFG/LFM listings, Duty Roulette, Mission Help and Venture parties |
+| Party Finder 2.2 | VanaCore | [`addons/vanacore/partyfinder-vanacore`](addons/vanacore/partyfinder-vanacore) | [partyfinder-vanacore.vcaddon](https://github.com/CatsAndBoats/cexi-addons/releases/download/partyfinder-vanacore-latest/partyfinder-vanacore.vcaddon) | The same finder rewritten for VanaCore's native API: glass cards, slots, themes, sound packs |
+| Auction House 1.0 | VanaCore | [`addons/vanacore/auctionhouse-vanacore`](addons/vanacore/auctionhouse-vanacore) | [auctionhouse-vanacore.vcaddon](https://github.com/CatsAndBoats/cexi-addons/releases/download/auctionhouse-vanacore-latest/auctionhouse-vanacore.vcaddon) | The auction house as its own window: stock, sale history and graphs, watch list, selling, sold notices |
+| Clawmark 1.0 | VanaCore | [`addons/vanacore/clawmark-vanacore`](addons/vanacore/clawmark-vanacore) | [clawmark-vanacore.vcaddon](https://github.com/CatsAndBoats/cexi-addons/releases/download/clawmark-vanacore-latest/clawmark-vanacore.vcaddon) | Raid-style marks over targets, shared with your party and alliance; folds into an assist bar |
+| VanaMaps 1.0 | VanaCore | [`addons/vanacore/vanamaps`](addons/vanacore/vanamaps) | [vanamaps.vcaddon](https://github.com/CatsAndBoats/cexi-addons/releases/download/vanamaps-latest/vanamaps.vcaddon) | Every zone's map as a window: pan and zoom, you and your party on it, signposts into neighbouring zones, pins with notes shared in chat, a bare map that fades as you walk |
 
 Each folder has its own README with what it does, its commands and how it talks to the server.
 
@@ -22,6 +22,27 @@ Each folder has its own README with what it does, its commands and how it talks 
 Party Finder needs the server's Party Finder module (`party_finder` in the CatsEyeXI modules repo) and Clawmark
 its `target_marks` module; the Auction House and VanaMaps run on any LandSandBoat server and need nothing server-side.
 VanaMaps shows the XICombinedMaps pack's HD maps when the launcher's Combined Maps is installed, else the game's own.
+
+## Addon packages (.vcaddon)
+
+Each VanaCore addon is also released on its own as a `.vcaddon`, one file a player double-clicks (Windows), installs
+with /vana > Addons > **Install from file**, or opens from a web page as `vanacore://install/<the file's address>`.
+
+- **Releasing (by hand only):** bump `addon.version` in the addon's Lua, push, then **Actions → Release addon
+  packages → Run workflow**. It releases every addon whose version is new as `<folder>-v<version>` (for example
+  `vanamaps-v1.0.2`), with its `.vcaddon` and the `vanacore://` link in the notes; an addon whose version is released
+  already is passed over. *addons* narrows it, *force* replaces the package on a version that's out, *dry run* only
+  says what it would do. A push never releases anything by itself.
+- **Fixed download links:** each addon also has a release `<folder>-latest` whose one file, `<folder>.vcaddon`, is
+  replaced by every new version, so its address never changes: the Download column above links those. A web page
+  can link the same address as `vanacore://install/https://github.com/CatsAndBoats/cexi-addons/releases/download/<folder>-latest/<folder>.vcaddon`
+  (GitHub doesn't make `vanacore://` clickable in a README).
+- **Nothing else is kept:** packages are built in the runner's temp folder and deleted once uploaded, no workflow
+  artifact is uploaded, and the run's last step deletes every workflow artifact in the repo, from any workflow (a
+  dry run only lists them). The releases are the only output.
+- **Locally:** `python3 tools/vcaddon/pack.py addons/vanacore/<folder> -o <dir>` makes one; `--check <file>` says
+  whether VanaCore would install it. `pack.py`, `test_pack.py` and the format's README are copies of the launcher's
+  `conflux/tools/vcaddon/` (CatsAndBoats/launcher): change them there and copy them here.
 
 ## Publishing to the launcher
 

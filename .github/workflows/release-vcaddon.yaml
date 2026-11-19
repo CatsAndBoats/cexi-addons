@@ -1,0 +1,88 @@
+name: Release addon packages
+
+# Each VanaCore addon in addons/vanacore/ gets its own GitHub release, tagged <name>-v<version> (its addon.version), with
+# its .vcaddon as the one asset: what players double-click, install with /vana > Addons > Install from file, or open from
+# a web page as vanacore://install/<the asset's address>. Run by hand only (Actions > Release addon packages): it releases
+# each addon whose addon.version is new and passes over one released already. Each addon also has a <name>-latest release whose one asset,
+# <name>.vcaddon, every new version replaces: a fixed address the README links. See .github/scripts/release_vcaddon.py.
+#
+# Nothing outlives the run but the releases: packages are built in the runner's temp folder, uploaded and deleted, no
+# workflow artifact is ever uploaded, and the last step deletes every workflow artifact in the repo, from any workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      addons:
+        description: Comma-separated addon folder names (blank = every addon in addons/vanacore)
+        type: string
+        default: ""
+      force:
+        description: Replace the package on a version already released
+        type: boolean
+        default: false
+      dry_run:
+        description: Say what would be released and upload nothing
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-vcaddon
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    name: Release addon packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Guards pack.py's checks (the same as VanaCore's installer): if they're broken, nothing is released
+      - name: Self-check
+        run: python3 tools/vcaddon/test_pack.py
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ONLY: ${{ inputs.addons }}
+          FORCE: ${{ inputs.force }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          flags=()
+          if [ "$FORCE" = "true" ]; then flags+=(--force); fi
+          if [ "$DRY_RUN" = "true" ]; then flags+=(--dry-run); fi
+          python3 .github/scripts/release_vcaddon.py --only "$ONLY" --work "$RUNNER_TEMP/vcaddon" "${flags[@]}"
+
+      # Every workflow artifact in the repo goes, from this run and from any other workflow's runs (Publish to R2, Addon
+      # vet, ...), all pages of them. A dry run only lists them. One that's gone already (deleted by hand or expired) is
+      # passed over; any other failure fails the step.
+      - name: Clean up
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          rm -rf "$RUNNER_TEMP/vcaddon"
+          ids=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+                  --jq '.artifacts[] | "\(.id)\t\(.name)\t\(.workflow_run.id)"')
+          if [ -z "$ids" ]; then echo "no workflow artifacts in the repo"; exit 0; fi
+          failed=0
+          while IFS=$'\t' read -r id name run; do
+            if [ "$DRY_RUN" = "true" ]; then echo "would delete artifact $id ($name, run $run)"; continue; fi
+            if out=$(gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" 2>&1); then
+              echo "deleted artifact $id ($name, run $run)"
+            elif echo "$out" | grep -q "HTTP 404"; then
+              echo "artifact $id ($name) is gone already"
+            else
+              echo "::error::couldn't delete artifact $id ($name): $out"; failed=1
+            fi
+          done <<< "$ids"
+          exit $failed
