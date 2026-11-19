@@ -38,7 +38,8 @@ with /vana > Addons > **Install from file**, or opens from a web page as `vanaco
   can link the same address as `vanacore://install/https://github.com/CatsAndBoats/cexi-addons/releases/download/<folder>-latest/<folder>.vcaddon`
   (GitHub doesn't make `vanacore://` clickable in a README).
 - **Nothing else is kept:** packages are built in the runner's temp folder and deleted once uploaded, no workflow
-  artifact is uploaded, and the run's last step deletes any it has. The releases are the only output.
+  artifact is uploaded, and the run's last step deletes every workflow artifact in the repo, from any workflow (a
+  dry run only lists them). The releases are the only output.
 - **Locally:** `python3 tools/vcaddon/pack.py addons/vanacore/<folder> -o <dir>` makes one; `--check <file>` says
   whether VanaCore would install it. `pack.py`, `test_pack.py` and the format's README are copies of the launcher's
   `conflux/tools/vcaddon/` (CatsAndBoats/launcher): change them there and copy them here.
