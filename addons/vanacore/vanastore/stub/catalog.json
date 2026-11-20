@@ -1,0 +1,171 @@
+{
+  "schema": 1,
+  "stub": true,
+  "generated": "2026-11-20T12:00:00Z",
+  "site": "https://ffxiprivateservers.com",
+  "addons": [
+    {
+      "slug": "vanamaps",
+      "name": "vanamaps",
+      "title": "VanaMaps",
+      "author": "Carver",
+      "framework": "vanacore",
+      "version": "1.0.2",
+      "status": "trusted",
+      "compatibility": "general",
+      "server": null,
+      "featured": true,
+      "summary": "Every zone's map as a window you can use. Drag it, zoom it, drop pins with notes, and share a pin in chat.",
+      "description": "Every zone's map as an interactive window, sharp on any screen with the HD map pack and the game's own maps as fallback.\n\n- Pan and zoom: drag to move the map, turn the wheel to zoom about the pointer, double-click to centre.\n- You are on it: your arrow, your party and your target, on every floor.\n- Pins: an icon, a colour, a title and a note, kept per character.\n- Sharing: a pin goes to chat as a line anyone can read, and opens with one click for anyone with VanaMaps.\n- Ways out: a signpost at each way into a neighbouring zone opens that zone's map.\n\nOpens with M, or /vmap.",
+      "updated": "2026-11-20",
+      "downloads": 1,
+      "page": "https://ffxiprivateservers.com/addons/vanamaps",
+      "package": {
+        "url": "https://ffxiprivateservers.com/api/addons/vanamaps/download",
+        "size": 1002301,
+        "sha256": "f5dfb1f07640079381498fb40ecbb0f03864f3c3a033c1c49458881a132d05b6"
+      },
+      "screenshots": [
+        { "url": "stub/shots/vanamaps-1.jpg", "thumb": "stub/shots/vanamaps-1.thumb.jpg", "width": 1301, "height": 1032 }
+      ]
+    },
+    {
+      "slug": "auction-house",
+      "name": "auctionhouse-vanacore",
+      "title": "Auction House",
+      "author": "Carver",
+      "framework": "vanacore",
+      "version": "1.3.3",
+      "status": "trusted",
+      "compatibility": "server",
+      "server": "CatsEyeXI",
+      "summary": "One modern window for browsing, buying, selling and keeping track of your sales.",
+      "description": "Auction House replaces the game's auction window with one modern window for browsing, buying, selling and keeping track of your sales.\n\n- Browse and buy: every category with live stock, price history, and what you can equip.\n- Sell: your bags beside the listing form, with the going price filled in.\n- Your sales: what sold, what is still up, and a bell when something sells.\n- View anywhere, trade near a clerk.\n\nOpens at any auction counter, or /ah.",
+      "updated": "2026-11-19",
+      "downloads": 14,
+      "page": "https://ffxiprivateservers.com/addons/auction-house",
+      "package": {
+        "url": "https://ffxiprivateservers.com/api/addons/auction-house/download",
+        "size": 2039425,
+        "sha256": "bfe1cdcaecc031a2f79658869cd4916fa7ac37eac61b8f9bd50ce1d919d5918a"
+      },
+      "screenshots": [
+        { "url": "stub/shots/auction-house-1.jpg", "thumb": "stub/shots/auction-house-1.thumb.jpg", "width": 1272, "height": 830 }
+      ]
+    },
+    {
+      "slug": "party-finder",
+      "name": "partyfinder-vanacore",
+      "title": "Party Finder",
+      "author": "Carver",
+      "framework": "vanacore",
+      "version": "2.2.1",
+      "status": "trusted",
+      "compatibility": "server",
+      "server": "CatsEyeXI",
+      "summary": "Listings, join requests, Duty Roulette and Mission Help in one place.",
+      "description": "Party Finder shows who is looking for a party and who is looking for members, and lets you ask to join with one click.\n\n- Listings with the jobs each party still needs.\n- Join requests the leader answers from a card.\n- Duty Roulette and Mission Help.\n- Thirteen themes, and a first-run tour.\n\nOpens with Ctrl+G, or /pf.",
+      "updated": "2026-11-12",
+      "downloads": 31,
+      "page": "https://ffxiprivateservers.com/addons/party-finder",
+      "package": {
+        "url": "https://ffxiprivateservers.com/api/addons/party-finder/download",
+        "size": 5820416,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "screenshots": [
+        { "url": "stub/shots/party-finder-1.jpg", "thumb": "stub/shots/party-finder-1.thumb.jpg", "width": 1200, "height": 868 },
+        { "url": "stub/shots/party-finder-2.jpg", "thumb": "stub/shots/party-finder-2.thumb.jpg", "width": 1200, "height": 840 },
+        { "url": "stub/shots/party-finder-3.jpg", "thumb": "stub/shots/party-finder-3.thumb.jpg", "width": 612, "height": 286 }
+      ]
+    },
+    {
+      "slug": "clawmark",
+      "name": "clawmark-vanacore",
+      "title": "Clawmark",
+      "author": "Carver",
+      "framework": "vanacore",
+      "version": "1.1",
+      "status": "pending",
+      "compatibility": "server",
+      "server": "CatsEyeXI",
+      "summary": "Raid-style target marks and waymarks, shared with your party and alliance.",
+      "description": "Clawmark puts a mark over a target's head and a waymark on the ground, and everyone in your party or alliance with the addon sees the same ones.\n\n- Eight marks, four lettered and four numbered waymarks.\n- A small bar that stays out of the way.\n- Marks follow the target; waymarks stay where you put them.\n\nOpens with /clawmark.",
+      "updated": "2026-11-08",
+      "downloads": 6,
+      "page": "https://ffxiprivateservers.com/addons/clawmark",
+      "package": {
+        "url": "https://ffxiprivateservers.com/api/addons/clawmark/download",
+        "size": 912384,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "screenshots": []
+    },
+    {
+      "slug": "plates",
+      "name": "plates",
+      "title": "Plates",
+      "author": "VanaCore",
+      "framework": "vanacore",
+      "version": "0.4.0",
+      "status": "trusted",
+      "compatibility": "general",
+      "server": null,
+      "summary": "Nameplates with health bars over players and monsters.",
+      "description": "Plates draws a nameplate over each player and monster near you: a name, a health bar, and who has claimed it.\n\n- Colours by claim and by party.\n- Fades with distance.\n- Hides in cutscenes.",
+      "updated": "2026-10-30",
+      "downloads": 58,
+      "page": "https://ffxiprivateservers.com/addons/plates",
+      "package": {
+        "url": "https://ffxiprivateservers.com/api/addons/plates/download",
+        "size": 48211,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "screenshots": []
+    },
+    {
+      "slug": "minparty",
+      "name": "minparty",
+      "title": "MinParty",
+      "author": "VanaCore",
+      "framework": "vanacore",
+      "version": "1.2.0",
+      "status": "trusted",
+      "compatibility": "general",
+      "server": null,
+      "summary": "A compact party list: names, jobs, health and magic in a third of the room.",
+      "description": "MinParty replaces the party list with a compact one.\n\n- Names, jobs, HP, MP and TP in one line each.\n- The alliance in two more columns.\n- Moves and scales with the mouse.",
+      "updated": "2026-10-21",
+      "downloads": 112,
+      "page": "https://ffxiprivateservers.com/addons/minparty",
+      "package": {
+        "url": "https://ffxiprivateservers.com/api/addons/minparty/download",
+        "size": 21877,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "screenshots": []
+    },
+    {
+      "slug": "zone-greeter",
+      "name": "zonegreeter",
+      "title": "Zone Greeter",
+      "author": "Seekey",
+      "framework": "vanacore",
+      "version": "1.0.0",
+      "status": "pending",
+      "compatibility": "general",
+      "server": null,
+      "summary": "The zone's name, the weather and the day, shown for a moment as you arrive.",
+      "description": "Zone Greeter shows a short banner each time you change zones: the zone's name, the weather, and the day of the week.\n\nNothing to set up.",
+      "updated": "2026-11-02",
+      "downloads": 9,
+      "page": "https://ffxiprivateservers.com/addons/zone-greeter",
+      "package": {
+        "url": "https://ffxiprivateservers.com/api/addons/zone-greeter/download",
+        "size": 6144,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "screenshots": []
+    }
+  ]
+}
