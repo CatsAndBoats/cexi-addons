@@ -5,7 +5,8 @@
 --   slug, name (its title), packageName (the package's own name: its folder under addons\vanacore), version, author,
 --   framework, targetServer (nil: any server), summary, description, trusted (reviewed, and the file is the one
 --   reviewed), reviewStatus, scanStatus, hosted (the site serves the file itself), sizeBytes, sha256, downloadUrl,
---   pageUrl, screenshots { { url, thumbUrl, width, height } or a plain url }, featured, downloads, createdAt, updatedAt
+--   pageUrl, screenshots { { url, thumbUrl, width, height } or a plain url }, featured, downloads, createdAt, updatedAt,
+--   updateInReview and pendingVersion (a newer file waiting for review), source { type 'upload' | 'github', repo, tag, commit }
 -- It is asked of the site (GET /api/addons?framework=vanacore) and kept, so a start with no network still has one.
 --
 -- What may be installed is decided here, once (entry's `locked`): only an addon the site marks trusted, whose file the
@@ -133,6 +134,18 @@ local function entry(raw)
         shots = {},
     }
     a.status = a.trusted and 'trusted' or 'pending'
+    -- a listing mirrored from GitHub onto the site: its repository (owner/name), release tag and short commit, for
+    -- the page (the file and its checksum are the site's either way)
+    local src = type(raw.source) == 'table' and raw.source or nil
+    if src and text_of(src.type, ''):lower() == 'github' then
+        local repo = text_of(src.repo, ''):gsub('%.git$', ''):gsub('/+$', ''):match('^https://github%.com/([%w%._%-]+/[%w%._%-]+)$')
+        local commit = text_of(src.commit, ''):lower()
+        local tag = text_of(src.tag)
+        if tag == '' then tag = nil end
+        if tag and #tag > 40 then tag = tag:sub(1, 40) end
+        commit = (#commit == 40 and commit:match('^%x+$')) and commit:sub(1, 7) or nil
+        if repo or tag or commit then a.github = { repo = repo, tag = tag, commit = commit } end
+    end
     -- a newer file waiting for review on the site (the catalog goes on describing the approved one until it passes);
     -- it may come with no version of its own
     a.update_in_review = raw.updateInReview == true

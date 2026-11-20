@@ -574,6 +574,21 @@ return function (C)
         if a.have then cy = cy + fact(dl, sx, cy, sw, 'You have', tostring(a.have), a.update and K.gold or K.teal) end
         cy = cy + fact(dl, sx, cy, sw, 'Size', D.size_text(a.package.size))
         cy = cy + fact(dl, sx, cy, sw, 'Updated', D.date_text(a.updated))
+        if a.github then
+            -- where a mirrored listing came from: the repository, then its release and commit under it
+            local g = a.github
+            local second = (g.tag or '') .. ((g.tag and g.commit) and '  ' or '') .. (g.commit or '')
+            U.text(dl, sx, cy, 'Source', K.faint, F.text, T.small)
+            local first = U.fit(g.repo or second, L.fonts.mono, T.small, sw - S(70))
+            L.mono(dl, sx + sw - L.mono_width(first, T.small), cy, first, K.dim, T.small)
+            if g.repo and second ~= '' then
+                cy = cy + S(19)
+                second = U.fit(second, L.fonts.mono, T.small, sw)
+                L.mono(dl, sx + sw - L.mono_width(second, T.small), cy, second, K.faint, T.small)
+            end
+            dl:AddLine({ sx, cy + S(22) }, { sx + sw, cy + S(22) }, u32(K.line, 0.7), 1)
+            cy = cy + S(30)
+        end
         if a.update_in_review then cy = cy + fact(dl, sx, cy, sw, 'In review', a.pending_version or 'a new version', K.dim) end
         -- (a count is worth showing once it says something: under 25 it only reads as "nobody has this")
         if a.downloads and a.downloads >= 25 then cy = cy + fact(dl, sx, cy, sw, 'Downloads', tostring(a.downloads)) end
