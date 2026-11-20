@@ -6,7 +6,7 @@
 --   framework, targetServer (nil: any server), summary, description, trusted (reviewed, and the file is the one
 --   reviewed), reviewStatus, scanStatus, hosted (the site serves the file itself), sizeBytes, sha256, downloadUrl,
 --   pageUrl, screenshots { { url, thumbUrl, width, height } or a plain url }, featured, downloads, createdAt, updatedAt
--- Until the site serves it, the store reads stub\catalog.json, in the same format, with its pictures beside it.
+-- It is asked of the site (GET /api/addons?framework=vanacore) and kept, so a start with no network still has one.
 --
 -- What may be installed is decided here, once (entry's `locked`): only an addon the site marks trusted, whose file the
 -- site hosts itself, with a whole sha256 and a download address on the site. Anything else is shown and can be read
@@ -96,8 +96,13 @@ local function plain(text)
 end
 
 -- a card's two lines, where the site gives none: the description's first sentences
-local function summary_of(description)
+local function summary_of(description, title)
     local first = description:match('^([^\n]+)') or ''
+    -- (a first line that is only a heading - the addon's name again, no full stop - is passed over for what follows)
+    if title and #first < 90 and first:lower():sub(1, #title) == title:lower() and not first:match('[%.!?]$') then
+        local rest = description:sub(#first + 1):match('^%s*([^\n]+)')
+        if rest then first = rest end
+    end
     if #first <= 170 then return first end
     local cut = first:sub(1, 170):match('^(.*[%.!?])%s') or first:sub(1, 160):match('^(.*)%s') or first:sub(1, 160)
     return cut
@@ -128,9 +133,12 @@ local function entry(raw)
         shots = {},
     }
     a.status = a.trusted and 'trusted' or 'pending'
-    a.pending_version = text_of(raw.pendingVersion) -- (a newer version waiting for review on the site, if it says so)
+    -- a newer file waiting for review on the site (the catalog goes on describing the approved one until it passes);
+    -- it may come with no version of its own
+    a.update_in_review = raw.updateInReview == true
+    a.pending_version = text_of(raw.pendingVersion)
     if a.pending_version == '' then a.pending_version = nil end
-    if a.summary == '' then a.summary = summary_of(description) end
+    if a.summary == '' then a.summary = summary_of(description, a.title) end
     if not on_site(a.page) then a.page = nil end
     -- why it can't be installed from here, if it can't (see the top of this file)
     -- (from `trusted`, not from the review's word alone: an approval of a file since replaced comes as trusted = false)
@@ -168,7 +176,6 @@ local function take(doc, source)
         end
     end
     D.addons, D.by_slug, D.by_name = list, by_slug, by_name
-    D.stub = doc.stub == true
     D.generated = text_of(doc.generatedAt)
     D.state, D.source, D.why, D.loaded_at = 'ready', source, nil, clock()
     D.local_rev = D.local_rev + 1
@@ -176,35 +183,20 @@ local function take(doc, source)
     return true
 end
 
-function D.load_stub()
-    local text = read_file(vana.paths.addon .. '\\stub\\catalog.json')
-    if text == nil then
-        D.state, D.why = 'failed', "the store's catalog file is missing"
-        return false
-    end
-    local doc, why = vana.json.decode(text)
-    local ok, bad = take(doc, 'stub')
-    if not ok then
-        D.state, D.why = 'failed', tostring(bad or why)
-        return false
-    end
-    return true
-end
-
 -- The catalog as it was last fetched, kept for a start with no network (the site's own only: a test origin's isn't)
 local KEPT = 'catalog.json'
 
--- no catalog from the site: the one in hand stays; else the kept copy; else the preview that ships with the store
+-- no catalog from the site: the one in hand stays; else the kept copy; else the window says it couldn't be had
 local function fall_back(why)
     D.fetch_why = tostring(why)
     vana.log('no catalog from ' .. D.origin .. ': ' .. D.fetch_why)
-    if D.state == 'ready' and D.source ~= 'stub' then return end
+    if D.state == 'ready' then return end
     if D.origin == HOME then
         local ok, text = pcall(vana.settings.read, KEPT)
         local doc = ok and type(text) == 'string' and vana.json.decode(text) or nil
         if doc and take(doc, 'kept') then return end
     end
-    D.load_stub()
+    D.state, D.why = 'failed', D.fetch_why
 end
 
 -- Asks the site for the catalog; nothing waits on it. D.fetching while it is out; D.on_catalog() when one is taken.

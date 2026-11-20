@@ -320,6 +320,48 @@ return function (C)
         if U.hit(key, w, h, r, { x = x, y = y, w = w, h = h }) then C.open_detail(a) end
     end
 
+    -- A card laid on its side, as wide as the page: the picture on the left, the words beside it. For a short list
+    -- (fewer addons than a row of cards holds), so two addons fill the page instead of sitting in its corner.
+    local function wide_card(dl, a, x, y, w, h, i, t)
+        local key = '##vs_card_' .. a.slug
+        local hv = hover_of(key)
+        local r = S(10)
+        local lift = S(2) * hv
+        y = y - lift
+        if hv > 0.01 then U.shadow(dl, x, y, w, h, r, 0.9 * hv) end
+        dl:AddRectFilled({ x, y }, { x + w, y + h }, u32(mix(K.panel, K.panel2, 0.35 * hv)), r)
+        local pw = math.floor(math.min((h - 2) * 16 / 10, w * 0.38))
+        picture(dl, a, 1, x + 1, y + 1, pw, h - 2, true, 1, r - 1, 80) -- (80: the left corners)
+        dl:AddRectFilled({ x + 1, y + 1 }, { x + 1 + pw, y + h - 1 }, u32(K.bg0, 0.16 * (1 - hv)), r - 1, 80)
+        dl:AddLine({ x + 1 + pw, y + 1 }, { x + 1 + pw, y + h - 1 }, u32(K.frame_dark, 0.6), 1)
+        dl:AddRect({ x, y }, { x + w, y + h }, u32(mix(K.line, K.gold, hv), 0.95), r, 240, 1)
+        local px, tw = x + pw + S(22), w - pw - S(44)
+        local cy = y + S(18)
+        local ver, have, have_col = version_text(a)
+        local vw = L.mono_width(ver, T.small)
+        U.text(dl, px, cy, U.fit(a.title, F.semi, T.body, tw - vw - S(10)), mix(K.ink, K.hot, hv), F.semi, T.body)
+        L.mono(dl, px + tw - vw, cy + S(2), ver, K.dim, T.small)
+        cy = cy + S(22)
+        U.text(dl, px, cy, U.fit(by_line(a), F.text, T.small, tw), K.dim, F.text, T.small)
+        if have then L.mono(dl, px + tw - L.mono_width(have, T.small), cy, have, have_col, T.small) end
+        cy = cy + S(26)
+        for _, line in ipairs(clamp(a.summary, F.text, T.small, math.min(tw, S(560)), 3)) do
+            U.text(dl, px, cy, line, mix(K.ink, K.dim, 0.45), F.text, T.small)
+            cy = cy + S(18)
+        end
+        local by = y + h - S(16) - S(14)
+        local job = C.jobs[a.slug]
+        if job and job.state == 'refused' then
+            U.text_mid(dl, px, by, U.fit(job.why, F.text, T.small, tw - S(110)), K.red, F.text, T.small)
+        else
+            local _, chh = L.chip_size('TRUSTED')
+            status_chip(dl, px, by - chh / 2, a, true, key .. '_why')
+        end
+        card_action(dl, a, key .. '_act', x + w - S(22), by)
+        imgui.SetCursorScreenPos({ x, y + lift })
+        if U.hit(key, w, h, r, { x = x, y = y, w = w, h = h }) then C.open_detail(a) end
+    end
+
     -- nothing to show, said plainly
     local function empty(dl, x, y, w, line, sub)
         L.icon(dl, x + w / 2, y + S(34), L.CP.box, K.faint, 26, 0.7)
@@ -379,6 +421,19 @@ return function (C)
         local cols = math.max(1, math.floor((room + gap) / (S(CARD.min_w) + gap)))
         local card_w = math.floor((room - gap * (cols - 1)) / cols)
         local card_h = math.floor(card_w * 9 / 16) + S(CARD.text_h)
+        if #list < cols then
+            -- a short list: each addon a row as wide as the page
+            local row_h = S(176)
+            for i, a in ipairs(list) do
+                local cy = oy + at + (i - 1) * (row_h + gap)
+                local a_in = U.ease((U.clock() - (st.grid_at or 0) - 0.05 - (i - 1) * 0.05) / 0.3)
+                C.fade(a_in)
+                local ok, err = pcall(wide_card, dl, a, ox + S(2), cy + (1 - a_in) * S(10), room, row_h, i, t)
+                if not ok then C.fail('card', err) end
+                C.fade(1)
+            end
+            return at + #list * (row_h + gap)
+        end
         for i, a in ipairs(list) do
             local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
             local cx, cy = ox + S(2) + col * (card_w + gap), oy + at + row * (card_h + gap)
@@ -519,7 +574,7 @@ return function (C)
         if a.have then cy = cy + fact(dl, sx, cy, sw, 'You have', tostring(a.have), a.update and K.gold or K.teal) end
         cy = cy + fact(dl, sx, cy, sw, 'Size', D.size_text(a.package.size))
         cy = cy + fact(dl, sx, cy, sw, 'Updated', D.date_text(a.updated))
-        if a.pending_version then cy = cy + fact(dl, sx, cy, sw, 'In review', a.pending_version, K.dim) end
+        if a.update_in_review then cy = cy + fact(dl, sx, cy, sw, 'In review', a.pending_version or 'a new version', K.dim) end
         -- (a count is worth showing once it says something: under 25 it only reads as "nobody has this")
         if a.downloads and a.downloads >= 25 then cy = cy + fact(dl, sx, cy, sw, 'Downloads', tostring(a.downloads)) end
         cy = cy + S(6)
@@ -635,10 +690,6 @@ return function (C)
             U.text(dl, cx, cy, line, K.dim, F.text, T.small)
             cy = cy + S(19)
         end
-        if D.source == 'stub' then
-            cy = cy + S(8)
-            U.text(dl, cx, cy, 'Showing the preview catalog that ships with the store.', K.faint, F.text, T.small)
-        end
     end
 
     ---------------------------------------------------------------------------
@@ -653,7 +704,6 @@ return function (C)
         local status
         if D.fetching then status = 'Looking for addons...'
         elseif D.state ~= 'ready' then status = "Couldn't read the catalog"
-        elseif D.source == 'stub' then status = 'Preview catalog'
         elseif D.source == 'kept' then status = 'Offline: catalog of ' .. D.date_text((D.generated or ''):sub(1, 10))
         else status = 'Catalog of ' .. D.date_text((D.generated or ''):sub(1, 10)) end
         local sw = L.mono_width(status, T.tiny)

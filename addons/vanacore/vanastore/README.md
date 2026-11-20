@@ -41,8 +41,7 @@ Browse them, read about one, install it, update it, and switch it on or off with
 
 ## For developers
 
-- `catalog.lua`'s header has the catalog's format. Until the site serves it at `/api/addons?framework=vanacore`, the
-  store falls back to `stub\catalog.json` (the two VanaCore addons on the site today) and says "Preview catalog".
+- `catalog.lua`'s header has the catalog's format, as the site serves it at `/api/addons?framework=vanacore`.
 - `tools/vanastore_test_origin.py <folder>` stands in for the site's routes on 127.0.0.1; `/store origin
   http://127.0.0.1:8765` points the store at it and `/store origin default` puts it back. Only https origins, or http
   on this PC, are taken.
