@@ -1,4 +1,4 @@
--- What the store knows: the catalog (the addons ffxiprivateservers.com lists for VanaCore), what of it is on this PC
+-- What the store knows: the catalog (the addons ffxiprivateservers.com lists), what of it is on this PC
 -- (installed, at which version, loaded or not), and the pictures.
 --
 -- The catalog (schema 1), in the site's own field names: { schema, generatedAt, addons = { ... } }, an addon being
@@ -7,11 +7,13 @@
 --   reviewed), reviewStatus, scanStatus, hosted (the site serves the file itself), sizeBytes, sha256, downloadUrl,
 --   pageUrl, screenshots { { url, thumbUrl, width, height } or a plain url }, featured, downloads, createdAt, updatedAt,
 --   updateInReview and pendingVersion (a newer file waiting for review), source { type 'upload' | 'github', repo, tag, commit }
--- It is asked of the site (GET /api/addons?framework=vanacore) and kept, so a start with no network still has one.
+-- It is asked of the site (GET /api/addons: every framework) and kept, so a start with no network still has one.
 --
--- What may be installed is decided here, once (entry's `locked`): only an addon the site marks trusted, whose file the
--- site hosts itself, with a whole sha256 and a download address on the site. Anything else is shown and can be read
--- about, never installed.
+-- What may be installed is decided here, once (entry's `locked`): an addon of a framework this VanaCore can install
+-- packages of (D.INSTALLS: the one place that says which), whose file the site hosts itself, with a whole sha256 and
+-- a download address on the site. Trusted or not: one the site hasn't reviewed is `unreviewed`, and the window asks
+-- before it is fetched. Never a native plugin, never one the site's review turned down, never the store itself
+-- (it ships and updates with VanaCore, and isn't listed at all).
 local U = require('ui')
 
 local D = {
@@ -71,6 +73,18 @@ end
 
 local function text_of(v, fallback) return type(v) == 'string' and v or fallback end
 
+-- The frameworks the site lists, as a card says them, and the rail's group each is under. VanaCore runs Ashita and
+-- Windower addons too, but its packages install VanaCore addons only so far: D.INSTALLS is the switch, and an entry
+-- of a framework not in it sends the player to its page on the site.
+D.FRAMEWORKS = {
+    vanacore = { name = 'VanaCore', family = 'vanacore' },
+    ['ashita-addon'] = { name = 'Ashita', family = 'ashita' },
+    ['ashita-plugin'] = { name = 'Ashita plugin', family = 'ashita', plugin = true },
+    windower = { name = 'Windower', family = 'windower' },
+}
+D.INSTALLS = { vanacore = true }
+D.SELF = 'vanastore'
+
 -- Where the catalog comes from, and the only place a package, a picture or a page may be: the site. (A developer's own
 -- copy of the site for testing is named in settings.json's "origin": https anywhere, plain http on this PC only.)
 local HOME = 'https://ffxiprivateservers.com'
@@ -114,7 +128,10 @@ local function entry(raw)
     if type(raw) ~= 'table' then return nil, 'not an entry' end
     local slug = text_of(raw.slug)
     if slug == nil or not slug:match('^[%w_.%-]+$') then return nil, 'no slug' end
-    if text_of(raw.framework, 'vanacore'):lower() ~= 'vanacore' then return nil, slug .. ': not for VanaCore' end
+    local framework = text_of(raw.framework, 'unknown'):lower()
+    local kind = D.FRAMEWORKS[framework]
+    -- (the store ships and updates with VanaCore: it never lists itself)
+    if slug:lower() == D.SELF or text_of(raw.packageName, ''):lower() == D.SELF then return nil, nil end
     -- (the package's own name is the folder it installs into: the same rule VanaCore holds a name to)
     local name = text_of(raw.packageName)
     if name ~= nil and (not name:match('^[%w_.%-]+$') or #name > 64 or name:find('..', 1, true)) then name = nil end
@@ -124,6 +141,7 @@ local function entry(raw)
     local a = {
         slug = slug, name = name and name:lower() or nil, title = text_of(raw.name, slug), author = text_of(raw.author, ''),
         version = text_of(raw.version, tostring(raw.version or '')),
+        framework = framework, framework_name = kind and kind.name or '', family = kind and kind.family or 'other',
         trusted = raw.trusted == true, hosted = raw.hosted ~= false,
         review = text_of(raw.reviewStatus, ''):lower(), scan = text_of(raw.scanStatus, ''):lower(),
         compatibility = server and 'server' or 'general', server = server,
@@ -155,11 +173,14 @@ local function entry(raw)
     if not on_site(a.page) then a.page = nil end
     -- why it can't be installed from here, if it can't (see the top of this file)
     -- (from `trusted`, not from the review's word alone: an approval of a file since replaced comes as trusted = false)
-    if not a.trusted then a.locked = a.review == 'denied' and 'denied' or 'review'
+    if not a.trusted and a.review == 'denied' then a.locked = 'denied'
+    elseif kind and kind.plugin then a.locked = 'plugin'
+    elseif not D.INSTALLS[framework] then a.locked = 'framework'
     elseif not a.hosted then a.locked = 'hosted'
     elseif not on_site(a.package.url) or not a.package.sha256:match('^%x+$') or #a.package.sha256 ~= 64 then
         a.locked = 'package'
     end
+    a.unreviewed = not a.trusted and a.locked == nil -- (installable, once the window's warning is answered)
     if type(raw.screenshots) == 'table' then
         for _, s in ipairs(raw.screenshots) do
             if type(s) == 'string' then s = { url = s } end
@@ -169,7 +190,7 @@ local function entry(raw)
             end
         end
     end
-    a.search = (a.title .. ' ' .. a.author .. ' ' .. a.summary .. ' ' .. (a.name or '')):lower()
+    a.search = (a.title .. ' ' .. a.author .. ' ' .. a.summary .. ' ' .. (a.name or '') .. ' ' .. a.framework_name):lower()
     return a
 end
 
@@ -221,7 +242,7 @@ function D.fetch()
         if D.on_catalog then pcall(D.on_catalog) end
     end
     local ok, request = pcall(vana.http.json, D.origin .. '/api/addons', {
-        query = { framework = 'vanacore' }, timeout = 15, max_time = 40, max_size = 4 * 1024 * 1024, max_redirects = 2,
+        timeout = 15, max_time = 40, max_size = 4 * 1024 * 1024, max_redirects = 2,
     })
     if not ok or type(request) ~= 'table' then
         fall_back(request)
@@ -276,7 +297,8 @@ function D.look(force)
     end
     local updates, installed = 0, 0
     for _, a in ipairs(D.addons) do
-        local have = installed_version(a.name)
+        -- (what is installed is looked for only where the store installs: addons\\vanacore)
+        local have = D.INSTALLS[a.framework] and installed_version(a.name) or nil
         a.have = have
         a.loaded = a.name ~= nil and loaded[a.name] ~= nil
         -- VanaCore lets a package replace only what a package installed (the folder's .vcaddon.json): an addon the
@@ -306,20 +328,25 @@ function D.look(force)
 end
 
 -- the addons a view shows: view 'all' | 'installed' | 'updates', compat nil | 'general' | 'server', and the search words
-function D.filter(view, compat, query)
-    local out = {}
+-- (`family`: the rail's framework group, nil for all.) Trusted addons come first, each kind in the site's order.
+function D.filter(view, compat, query, family)
+    local out, later = {}, {}
     local words = {}
     for word in tostring(query or ''):lower():gmatch('%S+') do words[#words + 1] = word end
     for _, a in ipairs(D.addons) do
         local keep = (view == 'all') or (view == 'installed' and a.have ~= nil) or (view == 'updates' and a.update)
         if keep and compat then keep = a.compatibility == compat end
+        if keep and family then keep = a.family == family end
         if keep then
             for _, word in ipairs(words) do
                 if not a.search:find(word, 1, true) then keep = false break end
             end
         end
-        if keep then out[#out + 1] = a end
+        if keep then
+            if a.trusted then out[#out + 1] = a else later[#later + 1] = a end
+        end
     end
+    for _, a in ipairs(later) do out[#out + 1] = a end
     return out
 end
 

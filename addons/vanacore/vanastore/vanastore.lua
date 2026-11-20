@@ -120,13 +120,21 @@ function C.open_page(url)
 end
 
 -- Install or update, and on or off: install.lua
-function C.install(a) C.I.start(a) end
+-- (an addon the site hasn't reviewed is asked about first: draw_confirm)
+function C.install(a)
+    if a.locked then return end
+    if a.trusted then
+        C.I.start(a)
+    else
+        st.confirm = { slug = a.slug, kind = 'install', anim = 0 }
+    end
+end
 function C.switch(a, on) C.I.switch(a, on) end
 
 -- A takeover is asked about first: nothing is fetched or written until the player says yes (draw_confirm)
 function C.ask_takeover(a)
     if not a.takeover then return end
-    st.confirm = { slug = a.slug, anim = 0 }
+    st.confirm = { slug = a.slug, kind = 'takeover', anim = 0 }
 end
 
 -- the catalog asked for again (the header's button)
@@ -301,20 +309,29 @@ local function draw_main(t, dt)
     U.set_window_alpha(1)
 end
 
--- The takeover's question, over the store's window, before anything is fetched or written: what this copy is, what the
--- store will do, and that nothing of the player's is lost. One button does it, one leaves things as they are.
+-- A question over the store's window, before anything is fetched or written. Two things are asked this way: a takeover
+-- (what this copy is, what the store will do, that nothing of the player's is lost), and an addon the site hasn't
+-- reviewed (that it hasn't been, that an addon is a program, to install it only on trust in its author). A takeover
+-- of an unreviewed addon says both. One button does it, one leaves things as they are.
 local CONFIRM = {
-    'This copy came from the launcher, or was copied in by hand.',
-    'VanaStore will replace it with the reviewed package from ffxiprivateservers.com, and keep it updated from now on.',
-    'Your settings are kept.',
-    'The old copy goes to backups\\addons in VanaCore\'s folder.',
+    takeover = {
+        'This copy came from the launcher, or was copied in by hand.',
+        'VanaStore will replace it with the package from ffxiprivateservers.com, and keep it updated from now on.',
+        'Your settings are kept.',
+        'The old copy goes to backups\\addons in VanaCore\'s folder.',
+    },
+    unreviewed = {
+        "FFXIPS hasn't reviewed this addon.",
+        'An addon is a program: it runs inside the game and can do anything you can on this computer.',
+    },
 }
 local function draw_confirm(t, dt)
     local c = st.confirm
     if c == nil then return end
     local a = D.by_slug[c.slug]
     local r = st.rect
-    if a == nil or r == nil or not st.open or not a.takeover then
+    local taking = c.kind == 'takeover'
+    if a == nil or r == nil or not st.open or a.locked or (taking and not a.takeover) then
         st.confirm = nil
         return
     end
@@ -330,13 +347,34 @@ local function draw_confirm(t, dt)
         local drew, err = pcall(function ()
             local dl = imgui.GetWindowDrawList()
             dl:AddRectFilled({ r.x, r.y }, { r.x + r.w, r.y + r.h }, U.u32(K.bg0, 0.78 * e), S(16))
-            local w = math.min(S(540), r.w - S(60))
+            local w = math.min(S(560), r.w - S(60))
             local tw = w - S(64)
-            local title = U.wrap('Let VanaStore take over ' .. a.title .. '?', F.bold, T.h1, tw)
-            local version = a.version ~= '' and ('Version ' .. a.version .. ' will be installed' .. ((a.have and a.have ~= '?') and (' in place of ' .. a.have) or '') .. '.') or nil
+            -- what is asked, in its words
+            local eyebrow, heading, yes_label, no_label
+            local texts = {}
+            if taking then
+                eyebrow = a.trusted and 'TAKE OVER' or 'TAKE OVER, NOT REVIEWED'
+                heading = 'Let VanaStore take over ' .. a.title .. '?'
+                yes_label, no_label = a.trusted and 'TAKE OVER' or 'TAKE OVER ANYWAY', 'Not now'
+                for _, text in ipairs(CONFIRM.takeover) do texts[#texts + 1] = text end
+            else
+                eyebrow = 'NOT REVIEWED'
+                heading = (a.have and 'Update ' or 'Install ') .. a.title .. ' anyway?'
+                yes_label, no_label = a.have and 'UPDATE ANYWAY' or 'INSTALL ANYWAY', 'Cancel'
+            end
+            if not a.trusted then
+                for _, text in ipairs(CONFIRM.unreviewed) do texts[#texts + 1] = text end
+                texts[#texts + 1] = 'Install it only if you trust its author' .. (a.author ~= '' and (', ' .. a.author) or '') .. '.'
+            end
+            local title = U.wrap(heading, F.bold, T.h1, tw)
+            local version = nil
+            if a.version ~= '' then
+                local over = (a.have and a.have ~= '?' and a.have ~= a.version) and (' in place of ' .. a.have) or ''
+                version = 'Version ' .. a.version .. ' will be installed' .. over .. '.'
+            end
             local points = {}
-            for _, text in ipairs(CONFIRM) do points[#points + 1] = U.wrap(text, F.text, T.body, tw - S(18)) end
-            local h = S(30) + S(22) + #title * S(30) + S(12) + S(28) + S(44) + S(30)
+            for _, text in ipairs(texts) do points[#points + 1] = U.wrap(text, F.text, T.body, tw - S(18)) end
+            local h = S(30) + S(22) + #title * S(30) + S(12) + S(22) + S(44) + S(30)
             for _, lines in ipairs(points) do h = h + #lines * S(22) + S(6) end
             if version then h = h + S(26) end
             local x, y = math.floor(r.x + (r.w - w) / 2), math.floor(r.y + (r.h - h) / 2 + (1 - e) * S(12))
@@ -344,7 +382,7 @@ local function draw_confirm(t, dt)
             U.shadow(dl, x, y, w, h, S(14), 1.4)
             U.panel(dl, x, y, w, h, P.glass, 1, S(14), U.mix(K.frame_light, K.line, 0.45))
             local cx, cy = x + S(32), y + S(30)
-            L.eyebrow(dl, cx, cy, 'TAKE OVER', K.gold)
+            L.eyebrow(dl, cx, cy, eyebrow, a.trusted and K.gold or K.dim)
             cy = cy + S(22)
             for _, line in ipairs(title) do
                 U.text(dl, cx, cy, line, K.ink, F.bold, T.h1)
@@ -353,7 +391,8 @@ local function draw_confirm(t, dt)
             cy = cy + S(12)
             local u = L.px()
             for _, lines in ipairs(points) do
-                dl:AddRectFilled({ L.round(cx + S(2)), L.round(cy + S(8)) }, { L.round(cx + S(2)) + 2 * u, L.round(cy + S(8)) + 2 * u }, U.u32(K.gold))
+                dl:AddRectFilled({ L.round(cx + S(2)), L.round(cy + S(8)) }, { L.round(cx + S(2)) + 2 * u, L.round(cy + S(8)) + 2 * u },
+                    U.u32(a.trusted and K.gold or K.dim))
                 for _, line in ipairs(lines) do
                     U.text(dl, cx + S(18), cy, line, U.mix(K.ink, K.dim, 0.25), F.text, T.body)
                     cy = cy + S(22)
@@ -364,9 +403,11 @@ local function draw_confirm(t, dt)
                 L.mono(dl, cx + S(18), cy + S(2), version, K.dim, T.small)
                 cy = cy + S(26)
             end
-            cy = cy + S(28) - S(6)
-            local yes = L.pixel_button(dl, '##vs_take_yes', cx, cy, S(184), S(44), 'TAKE OVER')
-            local no = L.quiet_button(dl, '##vs_take_no', cx + S(184) + S(22), cy + S(8), S(96), S(28), 'Not now', { color = K.dim })
+            cy = cy + S(22) - S(6)
+            -- the button that does it: the site's gold for a reviewed addon, the dark slab for one that isn't
+            local bw = math.max(S(184), L.pix_width(yes_label, 1.5, 0.08) + S(44))
+            local yes = L.pixel_button(dl, '##vs_confirm_yes', cx, cy, bw, S(44), yes_label, (not a.trusted) and { kind = 'dark', ink = K.ink } or nil)
+            local no = L.quiet_button(dl, '##vs_confirm_no', cx + bw + S(22), cy + S(8), S(96), S(28), no_label, { color = K.dim })
             if PAD.capturing() then
                 PAD.claim()
                 if PAD.pressed('cancel') then no = true end
@@ -374,7 +415,7 @@ local function draw_confirm(t, dt)
             if imgui.IsKeyPressed(U.KEY_ESCAPE) then no = true end
             if yes then
                 st.confirm = nil
-                C.I.start(a, { adopt = true })
+                C.I.start(a, { adopt = taking or nil, accept_unreviewed = (not a.trusted) or nil })
             elseif no then
                 st.confirm = nil
             end

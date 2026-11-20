@@ -34,7 +34,7 @@ return function (C)
     local function state_of(a)
         local job = C.jobs[a.slug]
         if job and JOB_LABEL[job.state] then return 'busy', job end
-        -- (an addon the store may not install: nothing to press for a new one, the switch alone for one that's here)
+        -- (an addon the store doesn't install: its page on the site for a new one, the switch alone for one that's here)
         if a.have == nil then return a.locked and 'locked' or 'install', job end
         if a.update and not a.locked then return 'update', job end
         -- (a copy the store didn't install, behind the site's: taking it over is how it's brought up to date)
@@ -42,28 +42,42 @@ return function (C)
         return 'switch', job
     end
 
-    -- why the store won't install an addon: the chip's words, and a sentence
+    -- why the store doesn't install an addon: a chip's words (none where the card says it another way), and a sentence
     local LOCKED = {
-        review = { 'PENDING REVIEW', 'Not reviewed by FFXIPS yet. The store installs reviewed addons only.' },
-        denied = { 'NOT APPROVED', 'FFXIPS reviewed this addon and did not approve it. The store installs approved addons only.' },
+        denied = { 'NOT APPROVED', "FFXIPS reviewed this addon and did not approve it, so the store doesn't install it." },
         hosted = { 'ON THE SITE ONLY', "FFXIPS doesn't host this file itself, so the store can't check it. Its page on the site has the link." },
         package = { 'ON THE SITE ONLY', "The catalog gives no checksum for this file, so the store can't check it. Its page on the site has the link." },
+        plugin = { 'NATIVE PLUGIN', "A plugin is a native program, which the store doesn't install. Its page on the site has the file." },
+        framework = { nil, "The store can't install Ashita and Windower addons yet. Its page on the site has the file." },
     }
+    local UNREVIEWED = "FFXIPS hasn't reviewed this addon. Install it only if you trust its author."
 
-    -- the card's: a quiet button or the switch, its right edge at `right`
+    -- "View on FFXIPS", its right edge at `right`: where an addon the store doesn't install is had
+    local function page_link(dl, a, key, right, cy, tip)
+        if a.page == nil then return end
+        local label = 'View on FFXIPS'
+        local tw, th = U.measure(label, F.semi, T.small)
+        if L.link(dl, key, right - tw - th - S(4), cy, label, { icon = L.CP.link, icon_after = true, size = T.small, font = F.semi, tip = tip }) then
+            C.open_page(a.page)
+        end
+    end
+
+    -- the card's: a quiet button or the switch, its right edge at `right`. An addon the site hasn't reviewed has the
+    -- same button in dim ink, not gold: it can be had, and isn't offered as the reviewed ones are.
     local function card_action(dl, a, key, right, cy)
         local kind, job = state_of(a)
         local bw, bh = S(88), S(28)
+        local col = a.trusted and K.gold or K.dim
         if kind == 'locked' then
-            return -- (nothing to press: the chip on the card's left says why)
+            if a.locked ~= 'denied' then page_link(dl, a, key, right, cy, LOCKED[a.locked][2]) end
         elseif kind == 'busy' then
             L.quiet_button(dl, key, right - S(112), cy - bh / 2, S(112), bh, JOB_LABEL[job.state], { progress = progress_of(job), disabled = true })
         elseif kind == 'install' then
-            if L.quiet_button(dl, key, right - bw, cy - bh / 2, bw, bh, 'Install') then C.install(a) end
+            if L.quiet_button(dl, key, right - bw, cy - bh / 2, bw, bh, 'Install', { color = col }) then C.install(a) end
         elseif kind == 'update' then
-            if L.quiet_button(dl, key, right - bw, cy - bh / 2, bw, bh, 'Update', { tip = 'You have ' .. tostring(a.have) }) then C.install(a) end
+            if L.quiet_button(dl, key, right - bw, cy - bh / 2, bw, bh, 'Update', { color = col, tip = 'You have ' .. tostring(a.have) }) then C.install(a) end
         elseif kind == 'takeover' then
-            if L.quiet_button(dl, key, right - S(104), cy - bh / 2, S(104), bh, 'Take over', { tip = FOREIGN_TAKE }) then C.ask_takeover(a) end
+            if L.quiet_button(dl, key, right - S(104), cy - bh / 2, S(104), bh, 'Take over', { color = col, tip = FOREIGN_TAKE }) then C.ask_takeover(a) end
         else
             local label = a.loaded and 'On' or 'Off'
             local lw = U.measure(label, F.semi, T.small) + S(8)
@@ -72,20 +86,22 @@ return function (C)
         end
     end
 
-    -- the primary one, in the site's button; returns the width it took
+    -- the primary one, in the site's button (gold for a reviewed addon, the dark slab for one that isn't); returns the
+    -- width it took
     local function primary_action(dl, a, key, x, y)
         local kind, job = state_of(a)
         local w, h = S(184), S(44)
+        local look = (not a.trusted) and { kind = 'dark', ink = K.ink } or nil
         if kind == 'locked' then
             return 0 -- (nothing to press: the page says why in a sentence)
         elseif kind == 'busy' then
             L.pixel_button(dl, key, x, y, w, h, JOB_PIX[job.state], { progress = progress_of(job), disabled = true })
         elseif kind == 'install' then
-            if L.pixel_button(dl, key, x, y, w, h, 'INSTALL') then C.install(a) end
+            if L.pixel_button(dl, key, x, y, w, h, 'INSTALL', look) then C.install(a) end
         elseif kind == 'update' then
-            if L.pixel_button(dl, key, x, y, w, h, 'UPDATE') then C.install(a) end
+            if L.pixel_button(dl, key, x, y, w, h, 'UPDATE', look) then C.install(a) end
         elseif kind == 'takeover' then
-            if L.pixel_button(dl, key, x, y, w, h, 'TAKE OVER') then C.ask_takeover(a) end
+            if L.pixel_button(dl, key, x, y, w, h, 'TAKE OVER', look) then C.ask_takeover(a) end
         else
             local cw, ch = L.chip_size('INSTALLED')
             L.chip(dl, x, y + (h - ch) / 2, 'INSTALLED', 'teal')
@@ -97,33 +113,43 @@ return function (C)
         return w
     end
 
-    -- How it stands on the site. A card marks only the exception (pending review, on the site only); an addon's own
-    -- page says Trusted too. Returns the chip's width, 0 for none.
+    -- How it stands on the site, as a chip. A card marks only what isn't the usual: not approved, a native plugin, on
+    -- the site only, not reviewed, or updated elsewhere (a reviewed addon has its small shield by its name instead). An
+    -- addon's own page says Trusted as well. Returns the chip's width, 0 for none.
     local function status_chip(dl, x, y, a, on_card, key)
-        if a.locked then
-            local words = LOCKED[a.locked]
-            local w, h = L.chip(dl, x, y, words[1], 'faint')
-            if key then
-                imgui.SetCursorScreenPos({ x, y })
-                local _, hovered = U.hit(key, w, h, 0)
-                if hovered then L.tip(words[2]) end
-            end
-            return w
+        local label, tip
+        if a.locked and LOCKED[a.locked][1] then
+            label, tip = LOCKED[a.locked][1], LOCKED[a.locked][2]
+        elseif not a.trusted and a.locked ~= 'denied' then
+            label, tip = 'NOT REVIEWED', UNREVIEWED
+        elseif on_card and a.behind and not a.takeover then
+            label, tip = 'UPDATES ELSEWHERE', FOREIGN
         end
-        if on_card then
-            if not a.behind or a.takeover then return 0 end
-            -- a newer version is on the site, and this copy isn't the store's to replace
-            local w, h = L.chip(dl, x, y, 'UPDATES ELSEWHERE', 'faint')
-            if key then
-                imgui.SetCursorScreenPos({ x, y })
-                local _, hovered = U.hit(key, w, h, 0)
-                if hovered then L.tip(FOREIGN) end
-            end
-            return w
+        if label == nil then
+            if on_card or not a.trusted then return 0 end
+            return (L.chip(dl, x, y, 'TRUSTED', 'quiet'))
         end
-        return (L.chip(dl, x, y, 'TRUSTED', 'quiet'))
+        local w, h = L.chip(dl, x, y, label, 'faint')
+        if key then
+            imgui.SetCursorScreenPos({ x, y })
+            local _, hovered = U.hit(key, w, h, 0)
+            if hovered then L.tip(tip) end
+        end
+        return w
     end
-    local function by_line(a) return a.author ~= '' and ('by ' .. a.author) or '' end
+
+    -- a reviewed addon's mark on a card: a small shield after its name
+    local function shield(dl, a, x, cy, alpha)
+        if not a.trusted then return end
+        L.icon(dl, x + S(11), cy, L.CP.shield, K.frame_light, T.small * 0.95, alpha)
+    end
+
+    -- who made it, and which framework it is for
+    local function by_line(a)
+        local by = a.author ~= '' and ('by ' .. a.author) or ''
+        if a.framework_name ~= '' then by = by .. (by ~= '' and '  ·  ' or '') .. a.framework_name end
+        return by
+    end
 
     -- text in at most `max` lines; a longer one ends at a whole word, with an ellipsis
     local function clamp(text, font, size, w, max)
@@ -229,6 +255,19 @@ return function (C)
         cy = cy + h + S(2)
         pressed, h = rail_item(dl, '##vs_r_srv', x, cy, w, 'Server-specific', L.CP.server, st.compat == 'server')
         if pressed then set_view(st.view, st.compat ~= 'server' and 'server' or nil) end
+        cy = cy + h + S(22)
+        L.eyebrow(dl, x + S(10), cy, 'FRAMEWORK', K.dim)
+        cy = cy + S(22)
+        for _, f in ipairs({ { 'vanacore', 'VanaCore' }, { 'ashita', 'Ashita' }, { 'windower', 'Windower' } }) do
+            pressed, h = rail_item(dl, '##vs_r_f_' .. f[1], x, cy, w, f[2], L.CP.layers, st.framework == f[1])
+            if pressed then
+                st.framework = st.framework ~= f[1] and f[1] or nil
+                st.detail, st.settings_open = nil, false
+                st.grid_at = U.clock()
+                st.scroll_top = true
+            end
+            cy = cy + h + S(2)
+        end
     end
 
     ---------------------------------------------------------------------------
@@ -253,7 +292,9 @@ return function (C)
         local cy = iy + S(20)
         L.eyebrow(dl, tx, cy, 'FEATURED', K.gold)
         cy = cy + S(20)
-        U.text(dl, tx, cy, U.fit(a.title, F.bold, T.h1, tw), K.ink, F.bold, T.h1)
+        local ftitle = U.fit(a.title, F.bold, T.h1, tw - S(26))
+        U.text(dl, tx, cy, ftitle, K.ink, F.bold, T.h1)
+        shield(dl, a, tx + U.measure(ftitle, F.bold, T.h1), cy + S(15))
         cy = cy + S(30)
         local by = by_line(a)
         U.text(dl, tx, cy, by, K.dim, F.text, T.small)
@@ -300,7 +341,9 @@ return function (C)
         local cy = y + th + S(13)
         local ver, have, have_col = version_text(a)
         local vw = L.mono_width(ver, T.small)
-        U.text(dl, px, cy, U.fit(a.title, F.semi, T.body, pw - vw - S(10)), mix(K.ink, K.hot, hv), F.semi, T.body)
+        local ctitle = U.fit(a.title, F.semi, T.body, pw - vw - S(34))
+        U.text(dl, px, cy, ctitle, mix(K.ink, K.hot, hv), F.semi, T.body)
+        shield(dl, a, px + U.measure(ctitle, F.semi, T.body), cy + S(10))
         L.mono(dl, px + pw - vw, cy + S(2), ver, K.dim, T.small)
         cy = cy + S(22)
         U.text(dl, px, cy, U.fit(by_line(a), F.text, T.small, pw), K.dim, F.text, T.small)
@@ -346,7 +389,9 @@ return function (C)
         local cy = y + S(18)
         local ver, have, have_col = version_text(a)
         local vw = L.mono_width(ver, T.small)
-        U.text(dl, px, cy, U.fit(a.title, F.semi, T.body, tw - vw - S(10)), mix(K.ink, K.hot, hv), F.semi, T.body)
+        local ctitle = U.fit(a.title, F.semi, T.body, tw - vw - S(34))
+        U.text(dl, px, cy, ctitle, mix(K.ink, K.hot, hv), F.semi, T.body)
+        shield(dl, a, px + U.measure(ctitle, F.semi, T.body), cy + S(10))
         L.mono(dl, px + tw - vw, cy + S(2), ver, K.dim, T.small)
         cy = cy + S(22)
         U.text(dl, px, cy, U.fit(by_line(a), F.text, T.small, tw), K.dim, F.text, T.small)
@@ -389,8 +434,8 @@ return function (C)
             else empty(dl, ox, oy + S(90), w - S(8), "The catalog couldn't be read.", tostring(D.why or D.fetch_why or '')) end
             return S(300)
         end
-        local list = D.filter(st.view, st.compat, query)
-        local plain = st.view == 'all' and st.compat == nil and query:gsub('%s', '') == ''
+        local list = D.filter(st.view, st.compat, query, st.framework)
+        local plain = st.view == 'all' and st.compat == nil and st.framework == nil and query:gsub('%s', '') == ''
         local feat = plain and D.featured() or nil
         if feat then
             -- (the featured addon has the large card: it isn't shown again among the cards under it)
@@ -411,6 +456,7 @@ return function (C)
         L.eyebrow(dl, ox + S(2), oy + at + S(2), heading, K.dim)
         local count = #list == 1 and '1 addon' or (#list .. ' addons') -- (the cards under this heading)
         if st.compat then count = count .. (st.compat == 'general' and ', general' or ', server-specific') end
+        if st.framework then count = count .. ', ' .. (st.framework == 'vanacore' and 'VanaCore' or st.framework == 'ashita' and 'Ashita' or 'Windower') end
         local cw = U.measure(count, F.text, T.small)
         U.text(dl, ox + w - S(8) - cw, oy + at - S(2), count, K.faint, F.text, T.small)
         at = at + S(26)
@@ -583,9 +629,18 @@ return function (C)
         else
             cy = cy + S(8)
         end
+        if a.unreviewed and not (job and job.state == 'refused') then
+            -- (said once here, plainly; the chip above names it, and the warning comes before any download)
+            for _, line in ipairs(U.wrap(UNREVIEWED, F.text, T.small, sw)) do
+                U.text(dl, sx, cy, line, K.faint, F.text, T.small)
+                cy = cy + S(18)
+            end
+            cy = cy + S(14)
+        end
         cy = cy + fact(dl, sx, cy, sw, 'Version', a.version ~= '' and a.version or '-')
         if a.have then cy = cy + fact(dl, sx, cy, sw, 'You have', tostring(a.have), a.update and K.gold or K.teal) end
-        cy = cy + fact(dl, sx, cy, sw, 'Size', D.size_text(a.package.size))
+        if a.framework_name ~= '' then cy = cy + fact(dl, sx, cy, sw, 'Framework', a.framework_name) end
+        if a.package.size > 0 then cy = cy + fact(dl, sx, cy, sw, 'Size', D.size_text(a.package.size)) end
         cy = cy + fact(dl, sx, cy, sw, 'Updated', D.date_text(a.updated))
         if a.github then
             -- where a mirrored listing came from: the repository, then its release and commit under it

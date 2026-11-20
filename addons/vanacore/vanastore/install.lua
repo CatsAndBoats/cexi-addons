@@ -258,12 +258,15 @@ return function (C)
     end
 
     -- Install or update the catalog's addon `a`; the window shows the job as it goes. `opts.adopt`: a takeover of a
-    -- copy no package installed, which the player has just agreed to (the store's confirmation).
+    -- copy no package installed, which the player has just agreed to (the store's confirmation). `opts.accept_unreviewed`:
+    -- the player has just agreed to an addon the site hasn't reviewed.
     function I.start(a, opts)
         local job = C.jobs[a.slug]
         if job and job.state ~= 'refused' then return end
         local adopt = opts ~= nil and opts.adopt == true
         if a.locked then return end
+        -- (an addon the site hasn't reviewed goes ahead only from the window's warning, answered yes)
+        if not a.trusted and not (opts ~= nil and opts.accept_unreviewed == true) then return end
         if a.foreign and not (adopt and a.takeover) then return end
         job = { slug = a.slug, state = 'download', progress = nil, at = clock(), adopt = adopt and a.foreign or nil }
         C.jobs[a.slug] = job

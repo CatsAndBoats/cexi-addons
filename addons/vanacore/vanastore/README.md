@@ -1,6 +1,6 @@
 # VanaStore
 
-The addons [ffxiprivateservers.com](https://ffxiprivateservers.com/addons) lists for VanaCore, in a window in the game.
+The addons [ffxiprivateservers.com](https://ffxiprivateservers.com/addons) lists, in a window in the game.
 Browse them, read about one, install it, update it, and switch it on or off without leaving the game.
 
 - **Browse.** All addons, the ones you have, and the ones with an update; General or Server-specific, as the site
@@ -9,13 +9,17 @@ Browse them, read about one, install it, update it, and switch it on or off with
 - **Install and update.** One button. The file comes from the site, its SHA-256 is compared with the one the site's
   catalog gives before anything opens it, and VanaCore's own package installer does the rest. A file that doesn't
   match is deleted unopened, and the window says so.
-- **Only reviewed addons.** The store installs an addon only when the site marks it trusted (reviewed, and the file is
-  the one reviewed), hosts the file itself and gives its checksum. Others are listed with "In review" or "On the site"
-  where the button would be.
+- **Reviewed, or not.** An addon ffxiprivateservers.com has reviewed carries a small shield by its name. One it
+  hasn't is marked "Not reviewed" and can still be installed: the store asks first, in plain words, before anything is
+  downloaded. Either way the file must be one the site hosts, with its checksum.
+- **Every framework the site lists.** VanaCore, Ashita and Windower addons are all shown, each card saying which.
+  VanaCore's packages install VanaCore addons only so far, so the others have "View on FFXIPS" in place of Install
+  (`catalog.lua`'s `D.INSTALLS` is the one switch); a native plugin is never installed from the store.
+- **Taking over.** An addon the launcher installed, or one copied in by hand, can be handed to the store where
+  VanaCore allows it: the store asks, replaces it with the site's package, and keeps it updated from then on.
 - **On and off.** An installed addon has a switch: on loads it now and at every start, off unloads it and takes it
   out of `scripts\boot.txt`.
-- **What it leaves alone.** An addon the launcher installed, or one copied in by hand, isn't the store's to update
-  (VanaCore lets a package replace only what a package installed): it shows with its switch, and says so.
+- **What it leaves alone.** VanaCore's own addons, and itself: the store ships and updates with VanaCore.
 - **Mouse, keys and controller**, the same window size and opacity settings as the Auction House, VanaMaps and Party
   Finder windows, kept per character.
 
@@ -41,7 +45,7 @@ Browse them, read about one, install it, update it, and switch it on or off with
 
 ## For developers
 
-- `catalog.lua`'s header has the catalog's format, as the site serves it at `/api/addons?framework=vanacore`.
+- `catalog.lua`'s header has the catalog's format, as the site serves it at `/api/addons`.
 - `tools/vanastore_test_origin.py <folder>` stands in for the site's routes on 127.0.0.1; `/store origin
   http://127.0.0.1:8765` points the store at it and `/store origin default` puts it back. Only https origins, or http
   on this PC, are taken.
