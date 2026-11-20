@@ -34,14 +34,22 @@ return function (C)
         return ok and size or nil
     end
 
-    local function is_loaded(name)
+    -- whether the addon `name` of a framework's folder (vanacore unless said) is loaded
+    local function is_loaded(name, dir)
+        dir = dir or 'vanacore'
         local ok, list = pcall(vana.addons.loaded)
         if ok and type(list) == 'table' then
             for _, a in ipairs(list) do
-                if tostring(a.name):lower() == name and (a.source == nil or a.source == 'vanacore') then return true end
+                if tostring(a.name):lower() == name and (a.source or 'vanacore') == dir then return true end
             end
         end
         return false
+    end
+
+    -- at every start: VanaCore's own by its name alone (as every VanaCore takes it), another framework's with it
+    local function at_start(a)
+        if a.framework == 'vanacore' then return pcall(vana.addons.load_at_start, a.name) end
+        return pcall(vana.addons.load_at_start, a.name, a.framework)
     end
     I.is_loaded = is_loaded
 
@@ -132,8 +140,8 @@ return function (C)
     function I.switch(a, on)
         if a.name == nil then return end
         if on then
-            vana.chat.run('/addon load ' .. a.name .. ' vanacore', 1)
-            pcall(vana.addons.load_at_start, a.name)
+            vana.chat.run('/addon load ' .. a.name .. ' ' .. (a.dir or 'vanacore'), 1)
+            at_start(a)
         else
             vana.chat.run('/addon unload ' .. a.name, 1)
             pcall(I.boot_off, a.name)
@@ -153,7 +161,11 @@ return function (C)
         end
         local dir = D.cache_dir()
         vana.fs.create_dir(dir)
-        local path = dir .. '\\' .. a.slug .. '.vcaddon'
+        -- (VanaCore's own come as packages; Ashita's and Windower's as the zip their author published, which the engine
+        -- is told the framework, the folder's name and the zip's folder for)
+        local plain = a.framework ~= 'vanacore' and { framework = a.framework, name = a.name, root = a.root } or nil
+        if plain and (a.name == nil or not D.installs(a.framework)) then return refuse(job, "This VanaCore can't install it") end
+        local path = dir .. '\\' .. a.slug .. (plain and '.zip' or '.vcaddon')
         tidy(path)
 
         -- 1. the download
@@ -199,7 +211,8 @@ return function (C)
         -- 3. VanaCore reads the package
         job.state, job.progress = 'install', nil
         pcall(vana.fs.write, path .. '.from', a.package.url) -- (where it came from, for VanaCore's own record of the install)
-        local info, why = vana.addons.package_info(path)
+        local info, why
+        if plain then info, why = vana.addons.package_info(path, plain) else info, why = vana.addons.package_info(path) end
         if info == nil then
             tidy(path)
             return refuse(job, why or "It isn't an addon package")
@@ -209,9 +222,15 @@ return function (C)
             tidy(path)
             return refuse(job, 'The package holds an addon named ' .. name .. ', not ' .. a.name .. ' as the catalog says. Nothing was installed')
         end
-        if name == C.name then
+        if name == C.name and not plain then
             tidy(path)
             return refuse(job, "The store can't replace itself while it's open: install its update from /vana > Addons")
+        end
+        -- (a copy of that name in another framework's folder, which this install wouldn't touch: never a second one
+        -- without the player having been told)
+        if type(info.elsewhere) == 'table' and #info.elsewhere > 0 and info.installed_version == nil and not job.elsewhere_ok then
+            tidy(path)
+            return refuse(job, 'A copy of it is already in addons\\' .. table.concat(info.elsewhere, ', addons\\') .. '. Nothing was installed')
         end
         -- (a takeover: the one thing in its way may be that no package installed the folder there, and VanaCore says
         -- so itself with `adoptable`; anything else it finds wrong still ends the job)
@@ -222,36 +241,45 @@ return function (C)
         end
 
         -- 4. the addon out of the way, VanaCore's installer, the addon back
-        local was_loaded = is_loaded(name)
+        local folder = a.dir or 'vanacore'
+        local was_loaded = is_loaded(name, folder)
         if was_loaded then
             vana.chat.run('/addon unload ' .. name, 1)
-            if not wait_until(function () return not is_loaded(name) end, 6) then
+            if not wait_until(function () return not is_loaded(name, folder) end, 6) then
                 tidy(path)
                 return refuse(job, name .. " didn't unload, so it wasn't replaced")
             end
         end
         local done, bad
-        if adopting then
-            done, bad = vana.addons.package_install(path, { adopt = true }) -- (the old folder goes to backups\addons)
+        if plain or adopting then
+            local how = {}
+            if plain then how.framework, how.name, how.root = plain.framework, plain.name, plain.root end
+            if adopting then how.adopt = true end -- (the old folder goes to backups\addons)
+            done, bad = vana.addons.package_install(path, how)
         else
             done, bad = vana.addons.package_install(path)
         end
         if not done then
-            if was_loaded then vana.chat.run('/addon load ' .. name .. ' vanacore', 1) end
+            if was_loaded then vana.chat.run('/addon load ' .. name .. ' ' .. folder, 1) end
             tidy(path)
             return refuse(job, 'VanaCore could not install it: ' .. tostring(bad))
         end
         local fresh = info.installed_version == nil -- (a takeover isn't: the addon stays loaded or not, as it was)
-        C.records[name] = { slug = a.slug, version = tostring(info.version or a.version), sha256 = a.package.sha256, at = os.time() }
+        a.name = a.name or name
+        -- (a plain zip may carry no version of its own: the catalog's then, until D.look reads the main file's)
+        local version = tostring(info.version or '')
+        if version == '' or version == '?' then version = a.version end
+        local now_there = D.version_of(name, folder) -- (what the installed main file says: what D.look will read)
+        if now_there ~= nil and now_there ~= '?' then version = now_there end
+        C.records[D.record_key(a)] = { slug = a.slug, version = version, sha256 = a.package.sha256, at = os.time(), framework = a.framework }
         C.save_records()
         if fresh or was_loaded then
-            vana.chat.run('/addon load ' .. name .. ' vanacore', 1)
-            if fresh then pcall(vana.addons.load_at_start, name) end
-            wait_until(function () return is_loaded(name) end, 4)
+            vana.chat.run('/addon load ' .. name .. ' ' .. folder, 1)
+            if fresh then at_start(a) end
+            wait_until(function () return is_loaded(name, folder) end, 4)
         end
         tidy(path)
-        vana.log(string.format('%s %s %s from %s (sha256 %s)', adopting and 'took over' or (fresh and 'installed' or 'updated'), name, tostring(info.version), a.package.url, got))
-        a.name = a.name or name
+        vana.log(string.format('%s %s (%s) %s from %s (sha256 %s)', adopting and 'took over' or (fresh and 'installed' or 'updated'), name, folder, tostring(info.version), a.package.url, got))
         C.jobs[a.slug] = nil
         D.look(true)
         U.toast('ok', adopting and 'Taken over' or (fresh and 'Installed' or 'Updated'), a.title .. ' ' .. tostring(info.version or ''), 4, 'circle-check')
@@ -268,7 +296,10 @@ return function (C)
         -- (an addon the site hasn't reviewed goes ahead only from the window's warning, answered yes)
         if not a.trusted and not (opts ~= nil and opts.accept_unreviewed == true) then return end
         if a.foreign and not (adopt and a.takeover) then return end
-        job = { slug = a.slug, state = 'download', progress = nil, at = clock(), adopt = adopt and a.foreign or nil }
+        -- (a copy of that name in another framework's folder: only from the window's question about it, answered yes)
+        local elsewhere_ok = opts ~= nil and opts.elsewhere_ok == true
+        if a.have == nil and a.elsewhere ~= nil and #a.elsewhere > 0 and not elsewhere_ok then return end
+        job = { slug = a.slug, state = 'download', progress = nil, at = clock(), adopt = adopt and a.foreign or nil, elsewhere_ok = elsewhere_ok or nil }
         C.jobs[a.slug] = job
         vana.async(function ()
             local ok, err = pcall(run, a, job)

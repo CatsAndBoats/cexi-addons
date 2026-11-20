@@ -12,7 +12,7 @@
 -- It is asked of the site (GET /api/addons: every framework) and kept, so a start with no network still has one.
 --
 -- What may be installed is decided here, once (entry's `locked`): an addon of a framework this VanaCore can install
--- packages of (D.INSTALLS: the one place that says which), whose file the site hosts itself, with a whole sha256 and
+-- (D.installs: the one place that says which), whose file the site hosts itself, with a whole sha256 and
 -- a download address on the site. Trusted or not: one the site hasn't reviewed is `unreviewed`, and the window asks
 -- before it is fetched. Never native code, never a file the site's virus scan hasn't passed, never one the site's
 -- review turned down, never the store itself
@@ -76,16 +76,26 @@ end
 
 local function text_of(v, fallback) return type(v) == 'string' and v or fallback end
 
--- The frameworks the site lists, as a card says them, and the rail's group each is under. VanaCore runs Ashita and
--- Windower addons too, but its packages install VanaCore addons only so far: D.INSTALLS is the switch, and an entry
--- of a framework not in it sends the player to its page on the site.
+-- The frameworks the site lists: as a card says them, the rail's group each is under, and the folder of VanaCore's
+-- that holds its addons (addons\vanacore, addons\ashita, addons\windower). A plugin is native code and has none.
 D.FRAMEWORKS = {
-    vanacore = { name = 'VanaCore', family = 'vanacore' },
-    ['ashita-addon'] = { name = 'Ashita', family = 'ashita' },
+    vanacore = { name = 'VanaCore', family = 'vanacore', dir = 'vanacore' },
+    ['ashita-addon'] = { name = 'Ashita', family = 'ashita', dir = 'ashita' },
     ['ashita-plugin'] = { name = 'Ashita plugin', family = 'ashita', plugin = true },
-    windower = { name = 'Windower', family = 'windower' },
+    windower = { name = 'Windower', family = 'windower', dir = 'windower' },
 }
-D.INSTALLS = { vanacore = true }
+D.DIRS = { 'vanacore', 'ashita', 'windower' }
+
+-- Whether this VanaCore installs a framework's addons: the one place that says. Its own, always; Ashita's and
+-- Windower's when it says it takes their plain zips (vana.addons.package_frameworks: nil on a VanaCore that doesn't,
+-- and an entry of theirs then sends the player to its page on the site). Never a plugin or an unknown framework.
+function D.installs(framework)
+    local kind = D.FRAMEWORKS[framework]
+    if kind == nil or kind.plugin or kind.dir == nil then return false end
+    if framework == 'vanacore' then return true end
+    local can = vana.addons.package_frameworks
+    return type(can) == 'table' and can[framework] == true
+end
 D.SELF = 'vanastore'
 
 -- Where the catalog comes from, and the only place a package, a picture or a page may be: the site. (A developer's own
@@ -191,6 +201,11 @@ local function entry(raw)
     a.status = a.trusted and 'trusted' or 'pending'
     -- native code (a plugin, or a package holding a DLL or the like): never installed from the store
     local layout = type(raw.layout) == 'table' and raw.layout or nil
+    -- where the addon's files sit in the zip, for a framework whose zips come as their authors publish them
+    local root = layout and text_of(layout.packageRoot, ''):gsub('[/\\]+$', '') or ''
+    if root:find('..', 1, true) or root:find(':', 1, true) or root:match('^[/\\]') or #root > 200 then root = '' end
+    a.root = root ~= '' and root or nil
+    a.dir = kind and kind.dir or nil
     a.native = raw.nativeCode == true or (layout ~= nil and layout.hasNativeCode == true) or (kind ~= nil and kind.plugin == true)
     a.virus_scanned = raw.virusScanned == true
     a.flags = {}
@@ -223,7 +238,9 @@ local function entry(raw)
     if not a.trusted and a.review == 'denied' then a.locked = 'denied'
     elseif a.native then a.locked = 'plugin'
     elseif not a.virus_scanned then a.locked = 'scan' -- (the site's virus scanner hasn't passed the file it serves)
-    elseif not D.INSTALLS[framework] then a.locked = 'framework'
+    elseif not D.installs(framework) then a.locked = 'framework'
+    elseif a.name ~= nil and (D.RESERVED[a.dir] or {})[a.name] then a.locked = 'reserved' -- (one of VanaCore's own, or a library)
+    elseif framework ~= 'vanacore' and a.name == nil then a.locked = 'package' -- (no folder name to install it under)
     elseif not a.hosted then a.locked = 'hosted'
     elseif not on_site(a.package.url) or not a.package.sha256:match('^%x+$') or #a.package.sha256 ~= 64 then
         a.locked = 'package'
@@ -318,18 +335,29 @@ end
 -- This PC: what is installed, at which version, and what is loaded
 -------------------------------------------------------------------------------
 
--- VanaCore's own addons, and CatsEyeXI's required one: no package may replace them (the engine's own list)
-D.RESERVED = { vana = true, keybinds = true, freecam = true, mcp = true, hello = true, libs = true, apiexplorer = true, plates = true,
-    sendkey = true, minparty = true, loadscreen = true, customcolors = true, vanastore = true }
+-- Names no package may install or take over, by folder (the engine's own lists): VanaCore's own addons and
+-- CatsEyeXI's required one, Ashita's and Windower's libraries. The store itself is among VanaCore's.
+D.RESERVED = {
+    vanacore = { vana = true, keybinds = true, freecam = true, mcp = true, hello = true, libs = true, apiexplorer = true, plates = true,
+        sendkey = true, minparty = true, loadscreen = true, customcolors = true, vanastore = true },
+    ashita = { libs = true, customcolors = true },
+    windower = { libs = true, res = true },
+}
 
-local function installed_version(name)
-    if name == nil then return nil end -- (the catalog didn't say which folder it is: known once its package is read)
-    local path = vana.paths.addons .. '\\vanacore\\' .. name .. '\\' .. name .. '.lua'
+-- the store's record of an install is kept by the addon's name, with its folder before it for Ashita's and Windower's
+function D.record_key(a) return (a.dir == nil or a.dir == 'vanacore') and a.name or (a.dir .. '/' .. tostring(a.name)) end
+
+-- the version of the addon `name` in addons\<dir>, read from its main file's header; nil when it isn't there
+local function installed_version(name, dir)
+    if name == nil or dir == nil then return nil end -- (the catalog didn't say which folder it is)
+    local path = vana.paths.addons .. '\\' .. dir .. '\\' .. name .. '\\' .. name .. '.lua'
     if not vana.fs.exists(path) then return nil end
-    -- (the addon's header: its version line comes after an opening comment that can run long)
+    -- (the addon's header: its version line comes after an opening comment that can run long; Windower's is _addon)
     local text = read_file(path, 24 * 1024) or ''
-    return text:match('addon%.version%s*=%s*[\'"]([^\'"]+)[\'"]') or '?'
+    return text:match('_?addon%.version%s*=%s*[\'"]([^\'"]+)[\'"]') or '?'
 end
+
+D.version_of = installed_version
 
 -- looked at again every few seconds while the window is open, and at once after the store changes something
 function D.look(force)
@@ -340,24 +368,33 @@ function D.look(force)
     local ok, list = pcall(vana.addons.loaded)
     if ok and type(list) == 'table' then
         for _, a in ipairs(list) do
-            if a.source == nil or a.source == 'vanacore' then loaded[tostring(a.name):lower()] = a.version or true end
+            loaded[(a.source or 'vanacore') .. '/' .. tostring(a.name):lower()] = true
         end
     end
     local updates, installed = 0, 0
     for _, a in ipairs(D.addons) do
-        -- (what is installed is looked for only where the store installs: addons\\vanacore)
-        local have = D.INSTALLS[a.framework] and installed_version(a.name) or nil
+        -- (what is installed is looked for only where the store installs: the framework's own folder)
+        local dir = a.dir
+        local have = D.installs(a.framework) and installed_version(a.name, dir) or nil
         a.have = have
-        a.loaded = a.name ~= nil and loaded[a.name] ~= nil
+        a.loaded = a.name ~= nil and dir ~= nil and loaded[dir .. '/' .. a.name] ~= nil
+        -- the other frameworks' folders that hold an addon of this name: a copy the install wouldn't touch (the
+        -- launcher keeps some addons under another framework than the site lists them for)
+        a.elsewhere = {}
+        if a.name ~= nil and dir ~= nil and have == nil and not a.locked then
+            for _, other in ipairs(D.DIRS) do
+                if other ~= dir and installed_version(a.name, other) ~= nil then a.elsewhere[#a.elsewhere + 1] = other end
+            end
+        end
         -- VanaCore lets a package replace only what a package installed (the folder's .vcaddon.json): an addon the
         -- launcher keeps, or one copied in by hand, is another's to update, and the store offers its switch alone
-        a.packaged = have ~= nil and vana.fs.exists(vana.paths.addons .. '\\vanacore\\' .. a.name .. '\\.vcaddon.json')
+        a.packaged = have ~= nil and vana.fs.exists(vana.paths.addons .. '\\' .. dir .. '\\' .. a.name .. '\\.vcaddon.json')
         a.foreign = have ~= nil and not a.packaged
         -- an update: a newer version, or this listing's file changed on the site since the store installed it from
         -- there (the site keeps a listing's address and swaps its file when a new one is approved; the version's words
         -- are the uploader's, so the checksum is what tells). The store's record counts only while it is of what is
         -- installed now, and only for the listing it came from.
-        local rec = D.records and D.records[a.name] or nil
+        local rec = D.records and a.name and D.records[D.record_key(a)] or nil
         local newer = have ~= nil and have ~= '?' and a.version ~= '' and D.compare_versions(have, a.version) < 0
         local changed = rec ~= nil and rec.version == have and rec.slug == a.slug and type(rec.sha256) == 'string'
             and rec.sha256 ~= a.package.sha256
@@ -367,7 +404,7 @@ function D.look(force)
         -- the takeover: the store may put the site's reviewed package in place of a copy the launcher or a hand
         -- installed, where this VanaCore can do that (install.lua asks it). Never VanaCore's own addons, never an
         -- entry the store wouldn't install anyway.
-        a.takeover = a.foreign and not a.locked and not D.RESERVED[a.name] and D.engine_adopts ~= nil and D.engine_adopts() == true
+        a.takeover = a.foreign and not a.locked and not (D.RESERVED[dir] or {})[a.name] and D.engine_adopts ~= nil and D.engine_adopts() == true
         if have then installed = installed + 1 end
         if a.update then updates = updates + 1 end
     end

@@ -12,9 +12,11 @@ Browse them, read about one, install it, update it, and switch it on or off with
 - **Reviewed, or not.** An addon ffxiprivateservers.com has reviewed carries a small shield by its name. One it
   hasn't is marked "Not reviewed" and can still be installed: the store asks first, in plain words, before anything is
   downloaded. Either way the file must be one the site hosts, with its checksum.
-- **Every framework the site lists.** VanaCore, Ashita and Windower addons are all shown, each card saying which.
-  VanaCore's packages install VanaCore addons only so far, so the others have "View on FFXIPS" in place of Install
-  (`catalog.lua`'s `D.INSTALLS` is the one switch); a native plugin is never installed from the store.
+- **Every framework the site lists.** VanaCore, Ashita and Windower addons are all shown, each card saying which,
+  and installed into VanaCore's own folder for each (`addons\vanacore`, `addons\ashita`, `addons\windower`) where this
+  VanaCore takes their zips (`vana.addons.package_frameworks`); on one that doesn't, they have "View on FFXIPS" in
+  place of Install. A package holding native code is never installed from the store. If a copy of an addon already
+  sits under another framework's folder, the store says so and asks before it installs a second one.
 - **Taking over.** An addon the launcher installed, or one copied in by hand, can be handed to the store where
   VanaCore allows it: the store asks, replaces it with the site's package, and keeps it updated from then on.
 - **On and off.** An installed addon has a switch: on loads it now and at every start, off unloads it and takes it

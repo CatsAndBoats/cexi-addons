@@ -48,10 +48,25 @@ return function (C)
         hosted = { 'ON THE SITE ONLY', "FFXIPS doesn't host this file itself, so the store can't check it. Its page on the site has the link." },
         package = { 'ON THE SITE ONLY', "The catalog gives no checksum for this file, so the store can't check it. Its page on the site has the link." },
         plugin = { 'NATIVE CODE', "It holds a native program (a plugin, a DLL or the like), which the store doesn't install. Its page on the site has the file." },
+        reserved = { nil, "It carries the name of one of VanaCore's own addons or libraries, which no package may replace." },
         scan = { 'NOT SCANNED', "The site's virus scan hasn't passed this file, so the store doesn't install it." },
-        framework = { nil, "The store can't install Ashita and Windower addons yet. Its page on the site has the file." },
+        framework = { nil, "This VanaCore can't install addons of this framework. Its page on the site has the file." },
     }
     local UNREVIEWED = "FFXIPS hasn't reviewed this addon. Install it only if you trust its author."
+
+    -- a copy of the same name in another framework's folder (the launcher keeps some addons under another framework
+    -- than the site lists them for): said, so a second copy is never installed unawares
+    local function elsewhere_of(a)
+        if a.have ~= nil or a.elsewhere == nil or #a.elsewhere == 0 then return nil end
+        return 'addons\\' .. table.concat(a.elsewhere, ', addons\\')
+    end
+    local function elsewhere_text(a)
+        local where = elsewhere_of(a)
+        if where == nil then return nil end
+        return 'A copy of this addon is already in ' .. where .. '. The site lists it for ' .. a.framework_name
+            .. ', so installing puts a second copy in addons\\' .. tostring(a.dir) .. '.'
+    end
+    V.elsewhere_text = elsewhere_text
 
     -- "View on FFXIPS", its right edge at `right`: where an addon the store doesn't install is had
     local function page_link(dl, a, key, right, cy, tip)
@@ -68,7 +83,7 @@ return function (C)
     local function card_action(dl, a, key, right, cy)
         local kind, job = state_of(a)
         local bw, bh = S(88), S(28)
-        local col = a.trusted and K.gold or K.dim
+        local col = (a.trusted and elsewhere_of(a) == nil) and K.gold or K.dim
         if kind == 'locked' then
             if a.locked ~= 'denied' and a.locked ~= 'scan' then page_link(dl, a, key, right, cy, LOCKED[a.locked][2]) end
         elseif kind == 'busy' then
@@ -92,7 +107,7 @@ return function (C)
     local function primary_action(dl, a, key, x, y)
         local kind, job = state_of(a)
         local w, h = S(184), S(44)
-        local look = (not a.trusted) and { kind = 'dark', ink = K.ink } or nil
+        local look = (not a.trusted or elsewhere_of(a) ~= nil) and { kind = 'dark', ink = K.ink } or nil
         if kind == 'locked' then
             return 0 -- (nothing to press: the page says why in a sentence)
         elseif kind == 'busy' then
@@ -173,6 +188,8 @@ return function (C)
             return ver, 'you have ' .. tostring(a.have), K.gold
         end
         if a.behind then return ver, 'you have ' .. tostring(a.have), a.takeover and K.gold or K.faint end
+        local where = elsewhere_of(a)
+        if where then return ver, 'in ' .. where, K.faint end
         return ver, nil, K.gold
     end
 
@@ -629,6 +646,14 @@ return function (C)
             cy = cy + S(16)
         else
             cy = cy + S(8)
+        end
+        local second = elsewhere_text(a)
+        if second and not (job and job.state == 'refused') then
+            for _, line in ipairs(U.wrap(second, F.text, T.small, sw)) do
+                U.text(dl, sx, cy, line, K.dim, F.text, T.small)
+                cy = cy + S(18)
+            end
+            cy = cy + S(10)
         end
         if a.unreviewed and not (job and job.state == 'refused') then
             -- (said once here, plainly; the chip above names it, and the warning comes before any download)

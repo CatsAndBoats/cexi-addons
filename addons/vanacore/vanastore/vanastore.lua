@@ -123,7 +123,9 @@ end
 -- (an addon the site hasn't reviewed is asked about first: draw_confirm)
 function C.install(a)
     if a.locked then return end
-    if a.trusted then
+    -- (a copy of the same name under another framework is asked about too: never a second one unawares)
+    local second = a.have == nil and a.elsewhere ~= nil and #a.elsewhere > 0
+    if a.trusted and not second then
         C.I.start(a)
     else
         st.confirm = { slug = a.slug, kind = 'install', anim = 0 }
@@ -358,9 +360,19 @@ local function draw_confirm(t, dt)
                 yes_label, no_label = a.trusted and 'TAKE OVER' or 'TAKE OVER ANYWAY', 'Not now'
                 for _, text in ipairs(CONFIRM.takeover) do texts[#texts + 1] = text end
             else
-                eyebrow = 'NOT REVIEWED'
-                heading = (a.have and 'Update ' or 'Install ') .. a.title .. ' anyway?'
-                yes_label, no_label = a.have and 'UPDATE ANYWAY' or 'INSTALL ANYWAY', 'Cancel'
+                local second = V.elsewhere_text(a)
+                if second then
+                    -- a copy is already here under another framework: said first
+                    eyebrow = a.trusted and 'ALREADY INSTALLED' or 'ALREADY INSTALLED, NOT REVIEWED'
+                    heading = 'Install a second copy of ' .. a.title .. '?'
+                    yes_label, no_label = 'INSTALL A COPY', 'Cancel'
+                    texts[#texts + 1] = second
+                    texts[#texts + 1] = 'VanaCore loads the copy it finds first, so two of the same addon can get in each other\'s way.'
+                else
+                    eyebrow = 'NOT REVIEWED'
+                    heading = (a.have and 'Update ' or 'Install ') .. a.title .. ' anyway?'
+                    yes_label, no_label = a.have and 'UPDATE ANYWAY' or 'INSTALL ANYWAY', 'Cancel'
+                end
             end
             if not a.trusted then
                 for _, text in ipairs(CONFIRM.unreviewed) do texts[#texts + 1] = text end
@@ -410,7 +422,8 @@ local function draw_confirm(t, dt)
             cy = cy + S(22) - S(6)
             -- the button that does it: the site's gold for a reviewed addon, the dark slab for one that isn't
             local bw = math.max(S(184), L.pix_width(yes_label, 1.5, 0.08) + S(44))
-            local yes = L.pixel_button(dl, '##vs_confirm_yes', cx, cy, bw, S(44), yes_label, (not a.trusted) and { kind = 'dark', ink = K.ink } or nil)
+            local quiet = (not a.trusted) or (not taking and V.elsewhere_text(a) ~= nil)
+            local yes = L.pixel_button(dl, '##vs_confirm_yes', cx, cy, bw, S(44), yes_label, quiet and { kind = 'dark', ink = K.ink } or nil)
             local no = L.quiet_button(dl, '##vs_confirm_no', cx + bw + S(22), cy + S(8), S(96), S(28), no_label, { color = K.dim })
             if PAD.capturing() then
                 PAD.claim()
@@ -419,7 +432,7 @@ local function draw_confirm(t, dt)
             if imgui.IsKeyPressed(U.KEY_ESCAPE) then no = true end
             if yes then
                 st.confirm = nil
-                C.I.start(a, { adopt = taking or nil, accept_unreviewed = (not a.trusted) or nil })
+                C.I.start(a, { adopt = taking or nil, accept_unreviewed = (not a.trusted) or nil, elsewhere_ok = true })
             elseif no then
                 st.confirm = nil
             end
