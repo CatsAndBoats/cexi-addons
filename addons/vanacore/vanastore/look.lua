@@ -116,7 +116,20 @@ function L.pixel_button(dl, key, x, y, w, h, label, opts)
     dl:AddRectFilled({ bx, by }, { bx + w, by + h }, u32(C.frame_dark))
     local ix, iy, iw, ih = bx + 2 * u, by + 2 * u, w - 4 * u, h - 4 * u
     dl:AddRectFilled({ ix, iy }, { ix + iw, iy + ih }, u32(face, a))
-    if opts.progress then
+    local sweep = opts.progress and opts.progress < 0
+    if sweep then
+        -- how far isn't known: a block steps across the dark slab
+        dl:AddRectFilled({ ix, iy }, { ix + iw, iy + ih }, u32(C.bg1))
+        local cells = 12
+        local cw = iw / cells
+        local at = math.floor(U.clock() * 9) % (cells + 3) - 3
+        for k = 0, 2 do
+            local c = at + k
+            if c >= 0 and c < cells then
+                dl:AddRectFilled({ ix + round(c * cw), iy }, { ix + round((c + 1) * cw), iy + ih }, u32(face, 0.18 + 0.12 * k))
+            end
+        end
+    elseif opts.progress then
         dl:AddRectFilled({ ix, iy }, { ix + iw, iy + ih }, u32(C.bg1))
         dl:AddRectFilled({ ix, iy }, { ix + round(iw * math.max(0, math.min(1, opts.progress))), iy + ih }, u32(face))
     end
@@ -127,7 +140,9 @@ function L.pixel_button(dl, key, x, y, w, h, label, opts)
     local n = opts.n or 1.5
     local tw, th = L.pix_width(label, n, 0.08), L.pix_size(n)
     local lx, ly = bx + (w - tw) / 2, by + (h - th) / 2 + (th >= 16 and round(th / 16) or 0)
-    if opts.progress then
+    if sweep then
+        L.pix(dl, lx, ly, label, face, n, 1, nil, 0.08)
+    elseif opts.progress then
         local split = ix + round(iw * math.max(0, math.min(1, opts.progress)))
         dl:PushClipRect({ split, by }, { bx + w, by + h }, true)
         L.pix(dl, lx, ly, label, face, n, 1, nil, 0.08)
@@ -275,9 +290,18 @@ function L.quiet_button(dl, key, x, y, w, h, label, opts)
     local a = (opts.disabled and not opts.progress) and 0.5 or 1
     if opts.progress then
         -- a bar that fills it from the left; the words are dark over the bar and gold past it
-        local split = x + w * math.max(0.03, math.min(1, opts.progress))
         dl:AddRectFilled({ x, y }, { x + w, y + h }, u32(col, 0.10), r)
         dl:AddRect({ x, y }, { x + w, y + h }, u32(col, 0.7), r, 240, 1)
+        if opts.progress < 0 then
+            -- how far isn't known: a band sweeps across it
+            local at = (U.clock() * 0.9) % 1.4 - 0.2
+            dl:PushClipRect({ x + w * math.max(0, at - 0.2), y }, { x + w * math.min(1, at + 0.2), y + h }, true)
+            dl:AddRectFilled({ x, y }, { x + w, y + h }, u32(col, 0.28), r)
+            dl:PopClipRect()
+            U.text_center(dl, x, y + h / 2, w, label, col, F.semi, T.small)
+            return false, hovered
+        end
+        local split = x + w * math.max(0.03, math.min(1, opts.progress))
         dl:PushClipRect({ split, y }, { x + w, y + h }, true)
         U.text_center(dl, x, y + h / 2, w, label, col, F.semi, T.small)
         dl:PopClipRect()

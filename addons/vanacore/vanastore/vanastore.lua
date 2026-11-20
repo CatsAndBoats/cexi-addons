@@ -15,7 +15,13 @@ module, pad.lua), in ffxiprivateservers.com's colours and faces: Press Start 2P 
 what is read, JetBrains Mono for figures, and the site's stepped pixel frame on the featured card and the primary
 button only (look.lua).
 
-Settings: settings\addons\vanastore\<Character>\settings.json.
+Installing: the catalog's file is downloaded, its SHA-256 compared with the catalog's before anything opens it, and
+VanaCore's own package installer does the rest (install.lua). Only an addon the site marks trusted, hosts itself and
+gives a checksum for can be installed (catalog.lua).
+
+Settings: settings\addons\vanastore\<Character>\settings.json. What the store installed: settings\addons\vanastore\
+installed.json. The catalog as last fetched: settings\addons\vanastore\catalog.json. Downloads and pictures:
+cache\vanastore\ in VanaCore's folder.
 --]]
 
 addon.name    = 'vanastore'
@@ -40,14 +46,17 @@ local K = L.C
 
 local DEFAULTS = { scale = 0, opacity = 100, w = 1100, h = 760, view = 'all' }
 local config = vana.settings.register({ scope = 'character', defaults = DEFAULTS })
+-- what the store installed on this PC (name -> { slug, version, sha256, at }): the same for every character.
+-- (`origin` is a developer's: a copy of the site to test against; empty is ffxiprivateservers.com.)
+local ledger = vana.settings.register({ name = 'installed', defaults = { installed = {}, origin = '' } })
 
 -- what every part of the addon shares (views.lua)
 local C = {
     U = U, L = L, D = D, PAD = PAD,
     cfg = config.data,
     st = { open = false, anim = 0, view = 'all', compat = nil, detail = nil, query = { '' }, settings_open = false, grid_at = 0 },
-    jobs = {},        -- slug -> { state = 'download' | 'verify' | 'install' | 'refused', progress, why }
-    version = addon.version,
+    jobs = {},        -- slug -> { state = 'download' | 'verify' | 'install' | 'refused', progress, why }: install.lua
+    version = addon.version, name = addon.name,
     alpha = 1,
 }
 local cfg, st = C.cfg, C.st
@@ -55,10 +64,11 @@ VANASTORE = C -- (this addon's own Lua state: for a test's eyes, through VanaCor
 
 local function clock() return vana.time.clock() end
 local function say(text) vana.chat.write('[VanaStore] ' .. text, 106) end
-local function fail(where, err) vana.log('vanastore ' .. where .. ': ' .. tostring(err)) end
+local function fail(where, err) vana.log(where .. ': ' .. tostring(err)) end
 C.say, C.fail = say, fail
 
 function C.save() config:save() end
+function C.save_records() ledger:save() end
 -- everything drawn after this is that much fainter (a card coming in), over the window's own opacity
 function C.fade(a) U.set_window_alpha(C.alpha * math.max(0, math.min(1, a))) end
 
@@ -78,7 +88,8 @@ function C.open(on)
     if on then
         st.focus_frames = 2
         st.grid_at = clock()
-        if D.state ~= 'ready' then D.load_stub() end
+        -- the catalog: asked for when the store is first opened, and again when it's opened ten minutes on
+        if D.state ~= 'ready' or clock() - (D.fetch_at or -1e9) > 600 then D.fetch() end
         D.look(true)
     else
         st.settings_open = false
@@ -108,37 +119,14 @@ function C.open_page(url)
     end
 end
 
--- Install or update. (This build draws the steps only: the download, the checksum and the install are the next step.)
-function C.install(a)
-    if a.locked then return end -- (not for the store to install: catalog.lua says why)
-    local job = C.jobs[a.slug]
-    if job and job.state ~= 'refused' then return end
-    C.jobs[a.slug] = { state = 'download', progress = 0, at = clock(), preview = true }
-end
+-- Install or update, and on or off: install.lua
+function C.install(a) C.I.start(a) end
+function C.switch(a, on) C.I.switch(a, on) end
 
--- On or off: loaded now, and at every start
-function C.switch(a, on)
-    if on then
-        vana.chat.run('/addon load ' .. a.name .. ' vanacore', 1)
-        pcall(vana.addons.load_at_start, a.name)
-    else
-        vana.chat.run('/addon unload ' .. a.name, 1)
-    end
-    a.loaded = on
-    D.looked_at = clock() - 2 -- (looked at again in a second, once the command has run)
-end
-
-local function tick_jobs()
-    local now = clock()
-    for _, job in pairs(C.jobs) do
-        if job.preview and job.state ~= 'refused' then
-            local e = now - job.at
-            if e < 1.8 then job.state, job.progress = 'download', e / 1.8
-            elseif e < 2.4 then job.state, job.progress = 'verify', 1
-            elseif e < 3.0 then job.state, job.progress = 'install', 1
-            else job.state, job.why = 'refused', 'Preview catalog: nothing was installed.' end
-        end
-    end
+-- the catalog asked for again (the header's button)
+function C.refresh()
+    D.fetch()
+    D.look(true)
 end
 
 -------------------------------------------------------------------------------
@@ -165,10 +153,10 @@ local function draw_header(dl, x, y, w, t)
         st.settings_open = not st.settings_open
     end
     ix = ix - size - S(4)
-    if L.icon_button(dl, '##vs_refresh', ix, iy, size, L.CP.rotate, K.dim, 'Look for new addons and updates') then
-        D.load_stub()
-        D.look(true)
-        st.grid_at = clock()
+    local busy = D.fetching
+    if L.icon_button(dl, '##vs_refresh', ix, iy, size, L.CP.rotate, busy and K.gold or K.dim, busy and 'Looking...' or 'Look for new addons and updates', busy)
+        and not busy then
+        C.refresh()
     end
     -- the search box
     local fw = math.min(S(280), w - S(26) - L.pix_width('VANASTORE', 3) - S(40) - (size + S(4)) * 3 - S(40))
@@ -327,7 +315,7 @@ vana.events.on('present', function ()
     PAD.frame(t, { id = 'vanastore', capture = function () return st.open end })
     U.anim.pad_shown = PAD.shown()
     L.no_tips = PAD.shown()
-    tick_jobs()
+    C.I.tick()
     if st.open then D.look() end
     if st.open or st.anim > 0 then draw_main(t, dt) end
     pcall(L.draw_tip, dt)
@@ -376,6 +364,15 @@ vana.events.on('command', function (e)
             if tonumber(args[i]) then frames = tonumber(args[i]) else names[args[i]:lower()] = true end
         end
         if next(names) == nil then say(PAD.describe()) else PAD.inject(names, frames) end
+    elseif what == 'origin' then
+        -- a developer's: the store pointed at a copy of the site (https, or http on this PC); "default" puts it back
+        ledger.data.origin = (rest == '' or rest:lower() == 'default') and '' or rest
+        local now = D.set_origin(ledger.data.origin)
+        if ledger.data.origin ~= '' and now ~= ledger.data.origin:gsub('/+$', '') then ledger.data.origin = '' end
+        ledger:save()
+        D.state = 'empty'
+        D.fetch()
+        say('the catalog comes from ' .. now)
     else
         for _, line in ipairs(HELP) do vana.chat.write(line, 106) end
     end
@@ -385,10 +382,18 @@ end)
 vana.events.on('load', function ()
     L.apply()
     PAD.setup('vanastore', U)
+    if type(ledger.data.installed) ~= 'table' then ledger.data.installed = {} end
+    C.records = ledger.data.installed
+    D.records = C.records
+    D.set_origin(ledger.data.origin)
+    D.on_catalog = function ()
+        D.look(true)
+        st.grid_at = clock()
+    end
+    C.I = require('install')(C)
     V = require('views')(C)
     C.V = V
     st.view = (cfg.view == 'installed' or cfg.view == 'updates') and cfg.view or 'all'
-    D.load_stub()
 end)
 
 vana.events.on('unload', function ()

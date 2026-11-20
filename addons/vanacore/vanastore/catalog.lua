@@ -70,8 +70,18 @@ end
 
 local function text_of(v, fallback) return type(v) == 'string' and v or fallback end
 
-local SITE = 'https://ffxiprivateservers.com/'
-D.SITE = SITE
+-- Where the catalog comes from, and the only place a package, a picture or a page may be: the site. (A developer's own
+-- copy of the site for testing is named in settings.json's "origin": https anywhere, plain http on this PC only.)
+local HOME = 'https://ffxiprivateservers.com'
+D.origin = HOME
+function D.set_origin(url)
+    url = type(url) == 'string' and url:gsub('/+$', '') or ''
+    local ok = url:match('^https://[%w%.%-]+:?%d*$') or url:match('^http://127%.0%.0%.1:?%d*$') or url:match('^http://localhost:?%d*$')
+    D.origin = ok and url or HOME
+    return D.origin
+end
+local function on_site(url) return type(url) == 'string' and url:sub(1, #D.origin + 1) == D.origin .. '/' end
+D.on_site = on_site
 
 -- a description as plain lines: the marks of markdown that would show as clutter are taken off ("- " lists stay)
 local function plain(text)
@@ -119,18 +129,19 @@ local function entry(raw)
     }
     a.status = a.trusted and 'trusted' or 'pending'
     if a.summary == '' then a.summary = summary_of(description) end
-    if a.page ~= nil and a.page:sub(1, #SITE) ~= SITE then a.page = nil end
+    if not on_site(a.page) then a.page = nil end
     -- why it can't be installed from here, if it can't (see the top of this file)
     if not a.trusted then a.locked = 'review'
     elseif not a.hosted then a.locked = 'hosted'
-    elseif a.package.url == nil or a.package.url:sub(1, #SITE) ~= SITE or not a.package.sha256:match('^%x+$') or #a.package.sha256 ~= 64 then
+    elseif not on_site(a.package.url) or not a.package.sha256:match('^%x+$') or #a.package.sha256 ~= 64 then
         a.locked = 'package'
     end
     if type(raw.screenshots) == 'table' then
         for _, s in ipairs(raw.screenshots) do
             if type(s) == 'string' then s = { url = s } end
             if type(s) == 'table' and text_of(s.url) then
-                a.shots[#a.shots + 1] = { url = s.url, thumb = text_of(s.thumbUrl, s.url), w = tonumber(s.width) or 16, h = tonumber(s.height) or 10 }
+                a.shots[#a.shots + 1] = { url = s.url, thumb = text_of(s.thumbUrl, s.url), w = tonumber(s.width) or 16, h = tonumber(s.height) or 10,
+                    stamp = a.updated }
             end
         end
     end
@@ -149,7 +160,7 @@ local function take(doc, source)
             by_slug[a.slug] = a
             if a.name then by_name[a.name] = a end
         elseif why then
-            vana.log('vanastore catalog: left out ' .. tostring(why))
+            vana.log('catalog: left out ' .. tostring(why))
         end
     end
     D.addons, D.by_slug, D.by_name = list, by_slug, by_name
@@ -174,6 +185,55 @@ function D.load_stub()
         return false
     end
     return true
+end
+
+-- The catalog as it was last fetched, kept for a start with no network (the site's own only: a test origin's isn't)
+local KEPT = 'catalog.json'
+
+-- no catalog from the site: the one in hand stays; else the kept copy; else the preview that ships with the store
+local function fall_back(why)
+    D.fetch_why = tostring(why)
+    vana.log('no catalog from ' .. D.origin .. ': ' .. D.fetch_why)
+    if D.state == 'ready' and D.source ~= 'stub' then return end
+    if D.origin == HOME then
+        local ok, text = pcall(vana.settings.read, KEPT)
+        local doc = ok and type(text) == 'string' and vana.json.decode(text) or nil
+        if doc and take(doc, 'kept') then return end
+    end
+    D.load_stub()
+end
+
+-- Asks the site for the catalog; nothing waits on it. D.fetching while it is out; D.on_catalog() when one is taken.
+function D.fetch()
+    if D.fetching then return end
+    D.fetching, D.fetch_at, D.fetch_why = true, clock(), nil
+    local function done()
+        D.fetching = false
+        if D.on_catalog then pcall(D.on_catalog) end
+    end
+    local ok, request = pcall(vana.http.json, D.origin .. '/api/addons', {
+        query = { framework = 'vanacore' }, timeout = 15, max_time = 40, max_size = 4 * 1024 * 1024, max_redirects = 2,
+    })
+    if not ok or type(request) ~= 'table' then
+        fall_back(request)
+        return done()
+    end
+    request:next(function (doc)
+        local good, why = take(doc, 'site')
+        if good then
+            if D.origin == HOME then
+                local text = vana.json.encode(doc, true)
+                if text then pcall(vana.settings.write, KEPT, text) end
+            end
+        else
+            fall_back(why)
+        end
+        done()
+    end, function (err)
+        local why = type(err) == 'table' and (err.status and ('the site answered ' .. tostring(err.status)) or err.message) or err
+        fall_back(why)
+        done()
+    end)
 end
 
 -------------------------------------------------------------------------------
@@ -206,7 +266,15 @@ function D.look(force)
         local have = installed_version(a.name)
         a.have = have
         a.loaded = a.name ~= nil and loaded[a.name] ~= nil
-        a.update = have ~= nil and have ~= '?' and not a.locked and D.compare_versions(have, a.version) < 0
+        -- VanaCore lets a package replace only what a package installed (the folder's .vcaddon.json): an addon the
+        -- launcher keeps, or one copied in by hand, is another's to update, and the store offers its switch alone
+        a.packaged = have ~= nil and vana.fs.exists(vana.paths.addons .. '\\vanacore\\' .. a.name .. '\\.vcaddon.json')
+        a.foreign = have ~= nil and not a.packaged
+        -- an update: a newer version, or the same version's file changed on the site since the store installed it
+        local rec = D.records and D.records[a.name] or nil
+        local newer = have ~= nil and have ~= '?' and D.compare_versions(have, a.version) < 0
+        local changed = rec ~= nil and rec.version == have and type(rec.sha256) == 'string' and rec.sha256 ~= a.package.sha256
+        a.update = a.packaged and not a.locked and (newer or changed)
         if have then installed = installed + 1 end
         if a.update then updates = updates + 1 end
     end
@@ -238,46 +306,119 @@ function D.featured()
 end
 
 -------------------------------------------------------------------------------
--- Pictures: textures made as they're first drawn, one a frame, let go when the window has been shut a while
+-- Pictures: fetched from the site into <VanaCore>\cache\vanastore once, textures made as they're first drawn (one a
+-- frame), let go when the window has been shut a while
 -------------------------------------------------------------------------------
 
-local PIC = { by = {}, frame = -1, count = 0 }
+local PIC = { by = {}, frame = -1, count = 0, fetching = 0 }
 D.PIC = PIC
 
-local function local_path(url)
-    -- the stub's pictures sit in the addon's folder; the site's will be fetched into the cache (catalog step)
-    if url:match('^https?://') then return nil end
-    return vana.paths.addon .. '\\' .. url:gsub('/', '\\')
+function D.cache_dir() return vana.paths.install .. '\\cache\\vanastore' end
+
+-- a file name for a url (and the day its addon last changed, so a changed picture is fetched again)
+local function cache_name(url, stamp)
+    local h1, h2 = 5381, 52711
+    local key = url .. '|' .. tostring(stamp or '')
+    for i = 1, #key do
+        local c = key:byte(i)
+        h1 = (h1 * 33 + c) % 4294967296
+        h2 = (h2 * 31 + c) % 4294967296
+    end
+    local ext = url:gsub('[?#].*$', ''):match('%.([%a]+)$')
+    ext = ext and ext:lower() or 'jpg'
+    if ext ~= 'png' and ext ~= 'jpg' and ext ~= 'jpeg' then ext = 'jpg' end
+    return string.format('%08x%08x.%s', h1, h2, ext)
 end
 
--- a picture's texture, or nil while it isn't there (yet, or ever)
-function D.picture(url)
+-- a JPG's or a PNG's width and height, read from its first bytes; nil if they aren't found
+local function image_size(path)
+    local data = read_file(path, 256 * 1024)
+    if data == nil or #data < 24 then return nil end
+    local function be16(at) local a, b = data:byte(at, at + 1) return a and b and a * 256 + b or nil end
+    if data:sub(1, 8) == '\137PNG\r\n\26\n' then
+        local w, h = be16(19), be16(23)
+        return w, h
+    end
+    if data:byte(1) == 0xFF and data:byte(2) == 0xD8 then
+        local at = 3
+        while at + 9 <= #data do
+            if data:byte(at) ~= 0xFF then return nil end
+            local marker = data:byte(at + 1)
+            if marker >= 0xC0 and marker <= 0xCF and marker ~= 0xC4 and marker ~= 0xC8 and marker ~= 0xCC then
+                return be16(at + 7), be16(at + 5)
+            end
+            local len = be16(at + 2)
+            if len == nil or len < 2 then return nil end
+            at = at + 2 + len
+        end
+    end
+    return nil
+end
+
+-- where a picture's file is, or will be; nil for one the store won't fetch
+local function file_of(url, stamp)
+    if not url:match('^https?://') then
+        -- the preview catalog's, beside it in the addon's folder
+        if url:find('..', 1, true) or url:match('^[/\\]') or url:find(':', 1, true) then return nil end
+        return vana.paths.addon .. '\\' .. url:gsub('/', '\\'), true
+    end
+    if not on_site(url) then return nil end
+    return D.cache_dir() .. '\\' .. cache_name(url, stamp), false
+end
+
+-- a picture's texture, when it was made, and its width and height; nil while it isn't there (yet, or ever)
+function D.picture(url, stamp)
     if url == nil then return nil end
     local p = PIC.by[url]
     if p == nil then
         p = { state = 'new' }
         PIC.by[url] = p
     end
-    p.used = clock()
     if p.state == 'new' then
+        local path, here = file_of(url, stamp)
+        p.path = path
+        if path == nil then
+            p.state = 'none'
+        elseif here or vana.fs.exists(path) then
+            p.state = 'file'
+        elseif PIC.fetching < 4 then
+            p.state = 'fetching'
+            PIC.fetching = PIC.fetching + 1
+            vana.fs.create_dir(D.cache_dir())
+            local ok, request = pcall(vana.http.download, url, path, { timeout = 20, max_time = 90, max_redirects = 2 })
+            if ok and type(request) == 'table' then
+                request:next(function () p.state = 'file' PIC.fetching = PIC.fetching - 1 end,
+                    function () p.state = 'none' PIC.fetching = PIC.fetching - 1 end)
+            else
+                p.state = 'none'
+                PIC.fetching = PIC.fetching - 1
+            end
+        end
+    end
+    if p.state == 'file' then
         local frame = vana.imgui.GetFrameCount()
         if PIC.frame == frame then return nil end -- one a frame: a screenful of them never stalls the game
         PIC.frame = frame
-        local path = local_path(url)
-        local tex = path and U.load_image('pic:' .. url, path) or nil
+        local tex = U.load_image('pic:' .. url, p.path)
         p.state = tex and 'ready' or 'none'
         p.tex = tex
         p.at = clock()
-        if tex then PIC.count = PIC.count + 1 end
+        if tex then
+            PIC.count = PIC.count + 1
+            p.w, p.h = image_size(p.path)
+        end
     end
-    return p.tex, p.at
+    return p.tex, p.at, p.w, p.h
 end
 
 function D.release_pictures()
     for url, p in pairs(PIC.by) do
         if p.tex then U.release_texture('pic:' .. url) end
     end
-    PIC.by, PIC.count = {}, 0
+    -- (one still being fetched keeps its entry: its answer comes to it)
+    local keep = {}
+    for url, p in pairs(PIC.by) do if p.state == 'fetching' then keep[url] = p end end
+    PIC.by, PIC.count = keep, 0
 end
 
 return D

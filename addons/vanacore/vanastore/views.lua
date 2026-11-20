@@ -20,6 +20,15 @@ return function (C)
     local JOB_LABEL = { download = 'Downloading', verify = 'Checking', install = 'Installing' }
     local JOB_PIX = { download = 'DOWNLOADING', verify = 'CHECKING', install = 'INSTALLING' }
 
+    local FOREIGN = "Installed by the launcher or by hand, so it's updated there, not by the store."
+    local function switch_tip(a)
+        if a.foreign then return FOREIGN end
+        return a.loaded and 'Loaded, and at every start' or 'Installed, not loaded'
+    end
+
+    -- a job's progress for a button: how far, or -1 while that isn't known (a band sweeps across it)
+    local function progress_of(job) return job.progress or -1 end
+
     -- what an addon's control says and does now
     local function state_of(a)
         local job = C.jobs[a.slug]
@@ -49,7 +58,7 @@ return function (C)
             U.text_mid(dl, right - lw, cy, words[1], K.faint, F.semi, T.small)
             if hovered then L.tip(words[3]) end
         elseif kind == 'busy' then
-            L.quiet_button(dl, key, right - S(112), cy - bh / 2, S(112), bh, JOB_LABEL[job.state], { progress = job.progress, disabled = true })
+            L.quiet_button(dl, key, right - S(112), cy - bh / 2, S(112), bh, JOB_LABEL[job.state], { progress = progress_of(job), disabled = true })
         elseif kind == 'install' then
             if L.quiet_button(dl, key, right - bw, cy - bh / 2, bw, bh, 'Install') then C.install(a) end
         elseif kind == 'update' then
@@ -57,7 +66,7 @@ return function (C)
         else
             local label = a.loaded and 'On' or 'Off'
             local lw = U.measure(label, F.semi, T.small) + S(8)
-            local _, pressed = L.switch(dl, key, right - S(38) - lw, cy, a.loaded, label, a.loaded and 'Loaded, and at every start' or 'Installed, not loaded')
+            local _, pressed = L.switch(dl, key, right - S(38) - lw, cy, a.loaded, label, switch_tip(a))
             if pressed then C.switch(a, not a.loaded) end
         end
     end
@@ -70,7 +79,7 @@ return function (C)
             local words = LOCKED[a.locked]
             L.pixel_button(dl, key, x, y, w, h, words[2], { kind = 'dark', ink = K.dim, disabled = true, tip = words[3] })
         elseif kind == 'busy' then
-            L.pixel_button(dl, key, x, y, w, h, JOB_PIX[job.state], { progress = job.progress, disabled = true })
+            L.pixel_button(dl, key, x, y, w, h, JOB_PIX[job.state], { progress = progress_of(job), disabled = true })
         elseif kind == 'install' then
             if L.pixel_button(dl, key, x, y, w, h, 'INSTALL') then C.install(a) end
         elseif kind == 'update' then
@@ -79,7 +88,7 @@ return function (C)
             local cw, ch = L.chip_size('INSTALLED')
             L.chip(dl, x, y + (h - ch) / 2, 'INSTALLED', 'teal')
             local label = a.loaded and 'On' or 'Off'
-            local _, pressed, sw = L.switch(dl, key, x + cw + S(18), y + h / 2, a.loaded, label, a.loaded and 'Loaded, and at every start' or 'Installed, not loaded')
+            local _, pressed, sw = L.switch(dl, key, x + cw + S(18), y + h / 2, a.loaded, label, switch_tip(a))
             if pressed then C.switch(a, not a.loaded) end
             return cw + S(18) + sw
         end
@@ -92,21 +101,28 @@ return function (C)
         return L.chip(dl, x, y, 'PENDING REVIEW', 'faint', alpha)
     end
 
-    -- v1.0.2, and what you have when it differs
+    -- v1.0.2, and what you have when it's older: in gold when the store can update it, dim when it's another's to update
     local function version_text(a)
-        if a.update then return 'v' .. a.version, 'you have ' .. tostring(a.have) end
-        return 'v' .. a.version, nil
+        local ver = a.version ~= '' and ('v' .. a.version) or ''
+        if a.update then
+            -- (the same version, another file: the site's copy changed since the store installed it)
+            if a.have == '?' or D.compare_versions(a.have, a.version) >= 0 then return ver, 'changed on the site', K.gold end
+            return ver, 'you have ' .. tostring(a.have), K.gold
+        end
+        if a.foreign and a.have ~= '?' and D.compare_versions(a.have, a.version) < 0 then return ver, 'you have ' .. tostring(a.have), K.faint end
+        return ver, nil, K.gold
     end
 
     -- an addon's picture (its nth), or the stand-in; fades in as its texture arrives
     local function picture(dl, a, n, x, y, w, h, thumb, alpha, rounding, corners)
         local shot = a.shots[n or 1]
         local tex, at = nil, nil
-        if shot then tex, at = D.picture(thumb and shot.thumb or shot.url) end
+        local iw, ih
+        if shot then tex, at, iw, ih = D.picture(thumb and shot.thumb or shot.url, shot.stamp) end
         if tex then
             local fade = U.ease((U.clock() - at) / 0.25)
             if fade < 1 then L.placeholder(dl, x, y, w, h, a.title, alpha, rounding, corners) end
-            L.cover(dl, tex, shot.w, shot.h, x, y, w, h, (alpha or 1) * fade, rounding, corners)
+            L.cover(dl, tex, iw or shot.w, ih or shot.h, x, y, w, h, (alpha or 1) * fade, rounding, corners)
         else
             L.placeholder(dl, x, y, w, h, a.title, alpha, rounding, corners)
         end
@@ -205,10 +221,10 @@ return function (C)
         cy = cy + S(30)
         local by = 'by ' .. a.author
         U.text(dl, tx, cy, by, K.dim, F.text, T.small)
-        local ver, have = version_text(a)
+        local ver, have, have_col = version_text(a)
         local vx = tx + U.measure(by, F.text, T.small) + S(12)
         L.mono(dl, vx, cy, ver, K.dim, T.small)
-        if have then L.mono(dl, vx + L.mono_width(ver, T.small) + S(10), cy, have, K.gold, T.small) end
+        if have then L.mono(dl, vx + L.mono_width(ver, T.small) + S(10), cy, have, have_col, T.small) end
         cy = cy + S(26)
         local lines = U.wrap(a.summary, F.text, T.body, tw)
         for i = 1, math.min(2, #lines) do
@@ -249,7 +265,7 @@ return function (C)
         dl:AddRect({ x, y }, { x + w, y + h }, u32(mix(K.line, K.gold, hv), 0.95), r, 240, 1)
         local px, pw = x + S(14), w - S(28)
         local cy = y + th + S(13)
-        local ver, have = version_text(a)
+        local ver, have, have_col = version_text(a)
         local vw = L.mono_width(ver, T.small)
         U.text(dl, px, cy, U.fit(a.title, F.semi, T.body, pw - vw - S(10)), mix(K.ink, K.hot, hv), F.semi, T.body)
         L.mono(dl, px + pw - vw, cy + S(2), ver, K.dim, T.small)
@@ -257,7 +273,7 @@ return function (C)
         U.text(dl, px, cy, U.fit('by ' .. a.author, F.text, T.small, pw), K.dim, F.text, T.small)
         if have then
             local hw = L.mono_width(have, T.small)
-            L.mono(dl, px + pw - hw, cy, have, K.gold, T.small)
+            L.mono(dl, px + pw - hw, cy, have, have_col, T.small)
         end
         cy = cy + S(24)
         local lines = U.wrap(a.summary, F.text, T.small, pw)
@@ -295,6 +311,12 @@ return function (C)
     local function grid_page(dl, ox, oy, w, view_h, scroll, t)
         local at = 0
         local query = st.query[1] or ''
+        if D.state ~= 'ready' then
+            -- no catalog yet: on its way, or it couldn't be had
+            if D.fetching then empty(dl, ox, oy + S(90), w - S(8), 'Looking for addons...', D.origin:gsub('^%a+://', ''))
+            else empty(dl, ox, oy + S(90), w - S(8), "The catalog couldn't be read.", tostring(D.why or D.fetch_why or '')) end
+            return S(300)
+        end
         local list = D.filter(st.view, st.compat, query)
         local plain = st.view == 'all' and st.compat == nil and query:gsub('%s', '') == ''
         local feat = plain and D.featured() or nil
@@ -395,11 +417,11 @@ return function (C)
         dl:AddRectFilled({ px, py }, { px + pw, py + ph }, u32(K.bg0), S(10))
         local n = math.max(1, math.min(st.shot or 1, math.max(1, #a.shots)))
         local shot = a.shots[n]
-        local tex, tex_at = nil, nil
-        if shot then tex, tex_at = D.picture(shot.url) end
+        local tex, tex_at, tex_w, tex_h = nil, nil, nil, nil
+        if shot then tex, tex_at, tex_w, tex_h = D.picture(shot.url, shot.stamp) end
         if tex then
             local fade = U.ease((U.clock() - math.max(tex_at, st.shot_at or 0)) / 0.25)
-            L.contain(dl, tex, shot.w, shot.h, px + S(1), py + S(1), pw - S(2), ph - S(2), fade)
+            L.contain(dl, tex, tex_w or shot.w, tex_h or shot.h, px + S(1), py + S(1), pw - S(2), ph - S(2), fade)
         else
             L.placeholder(dl, px, py, pw, ph, a.title, 1, S(10))
         end
@@ -414,8 +436,8 @@ return function (C)
                 local tx = px + (i - 1) * (tw2 + gap)
                 local key = '##vs_shot_' .. i
                 local hv = hover_of(key)
-                local ttex = D.picture(s.thumb)
-                if ttex then L.cover(dl, ttex, s.w, s.h, tx, ty, tw2, th2, i == n and 1 or 0.6 + 0.4 * hv, S(6), 240)
+                local ttex, _, sw2, sh2 = D.picture(s.thumb, s.stamp)
+                if ttex then L.cover(dl, ttex, sw2 or s.w, sh2 or s.h, tx, ty, tw2, th2, i == n and 1 or 0.6 + 0.4 * hv, S(6), 240)
                 else L.placeholder(dl, tx, ty, tw2, th2, a.title, 1, S(6)) end
                 dl:AddRect({ tx, ty }, { tx + tw2, ty + th2 }, u32(i == n and K.gold or mix(K.line, K.gold, hv)), S(6), 240, i == n and math.max(1, S(1.5)) or 1)
                 imgui.SetCursorScreenPos({ tx, ty })
@@ -445,10 +467,16 @@ return function (C)
                 cy = cy + S(18)
             end
             cy = cy + S(6)
+        elseif a.foreign then
+            for _, line in ipairs(U.wrap(FOREIGN, F.text, T.small, sw)) do
+                U.text(dl, sx, cy, line, K.faint, F.text, T.small)
+                cy = cy + S(18)
+            end
+            cy = cy + S(6)
         else
             cy = cy + S(8)
         end
-        cy = cy + fact(dl, sx, cy, sw, 'Version', a.version)
+        cy = cy + fact(dl, sx, cy, sw, 'Version', a.version ~= '' and a.version or '-')
         if a.have then cy = cy + fact(dl, sx, cy, sw, 'You have', tostring(a.have), a.update and K.gold or K.teal) end
         cy = cy + fact(dl, sx, cy, sw, 'Size', D.size_text(a.package.size))
         cy = cy + fact(dl, sx, cy, sw, 'Updated', D.date_text(a.updated))
@@ -566,7 +594,7 @@ return function (C)
             U.text(dl, cx, cy, line, K.dim, F.text, T.small)
             cy = cy + S(19)
         end
-        if D.stub then
+        if D.source == 'stub' then
             cy = cy + S(8)
             U.text(dl, cx, cy, 'Showing the preview catalog that ships with the store.', K.faint, F.text, T.small)
         end
@@ -582,11 +610,13 @@ return function (C)
         local url = (a and a.page) or 'https://ffxiprivateservers.com/addons'
         if L.link(dl, '##vs_powered', x, cy, 'Powered by FFXIPrivateServers.com', { size = T.small, tip = url }) then C.open_page(url) end
         local status
-        if D.state == 'failed' then status = "Couldn't read the catalog"
-        elseif D.stub then status = 'Preview catalog'
-        else status = 'Catalog ' .. D.date_text((D.generated or ''):sub(1, 10)) end
+        if D.fetching then status = 'Looking for addons...'
+        elseif D.state ~= 'ready' then status = "Couldn't read the catalog"
+        elseif D.source == 'stub' then status = 'Preview catalog'
+        elseif D.source == 'kept' then status = 'Offline: catalog of ' .. D.date_text((D.generated or ''):sub(1, 10))
+        else status = 'Catalog of ' .. D.date_text((D.generated or ''):sub(1, 10)) end
         local sw = L.mono_width(status, T.tiny)
-        L.mono_mid(dl, x + w - sw - S(22), cy, status, D.state == 'failed' and K.red or K.faint, T.tiny)
+        L.mono_mid(dl, x + w - sw - S(22), cy, status, (D.state ~= 'ready' and not D.fetching) and K.red or K.faint, T.tiny)
     end
 
     return V
