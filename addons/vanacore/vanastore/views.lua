@@ -103,7 +103,17 @@ return function (C)
             end
             return w
         end
-        if on_card then return 0 end
+        if on_card then
+            if not a.behind then return 0 end
+            -- a newer version is on the site, and this copy isn't the store's to replace
+            local w, h = L.chip(dl, x, y, 'UPDATES ELSEWHERE', 'faint')
+            if key then
+                imgui.SetCursorScreenPos({ x, y })
+                local _, hovered = U.hit(key, w, h, 0)
+                if hovered then L.tip(FOREIGN) end
+            end
+            return w
+        end
         return (L.chip(dl, x, y, 'TRUSTED', 'quiet'))
     end
     local function by_line(a) return a.author ~= '' and ('by ' .. a.author) or '' end
@@ -128,7 +138,7 @@ return function (C)
             if a.have == '?' or D.compare_versions(a.have, a.version) >= 0 then return ver, 'changed on the site', K.gold end
             return ver, 'you have ' .. tostring(a.have), K.gold
         end
-        if a.foreign and a.have ~= '?' and D.compare_versions(a.have, a.version) < 0 then return ver, 'you have ' .. tostring(a.have), K.faint end
+        if a.behind then return ver, 'you have ' .. tostring(a.have), K.faint end
         return ver, nil, K.gold
     end
 
@@ -350,8 +360,7 @@ return function (C)
         local heading = st.view == 'installed' and 'INSTALLED' or st.view == 'updates' and 'UPDATES' or (feat and 'MORE ADDONS' or 'ALL ADDONS')
         if query:gsub('%s', '') ~= '' then heading = 'SEARCH' end
         L.eyebrow(dl, ox + S(2), oy + at + S(2), heading, K.dim)
-        local shown = #list + (feat and 1 or 0)
-        local count = shown == 1 and '1 addon' or (shown .. ' addons')
+        local count = #list == 1 and '1 addon' or (#list .. ' addons') -- (the cards under this heading)
         if st.compat then count = count .. (st.compat == 'general' and ', general' or ', server-specific') end
         local cw = U.measure(count, F.text, T.small)
         U.text(dl, ox + w - S(8) - cw, oy + at - S(2), count, K.faint, F.text, T.small)

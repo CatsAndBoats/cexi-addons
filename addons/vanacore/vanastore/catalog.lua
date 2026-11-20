@@ -283,6 +283,8 @@ function D.look(force)
         local changed = rec ~= nil and rec.version == have and rec.slug == a.slug and type(rec.sha256) == 'string'
             and rec.sha256 ~= a.package.sha256
         a.update = a.packaged and not a.locked and (newer or changed)
+        -- (a newer version the store can't put in: the card says so, in place of an Update it would be refused)
+        a.behind = a.foreign and not a.locked and newer
         if have then installed = installed + 1 end
         if a.update then updates = updates + 1 end
     end
