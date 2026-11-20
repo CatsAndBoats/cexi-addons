@@ -110,6 +110,7 @@ end
 
 -- Install or update. (This build draws the steps only: the download, the checksum and the install are the next step.)
 function C.install(a)
+    if a.locked then return end -- (not for the store to install: catalog.lua says why)
     local job = C.jobs[a.slug]
     if job and job.state ~= 'refused' then return end
     C.jobs[a.slug] = { state = 'download', progress = 0, at = clock(), preview = true }

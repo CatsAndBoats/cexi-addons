@@ -109,6 +109,7 @@ function L.pixel_button(dl, key, x, y, w, h, label, opts)
     local face, lit, shade, ink = C.gold, C.hot, C.amber, C.on_gold
     if opts.kind == 'teal' then face, lit, shade, ink = C.teal, '#8FF0DD', C.teal_dim, C.on_teal
     elseif opts.kind == 'dark' then face, lit, shade, ink = C.bg2, '#3D5685', '#0D172C', C.teal end
+    if opts.ink then ink = opts.ink end
     local a = (opts.disabled and not opts.progress) and 0.45 or 1
     if not down then dl:AddRectFilled({ x + 2 * u, y + 2 * u }, { x + w + 2 * u, y + h + 2 * u }, u32(C.frame_dark, 0.9)) end
     local bx, by = x + d, y + d

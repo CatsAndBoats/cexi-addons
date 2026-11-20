@@ -1,11 +1,16 @@
 -- What the store knows: the catalog (the addons ffxiprivateservers.com lists for VanaCore), what of it is on this PC
 -- (installed, at which version, loaded or not), and the pictures.
 --
--- The catalog's format (schema 1), one entry an addon:
---   slug, name (the package's own name: its folder), title, author, framework, version, status ('trusted', 'pending'),
---   compatibility ('general', 'server') with server, summary, description, updated (YYYY-MM-DD), downloads, featured,
---   page (its page on the site), package { url, size, sha256 }, screenshots [ { url, thumb, width, height } ]
+-- The catalog (schema 1), in the site's own field names: { schema, generatedAt, addons = { ... } }, an addon being
+--   slug, name (its title), packageName (the package's own name: its folder under addons\vanacore), version, author,
+--   framework, targetServer (nil: any server), summary, description, trusted (reviewed, and the file is the one
+--   reviewed), reviewStatus, scanStatus, hosted (the site serves the file itself), sizeBytes, sha256, downloadUrl,
+--   pageUrl, screenshots { { url, thumbUrl, width, height } or a plain url }, featured, downloads, createdAt, updatedAt
 -- Until the site serves it, the store reads stub\catalog.json, in the same format, with its pictures beside it.
+--
+-- What may be installed is decided here, once (entry's `locked`): only an addon the site marks trusted, whose file the
+-- site hosts itself, with a whole sha256 and a download address on the site. Anything else is shown and can be read
+-- about, never installed.
 local U = require('ui')
 
 local D = {
@@ -65,32 +70,71 @@ end
 
 local function text_of(v, fallback) return type(v) == 'string' and v or fallback end
 
+local SITE = 'https://ffxiprivateservers.com/'
+D.SITE = SITE
+
+-- a description as plain lines: the marks of markdown that would show as clutter are taken off ("- " lists stay)
+local function plain(text)
+    text = text:gsub('\r\n', '\n'):gsub('\r', '\n')
+    text = text:gsub('%*%*(.-)%*%*', '%1'):gsub('__(.-)__', '%1'):gsub('`([^`\n]*)`', '%1')
+    text = text:gsub('%[([^%]\n]+)%]%(([^%)\n]+)%)', '%1')
+    local lines = {}
+    for line in (text .. '\n'):gmatch('(.-)\n') do
+        lines[#lines + 1] = (line:gsub('^%s*#+%s*', ''):gsub('%s+$', ''))
+    end
+    return (table.concat(lines, '\n'):gsub('\n\n\n+', '\n\n'):gsub('^%s+', ''):gsub('%s+$', ''))
+end
+
+-- a card's two lines, where the site gives none: the description's first sentences
+local function summary_of(description)
+    local first = description:match('^([^\n]+)') or ''
+    if #first <= 170 then return first end
+    local cut = first:sub(1, 170):match('^(.*[%.!?])%s') or first:sub(1, 160):match('^(.*)%s') or first:sub(1, 160)
+    return cut
+end
+
 -- one entry, checked: nil and why if it can't be shown
 local function entry(raw)
     if type(raw) ~= 'table' then return nil, 'not an entry' end
-    local slug, name = text_of(raw.slug), text_of(raw.name)
+    local slug = text_of(raw.slug)
     if slug == nil or not slug:match('^[%w_.%-]+$') then return nil, 'no slug' end
-    if name == nil or not name:match('^[%w_.%-]+$') or #name > 64 or name:find('..', 1, true) then return nil, slug .. ': no name' end
     if text_of(raw.framework, 'vanacore'):lower() ~= 'vanacore' then return nil, slug .. ': not for VanaCore' end
-    local pkg = type(raw.package) == 'table' and raw.package or {}
+    -- (the package's own name is the folder it installs into: the same rule VanaCore holds a name to)
+    local name = text_of(raw.packageName)
+    if name ~= nil and (not name:match('^[%w_.%-]+$') or #name > 64 or name:find('..', 1, true)) then name = nil end
+    local server = text_of(raw.targetServer)
+    if server == '' then server = nil end
+    local description = plain(text_of(raw.description, ''))
     local a = {
-        slug = slug, name = name:lower(), title = text_of(raw.title, name), author = text_of(raw.author, ''),
-        version = text_of(raw.version, tostring(raw.version or '')), status = text_of(raw.status, 'pending'):lower(),
-        compatibility = text_of(raw.compatibility, 'general'):lower(), server = text_of(raw.server),
-        summary = text_of(raw.summary, ''), description = text_of(raw.description, ''), updated = text_of(raw.updated, ''),
-        downloads = tonumber(raw.downloads), featured = raw.featured == true, page = text_of(raw.page),
-        package = { url = text_of(pkg.url), size = tonumber(pkg.size) or 0, sha256 = text_of(pkg.sha256, ''):lower() },
+        slug = slug, name = name and name:lower() or nil, title = text_of(raw.name, slug), author = text_of(raw.author, ''),
+        version = text_of(raw.version, tostring(raw.version or '')),
+        trusted = raw.trusted == true, hosted = raw.hosted ~= false,
+        review = text_of(raw.reviewStatus, ''):lower(), scan = text_of(raw.scanStatus, ''):lower(),
+        compatibility = server and 'server' or 'general', server = server,
+        summary = text_of(raw.summary, ''), description = description,
+        updated = text_of(raw.updatedAt, text_of(raw.createdAt, '')):sub(1, 10),
+        downloads = tonumber(raw.downloads), featured = raw.featured == true, page = text_of(raw.pageUrl),
+        package = { url = text_of(raw.downloadUrl), size = tonumber(raw.sizeBytes) or 0, sha256 = text_of(raw.sha256, ''):lower() },
         shots = {},
     }
-    if a.summary == '' then a.summary = (a.description:match('^[^\n]+') or '') end
+    a.status = a.trusted and 'trusted' or 'pending'
+    if a.summary == '' then a.summary = summary_of(description) end
+    if a.page ~= nil and a.page:sub(1, #SITE) ~= SITE then a.page = nil end
+    -- why it can't be installed from here, if it can't (see the top of this file)
+    if not a.trusted then a.locked = 'review'
+    elseif not a.hosted then a.locked = 'hosted'
+    elseif a.package.url == nil or a.package.url:sub(1, #SITE) ~= SITE or not a.package.sha256:match('^%x+$') or #a.package.sha256 ~= 64 then
+        a.locked = 'package'
+    end
     if type(raw.screenshots) == 'table' then
         for _, s in ipairs(raw.screenshots) do
+            if type(s) == 'string' then s = { url = s } end
             if type(s) == 'table' and text_of(s.url) then
-                a.shots[#a.shots + 1] = { url = s.url, thumb = text_of(s.thumb, s.url), w = tonumber(s.width) or 16, h = tonumber(s.height) or 10 }
+                a.shots[#a.shots + 1] = { url = s.url, thumb = text_of(s.thumbUrl, s.url), w = tonumber(s.width) or 16, h = tonumber(s.height) or 10 }
             end
         end
     end
-    a.search = (a.title .. ' ' .. a.author .. ' ' .. a.summary .. ' ' .. a.name):lower()
+    a.search = (a.title .. ' ' .. a.author .. ' ' .. a.summary .. ' ' .. (a.name or '')):lower()
     return a
 end
 
@@ -100,16 +144,17 @@ local function take(doc, source)
     local list, by_slug, by_name = {}, {}, {}
     for _, raw in ipairs(doc.addons) do
         local a, why = entry(raw)
-        if a and by_slug[a.slug] == nil and by_name[a.name] == nil then
+        if a and by_slug[a.slug] == nil and (a.name == nil or by_name[a.name] == nil) then
             list[#list + 1] = a
-            by_slug[a.slug], by_name[a.name] = a, a
+            by_slug[a.slug] = a
+            if a.name then by_name[a.name] = a end
         elseif why then
             vana.log('vanastore catalog: left out ' .. tostring(why))
         end
     end
     D.addons, D.by_slug, D.by_name = list, by_slug, by_name
     D.stub = doc.stub == true
-    D.generated = text_of(doc.generated)
+    D.generated = text_of(doc.generatedAt)
     D.state, D.source, D.why, D.loaded_at = 'ready', source, nil, clock()
     D.local_rev = D.local_rev + 1
     D.looked_at = -1e9
@@ -136,6 +181,7 @@ end
 -------------------------------------------------------------------------------
 
 local function installed_version(name)
+    if name == nil then return nil end -- (the catalog didn't say which folder it is: known once its package is read)
     local path = vana.paths.addons .. '\\vanacore\\' .. name .. '\\' .. name .. '.lua'
     if not vana.fs.exists(path) then return nil end
     -- (the addon's header: its version line comes after an opening comment that can run long)
@@ -159,8 +205,8 @@ function D.look(force)
     for _, a in ipairs(D.addons) do
         local have = installed_version(a.name)
         a.have = have
-        a.loaded = loaded[a.name] ~= nil
-        a.update = have ~= nil and have ~= '?' and D.compare_versions(have, a.version) < 0
+        a.loaded = a.name ~= nil and loaded[a.name] ~= nil
+        a.update = have ~= nil and have ~= '?' and not a.locked and D.compare_versions(have, a.version) < 0
         if have then installed = installed + 1 end
         if a.update then updates = updates + 1 end
     end

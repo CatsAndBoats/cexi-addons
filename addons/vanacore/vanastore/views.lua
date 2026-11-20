@@ -24,16 +24,31 @@ return function (C)
     local function state_of(a)
         local job = C.jobs[a.slug]
         if job and JOB_LABEL[job.state] then return 'busy', job end
-        if a.have == nil then return 'install', job end
-        if a.update then return 'update', job end
+        -- (an addon the store may not install: nothing to press for a new one, the switch alone for one that's here)
+        if a.have == nil then return a.locked and 'locked' or 'install', job end
+        if a.update and not a.locked then return 'update', job end
         return 'switch', job
     end
+
+    -- why the store won't install an addon, in a few words and in a sentence
+    local LOCKED = {
+        review = { 'In review', 'IN REVIEW', 'Not reviewed by FFXIPS yet. The store installs reviewed addons only.' },
+        hosted = { 'On the site', 'ON THE SITE', "FFXIPS doesn't host this file itself, so the store can't check it. Its page has the link." },
+        package = { 'On the site', 'ON THE SITE', "The catalog has no checksum for this file, so the store can't check it." },
+    }
 
     -- the card's: a quiet button or the switch, its right edge at `right`
     local function card_action(dl, a, key, right, cy)
         local kind, job = state_of(a)
         local bw, bh = S(88), S(28)
-        if kind == 'busy' then
+        if kind == 'locked' then
+            local words = LOCKED[a.locked]
+            local lw = U.measure(words[1], F.semi, T.small)
+            imgui.SetCursorScreenPos({ right - lw, cy - bh / 2 })
+            local _, hovered = U.hit(key, lw, bh, S(4))
+            U.text_mid(dl, right - lw, cy, words[1], K.faint, F.semi, T.small)
+            if hovered then L.tip(words[3]) end
+        elseif kind == 'busy' then
             L.quiet_button(dl, key, right - S(112), cy - bh / 2, S(112), bh, JOB_LABEL[job.state], { progress = job.progress, disabled = true })
         elseif kind == 'install' then
             if L.quiet_button(dl, key, right - bw, cy - bh / 2, bw, bh, 'Install') then C.install(a) end
@@ -51,7 +66,10 @@ return function (C)
     local function primary_action(dl, a, key, x, y)
         local kind, job = state_of(a)
         local w, h = S(184), S(44)
-        if kind == 'busy' then
+        if kind == 'locked' then
+            local words = LOCKED[a.locked]
+            L.pixel_button(dl, key, x, y, w, h, words[2], { kind = 'dark', ink = K.dim, disabled = true, tip = words[3] })
+        elseif kind == 'busy' then
             L.pixel_button(dl, key, x, y, w, h, JOB_PIX[job.state], { progress = job.progress, disabled = true })
         elseif kind == 'install' then
             if L.pixel_button(dl, key, x, y, w, h, 'INSTALL') then C.install(a) end
