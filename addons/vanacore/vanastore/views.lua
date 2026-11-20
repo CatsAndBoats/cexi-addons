@@ -47,7 +47,8 @@ return function (C)
         denied = { 'NOT APPROVED', "FFXIPS reviewed this addon and did not approve it, so the store doesn't install it." },
         hosted = { 'ON THE SITE ONLY', "FFXIPS doesn't host this file itself, so the store can't check it. Its page on the site has the link." },
         package = { 'ON THE SITE ONLY', "The catalog gives no checksum for this file, so the store can't check it. Its page on the site has the link." },
-        plugin = { 'NATIVE PLUGIN', "A plugin is a native program, which the store doesn't install. Its page on the site has the file." },
+        plugin = { 'NATIVE CODE', "It holds a native program (a plugin, a DLL or the like), which the store doesn't install. Its page on the site has the file." },
+        scan = { 'NOT SCANNED', "The site's virus scan hasn't passed this file, so the store doesn't install it." },
         framework = { nil, "The store can't install Ashita and Windower addons yet. Its page on the site has the file." },
     }
     local UNREVIEWED = "FFXIPS hasn't reviewed this addon. Install it only if you trust its author."
@@ -69,7 +70,7 @@ return function (C)
         local bw, bh = S(88), S(28)
         local col = a.trusted and K.gold or K.dim
         if kind == 'locked' then
-            if a.locked ~= 'denied' then page_link(dl, a, key, right, cy, LOCKED[a.locked][2]) end
+            if a.locked ~= 'denied' and a.locked ~= 'scan' then page_link(dl, a, key, right, cy, LOCKED[a.locked][2]) end
         elseif kind == 'busy' then
             L.quiet_button(dl, key, right - S(112), cy - bh / 2, S(112), bh, JOB_LABEL[job.state], { progress = progress_of(job), disabled = true })
         elseif kind == 'install' then

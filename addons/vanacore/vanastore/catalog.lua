@@ -6,13 +6,16 @@
 --   framework, targetServer (nil: any server), summary, description, trusted (reviewed, and the file is the one
 --   reviewed), reviewStatus, scanStatus, hosted (the site serves the file itself), sizeBytes, sha256, downloadUrl,
 --   pageUrl, screenshots { { url, thumbUrl, width, height } or a plain url }, featured, downloads, createdAt, updatedAt,
---   updateInReview and pendingVersion (a newer file waiting for review), source { type 'upload' | 'github', repo, tag, commit }
+--   updateInReview and pendingVersion (a newer file waiting for review), source { type 'upload' | 'github', repo, tag, commit },
+--   virusScanned (the site's virus scanner passed the file it serves), luaFlags (what its scan of the Lua noticed),
+--   nativeCode (it holds a DLL or the like), layout (where its files sit in the zip: the engine's business, not read here)
 -- It is asked of the site (GET /api/addons: every framework) and kept, so a start with no network still has one.
 --
 -- What may be installed is decided here, once (entry's `locked`): an addon of a framework this VanaCore can install
 -- packages of (D.INSTALLS: the one place that says which), whose file the site hosts itself, with a whole sha256 and
 -- a download address on the site. Trusted or not: one the site hasn't reviewed is `unreviewed`, and the window asks
--- before it is fetched. Never a native plugin, never one the site's review turned down, never the store itself
+-- before it is fetched. Never native code, never a file the site's virus scan hasn't passed, never one the site's
+-- review turned down, never the store itself
 -- (it ships and updates with VanaCore, and isn't listed at all).
 local U = require('ui')
 
@@ -124,7 +127,16 @@ local function summary_of(description, title)
 end
 
 -- one entry, checked: nil and why if it can't be shown
-local function entry(raw)
+-- What the site's scan of an addon's Lua noticed, in plain words (its `luaFlags`), for the warning before an addon
+-- nobody has reviewed is installed. A flag this store hasn't a phrase for is said by its own name.
+D.FLAG_WORDS = {
+    ['file-access'] = 'reads and writes files', ['http-lib'] = 'makes web requests', ['socket-lib'] = 'opens network connections',
+    ['os-execute'] = 'runs other programs', ['ffi'] = 'calls native code', ['memory-access'] = "reads or changes the game's memory",
+    ['dynamic-code'] = 'builds code as it runs', ['clipboard'] = 'reads the clipboard',
+}
+
+-- (`scan_gate`: this catalog says of each entry whether the virus scanner passed it; one it didn't isn't installed)
+local function entry(raw, scan_gate)
     if type(raw) ~= 'table' then return nil, 'not an entry' end
     local slug = text_of(raw.slug)
     if slug == nil or not slug:match('^[%w_.%-]+$') then return nil, 'no slug' end
@@ -152,6 +164,16 @@ local function entry(raw)
         shots = {},
     }
     a.status = a.trusted and 'trusted' or 'pending'
+    -- native code (a plugin, or a package holding a DLL or the like): never installed from the store
+    local layout = type(raw.layout) == 'table' and raw.layout or nil
+    a.native = raw.nativeCode == true or (layout ~= nil and layout.hasNativeCode == true) or (kind ~= nil and kind.plugin == true)
+    a.virus_scanned = raw.virusScanned == true
+    a.flags = {}
+    if type(raw.luaFlags) == 'table' then
+        for _, flag in ipairs(raw.luaFlags) do
+            if type(flag) == 'string' and flag:match('^[%w_%-]+$') and #flag <= 40 and #a.flags < 12 then a.flags[#a.flags + 1] = flag:lower() end
+        end
+    end
     -- a listing mirrored from GitHub onto the site: its repository (owner/name), release tag and short commit, for
     -- the page (the file and its checksum are the site's either way)
     local src = type(raw.source) == 'table' and raw.source or nil
@@ -174,7 +196,8 @@ local function entry(raw)
     -- why it can't be installed from here, if it can't (see the top of this file)
     -- (from `trusted`, not from the review's word alone: an approval of a file since replaced comes as trusted = false)
     if not a.trusted and a.review == 'denied' then a.locked = 'denied'
-    elseif kind and kind.plugin then a.locked = 'plugin'
+    elseif a.native then a.locked = 'plugin'
+    elseif scan_gate and not a.virus_scanned then a.locked = 'scan'
     elseif not D.INSTALLS[framework] then a.locked = 'framework'
     elseif not a.hosted then a.locked = 'hosted'
     elseif not on_site(a.package.url) or not a.package.sha256:match('^%x+$') or #a.package.sha256 ~= 64 then
@@ -198,8 +221,15 @@ local function take(doc, source)
     if type(doc) ~= 'table' or type(doc.addons) ~= 'table' then return false, 'not a catalog' end
     if tonumber(doc.schema) ~= 1 then return false, 'a newer catalog than this store reads: update VanaStore' end
     local list, by_slug, by_name = {}, {}, {}
+    -- (the site says of each entry whether its virus scan passed, once its catalog carries the field at all: then an
+    -- entry without a pass is one the store doesn't install)
+    local scan_gate = false
     for _, raw in ipairs(doc.addons) do
-        local a, why = entry(raw)
+        if type(raw) == 'table' and type(raw.virusScanned) == 'boolean' then scan_gate = true break end
+    end
+    D.scan_gate = scan_gate
+    for _, raw in ipairs(doc.addons) do
+        local a, why = entry(raw, scan_gate)
         -- (listed as the site lists them: two entries may hold the same package name, and both are shown)
         if a and by_slug[a.slug] == nil then
             list[#list + 1] = a
