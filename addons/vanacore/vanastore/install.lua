@@ -150,6 +150,20 @@ return function (C)
         D.looked_at = clock() - 2 -- (looked at again in a second, once the command has run)
     end
 
+    -- One of VanaCore's own addons on or off (catalog.lua's D.BUNDLED). The same as any, but for its window: that one
+    -- loads by itself at each start unless vanacore.ini's [addons] vana says 0, so that is what is set.
+    function I.switch_bundled(b, on)
+        if b.fixed then return end
+        if b.config then
+            vana.chat.run('/addon ' .. (on and 'load ' or 'unload ') .. b.name .. (on and ' vanacore' or ''), 1)
+            pcall(vana.config.set, 'addons', b.name, on and '1' or '0')
+        else
+            I.switch({ name = b.name, dir = 'vanacore', framework = 'vanacore' }, on)
+        end
+        b.loaded = on
+        D.looked_at = clock() - 2
+    end
+
     ---------------------------------------------------------------------------
     -- The job
     ---------------------------------------------------------------------------

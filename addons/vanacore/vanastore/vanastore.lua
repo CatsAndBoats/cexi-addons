@@ -196,7 +196,7 @@ local function draw_legend(dl, x, y, w)
     PAD.legend(dl, x + (w - lw) / 2, y + S(14), items, 1)
 end
 
-local VIEWS = { 'all', 'installed', 'updates' }
+local VIEWS = { 'all', 'installed', 'updates', 'bundled' }
 local function pad_buttons()
     if PAD.pressed('cancel') then
         if st.settings_open then st.settings_open = false
@@ -547,7 +547,7 @@ vana.events.on('load', function ()
     C.I = require('install')(C)
     V = require('views')(C)
     C.V = V
-    st.view = (cfg.view == 'installed' or cfg.view == 'updates') and cfg.view or 'all'
+    st.view = (cfg.view == 'installed' or cfg.view == 'updates' or cfg.view == 'bundled') and cfg.view or 'all'
 end)
 
 vana.events.on('unload', function ()

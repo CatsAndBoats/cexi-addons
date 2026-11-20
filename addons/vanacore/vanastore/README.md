@@ -21,6 +21,9 @@ Browse them, read about one, install it, update it, and switch it on or off with
   VanaCore allows it: the store asks, replaces it with the site's package, and keeps it updated from then on.
 - **On and off.** An installed addon has a switch: on loads it now and at every start, off unloads it and takes it
   out of `scripts\boot.txt`.
+- **Bundled.** VanaCore's own addons (its window, key binds, the free camera, the loading screen, send key, the API
+  explorer and its examples) have a list of their own, each with what it says of itself and a switch. They come and
+  update with VanaCore and are never on the site: here they are only switched on and off. Key binds is always on.
 - **What it leaves alone.** VanaCore's own addons, and itself: the store ships and updates with VanaCore.
 - **Mouse, keys and controller**, the same window size and opacity settings as the Auction House, VanaMaps and Party
   Finder windows, kept per character.

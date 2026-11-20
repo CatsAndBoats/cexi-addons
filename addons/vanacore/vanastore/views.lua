@@ -252,7 +252,7 @@ return function (C)
     V.set_view = set_view
 
     function V.rail(dl, x, y, w)
-        local counts = D.counts or { all = 0, installed = 0, updates = 0 }
+        local counts = D.counts or { all = 0, installed = 0, updates = 0, bundled = 0 }
         local cy = y + S(2)
         L.eyebrow(dl, x + S(10), cy, 'BROWSE', K.dim)
         cy = cy + S(22)
@@ -265,6 +265,10 @@ return function (C)
         cy = cy + h + S(2)
         pressed, h = rail_item(dl, '##vs_r_upd', x, cy, w, 'Updates', L.CP.circle_up, st.view == 'updates', counts.updates, true)
         if pressed then set_view('updates', st.compat) end
+        cy = cy + h + S(2)
+        -- (VanaCore's own addons: not the site's, only switched on and off here)
+        pressed, h = rail_item(dl, '##vs_r_bund', x, cy, w, 'Bundled', L.CP.box, st.view == 'bundled', counts.bundled)
+        if pressed then set_view('bundled', st.compat) end
         cy = cy + h + S(22)
         L.eyebrow(dl, x + S(10), cy, 'COMPATIBILITY', K.dim)
         cy = cy + S(22)
@@ -443,9 +447,82 @@ return function (C)
     -- The grid page
     ---------------------------------------------------------------------------
 
+    -- VanaCore's own addons, the ones it ships with: a plain list, each with what it says of itself and its switch.
+    -- They aren't the site's: nothing here is fetched, installed or updated, and the catalog needn't have come.
+    local function bundled_row(dl, b, x, y, w, h)
+        local key = '##vs_bund_' .. b.name
+        local hv = hover_of(key)
+        local r = S(10)
+        dl:AddRectFilled({ x, y }, { x + w, y + h }, u32(mix(K.panel, K.panel2, 0.35 * hv)), r)
+        dl:AddRect({ x, y }, { x + w, y + h }, u32(mix(K.line, K.gold, hv), 0.95), r, 240, 1)
+        local px, right = x + S(18), x + w - S(18)
+        local room = w - S(36) - S(120)
+        local title = U.fit(b.title, F.semi, T.body, room * 0.6)
+        U.text(dl, px, y + S(13), title, mix(K.ink, K.hot, hv), F.semi, T.body)
+        local tx = px + U.measure(title, F.semi, T.body) + S(12)
+        if b.version ~= '' then
+            L.mono(dl, tx, y + S(15), 'v' .. b.version, K.dim, T.small)
+            tx = tx + L.mono_width('v' .. b.version, T.small) + S(10)
+        end
+        if b.author ~= '' then U.text(dl, tx, y + S(15), 'by ' .. b.author, K.faint, F.text, T.small) end
+        local desc = clamp(b.desc, F.text, T.small, room, 1)[1] or ''
+        U.text(dl, px, y + S(37), desc, mix(K.ink, K.dim, 0.45), F.text, T.small)
+        -- the row is one thing to point at (its hint: the whole description); the switch sits on it
+        imgui.SetCursorScreenPos({ x, y })
+        local _, hovered = U.hit(key, w - S(130), h, r, { x = x, y = y, w = w, h = h })
+        if hovered and desc ~= b.desc then L.tip(b.desc) end
+        local cy = y + h / 2
+        if b.fixed then
+            local label = 'Always on'
+            U.text_mid(dl, right - U.measure(label, F.semi, T.small), cy, label, K.faint, F.semi, T.small)
+        else
+            local label = b.loaded and 'On' or 'Off'
+            local lw = U.measure(label, F.semi, T.small) + S(8)
+            local _, pressed = L.switch(dl, key .. '_sw', right - S(38) - lw, cy, b.loaded, label, b.loaded and 'Loaded, and at every start' or 'Not loaded')
+            if pressed then C.I.switch_bundled(b, not b.loaded) end
+        end
+    end
+
+    local function bundled_page(dl, ox, oy, w)
+        local at = 0
+        local room = w - S(8)
+        local words = {}
+        for word in (st.query[1] or ''):lower():gmatch('%S+') do words[#words + 1] = word end
+        local list = {}
+        for _, b in ipairs(D.bundled or {}) do
+            local keep = true
+            for _, word in ipairs(words) do
+                if not b.search:find(word, 1, true) then keep = false break end
+            end
+            if keep then list[#list + 1] = b end
+        end
+        L.eyebrow(dl, ox + S(2), oy + at + S(2), 'BUNDLED WITH VANACORE', K.dim)
+        local count = #list == 1 and '1 addon' or (#list .. ' addons')
+        U.text(dl, ox + w - S(8) - U.measure(count, F.text, T.small), oy + at - S(2), count, K.faint, F.text, T.small)
+        at = at + S(26)
+        U.text(dl, ox + S(2), oy + at, "These come with VanaCore and update with it. They aren't on FFXIPS: here they are only switched on and off.",
+            K.dim, F.text, T.small)
+        at = at + S(30)
+        if #list == 0 then
+            empty(dl, ox, oy + at + S(30), room, (#words > 0) and ('Nothing matches "' .. st.query[1] .. '".') or 'None of them is in this VanaCore.', nil)
+            return at + S(200)
+        end
+        local row_h, gap = S(66), S(10)
+        for i, b in ipairs(list) do
+            local a_in = U.ease((U.clock() - (st.grid_at or 0) - 0.04 - (i - 1) * 0.03) / 0.3)
+            C.fade(a_in)
+            local ok, err = pcall(bundled_row, dl, b, ox + S(2), oy + at + (1 - a_in) * S(8), room, row_h)
+            if not ok then C.fail('bundled', err) end
+            C.fade(1)
+            at = at + row_h + gap
+        end
+        return at
+    end
+
     local function grid_page(dl, ox, oy, w, view_h, scroll, t)
         local at = 0
         local query = st.query[1] or ''
+        if st.view == 'bundled' then return bundled_page(dl, ox, oy, w) end
         if D.state ~= 'ready' then
             -- no catalog yet: on its way, or it couldn't be had
             if D.fetching then empty(dl, ox, oy + S(90), w - S(8), 'Looking for addons...', D.origin:gsub('^%a+://', ''))

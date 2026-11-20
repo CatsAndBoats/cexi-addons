@@ -368,6 +368,66 @@ end
 
 D.version_of = installed_version
 
+-------------------------------------------------------------------------------
+-- VanaCore's own addons: the ones it ships in addons\vanacore (github.com/CatsAndBoats/VanaCore). They come and
+-- update with VanaCore and are never on the site; the store only switches them on and off. Listed here by folder, with
+-- a name to show; what each says of itself (version, author, description) is read from its own file.
+--   fixed: VanaCore keeps it loaded (no switch).  config: it loads by itself unless vanacore.ini's [addons] says not.
+-- Not listed: libs (a library), mcp (the MCP server's own Lua state, run by VanaCore), and the store itself.
+-------------------------------------------------------------------------------
+
+D.BUNDLED = {
+    { name = 'vana', title = "VanaCore's window", config = true },
+    { name = 'keybinds', title = 'Key binds', fixed = true },
+    { name = 'freecam', title = 'Free camera' },
+    { name = 'loadscreen', title = 'Loading screen' },
+    { name = 'sendkey', title = 'Send key' },
+    { name = 'apiexplorer', title = 'API explorer' },
+    { name = 'example-hello', title = 'Example: hello' },
+    { name = 'example-minparty', title = 'Example: a smaller party list' },
+    { name = 'example-plates', title = 'Example: nameplates' },
+}
+
+-- a header line's text: addon.<field> = '...' or "...", with its escaped quotes
+local function header_field(text, field)
+    local quote, at = text:match('addon%.' .. field .. '%s*=%s*([\'"])()')
+    if quote == nil then return nil end
+    local out, i = {}, at
+    while i <= #text do
+        local c = text:sub(i, i)
+        if c == '\\' then
+            out[#out + 1] = text:sub(i + 1, i + 1)
+            i = i + 2
+        elseif c == quote or c == '\n' then
+            break
+        else
+            out[#out + 1] = c
+            i = i + 1
+        end
+    end
+    return table.concat(out)
+end
+
+-- the bundled addons that are on this PC, each { name, title, version, author, desc, loaded, fixed, config }
+function D.look_bundled(loaded)
+    local out = {}
+    for _, b in ipairs(D.BUNDLED) do
+        local path = vana.paths.addons .. '\\vanacore\\' .. b.name .. '\\' .. b.name .. '.lua'
+        if vana.fs.exists(path) then
+            local text = read_file(path, 24 * 1024) or ''
+            local desc = header_field(text, 'desc') or ''
+            out[#out + 1] = {
+                name = b.name, title = b.title or b.name, fixed = b.fixed, config = b.config,
+                version = header_field(text, 'version') or '', author = header_field(text, 'author') or '', desc = desc,
+                loaded = loaded['vanacore/' .. b.name] == true,
+                search = (b.name .. ' ' .. (b.title or '') .. ' ' .. desc):lower(),
+            }
+        end
+    end
+    D.bundled = out
+    return out
+end
+
 -- looked at again every few seconds while the window is open, and at once after the store changes something
 function D.look(force)
     local now = clock()
@@ -417,7 +477,8 @@ function D.look(force)
         if have then installed = installed + 1 end
         if a.update then updates = updates + 1 end
     end
-    D.counts = { all = #D.addons, installed = installed, updates = updates }
+    D.look_bundled(loaded)
+    D.counts = { all = #D.addons, installed = installed, updates = updates, bundled = #D.bundled }
     D.local_rev = D.local_rev + 1
 end
 
