@@ -50,7 +50,7 @@ return function (C)
         plugin = { 'NATIVE CODE', "It holds a native program (a plugin, a DLL or the like), which the store doesn't install. Its page on the site has the file." },
         reserved = { nil, "It carries the name of one of VanaCore's own addons or libraries, which no package may replace." },
         scan = { 'NOT SCANNED', "The site's virus scan hasn't passed this file, so the store doesn't install it." },
-        framework = { nil, "This VanaCore can't install addons of this framework. Its page on the site has the file." },
+        framework = { nil, "This VanaCore can't install this kind of addon. Its page on the site has the file." },
     }
     local UNREVIEWED = "FFXIPS hasn't reviewed this addon. Install it only if you trust its author."
 

@@ -161,10 +161,11 @@ return function (C)
         end
         local dir = D.cache_dir()
         vana.fs.create_dir(dir)
-        -- (VanaCore's own come as packages; Ashita's and Windower's as the zip their author published, which the engine
-        -- is told the framework, the folder's name and the zip's folder for)
-        local plain = a.framework ~= 'vanacore' and { framework = a.framework, name = a.name, root = a.root } or nil
-        if plain and (a.name == nil or not D.installs(a.framework)) then return refuse(job, "This VanaCore can't install it") end
+        -- (a package is handed to the engine as it is; a plain zip, as its author published it - Ashita's, Windower's, and
+        -- a VanaCore addon uploaded that way - with the framework, the folder's name and the zip's folder: the catalog's
+        -- layout says which it is)
+        local plain = a.plain and { framework = a.framework, name = a.name, root = a.root } or nil
+        if plain and (a.name == nil or not D.installs(a.framework, true)) then return refuse(job, "This VanaCore can't install it") end
         local path = dir .. '\\' .. a.slug .. (plain and '.zip' or '.vcaddon')
         tidy(path)
 
@@ -222,7 +223,7 @@ return function (C)
             tidy(path)
             return refuse(job, 'The package holds an addon named ' .. name .. ', not ' .. a.name .. ' as the catalog says. Nothing was installed')
         end
-        if name == C.name and not plain then
+        if name == C.name and a.framework == 'vanacore' then
             tidy(path)
             return refuse(job, "The store can't replace itself while it's open: install its update from /vana > Addons")
         end

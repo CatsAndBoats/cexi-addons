@@ -89,10 +89,12 @@ D.DIRS = { 'vanacore', 'ashita', 'windower' }
 -- Whether this VanaCore installs a framework's addons: the one place that says. Its own, always; Ashita's and
 -- Windower's when it says it takes their plain zips (vana.addons.package_frameworks: nil on a VanaCore that doesn't,
 -- and an entry of theirs then sends the player to its page on the site). Never a plugin or an unknown framework.
-function D.installs(framework)
+-- (`plain`: the entry is a zip as its author published it, with no addon.json, not a VanaCore package. A VanaCore
+-- addon can come that way too, and then needs the same of the engine as Ashita's and Windower's.)
+function D.installs(framework, plain)
     local kind = D.FRAMEWORKS[framework]
     if kind == nil or kind.plugin or kind.dir == nil then return false end
-    if framework == 'vanacore' then return true end
+    if framework == 'vanacore' and not plain then return true end
     local can = vana.addons.package_frameworks
     return type(can) == 'table' and can[framework] == true
 end
@@ -205,6 +207,13 @@ local function entry(raw)
     local root = layout and text_of(layout.packageRoot, ''):gsub('[/\\]+$', '') or ''
     if root:find('..', 1, true) or root:find(':', 1, true) or root:match('^[/\\]') or #root > 200 then root = '' end
     a.root = root ~= '' and root or nil
+    -- A package (the site found its addon.json) or a plain zip: the site's layout says, not the framework. With no
+    -- layout given, VanaCore's are packages and the others plain.
+    if layout ~= nil then
+        a.plain = not (type(layout.addonJson) == 'string' and layout.addonJson ~= '') and layout.addonJson ~= true
+    else
+        a.plain = framework ~= 'vanacore'
+    end
     a.dir = kind and kind.dir or nil
     a.native = raw.nativeCode == true or (layout ~= nil and layout.hasNativeCode == true) or (kind ~= nil and kind.plugin == true)
     a.virus_scanned = raw.virusScanned == true
@@ -238,9 +247,9 @@ local function entry(raw)
     if not a.trusted and a.review == 'denied' then a.locked = 'denied'
     elseif a.native then a.locked = 'plugin'
     elseif not a.virus_scanned then a.locked = 'scan' -- (the site's virus scanner hasn't passed the file it serves)
-    elseif not D.installs(framework) then a.locked = 'framework'
+    elseif not D.installs(framework, a.plain) then a.locked = 'framework'
     elseif a.name ~= nil and (D.RESERVED[a.dir] or {})[a.name] then a.locked = 'reserved' -- (one of VanaCore's own, or a library)
-    elseif framework ~= 'vanacore' and a.name == nil then a.locked = 'package' -- (no folder name to install it under)
+    elseif a.plain and a.name == nil then a.locked = 'package' -- (no folder name to install it under)
     elseif not a.hosted then a.locked = 'hosted'
     elseif not on_site(a.package.url) or not a.package.sha256:match('^%x+$') or #a.package.sha256 ~= 64 then
         a.locked = 'package'
@@ -375,7 +384,7 @@ function D.look(force)
     for _, a in ipairs(D.addons) do
         -- (what is installed is looked for only where the store installs: the framework's own folder)
         local dir = a.dir
-        local have = D.installs(a.framework) and installed_version(a.name, dir) or nil
+        local have = D.installs(a.framework, a.plain) and installed_version(a.name, dir) or nil
         a.have = have
         a.loaded = a.name ~= nil and dir ~= nil and loaded[dir .. '/' .. a.name] ~= nil
         -- the other frameworks' folders that hold an addon of this name: a copy the install wouldn't touch (the
