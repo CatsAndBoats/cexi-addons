@@ -249,6 +249,10 @@ end
 -- This PC: what is installed, at which version, and what is loaded
 -------------------------------------------------------------------------------
 
+-- VanaCore's own addons, and CatsEyeXI's required one: no package may replace them (the engine's own list)
+D.RESERVED = { vana = true, keybinds = true, freecam = true, mcp = true, hello = true, libs = true, apiexplorer = true, plates = true,
+    sendkey = true, minparty = true, loadscreen = true, customcolors = true, vanastore = true }
+
 local function installed_version(name)
     if name == nil then return nil end -- (the catalog didn't say which folder it is: known once its package is read)
     local path = vana.paths.addons .. '\\vanacore\\' .. name .. '\\' .. name .. '.lua'
@@ -290,6 +294,10 @@ function D.look(force)
         a.update = a.packaged and not a.locked and (newer or changed)
         -- (a newer version the store can't put in: the card says so, in place of an Update it would be refused)
         a.behind = a.foreign and not a.locked and newer
+        -- the takeover: the store may put the site's reviewed package in place of a copy the launcher or a hand
+        -- installed, where this VanaCore can do that (install.lua asks it). Never VanaCore's own addons, never an
+        -- entry the store wouldn't install anyway.
+        a.takeover = a.foreign and not a.locked and not D.RESERVED[a.name] and D.engine_adopts ~= nil and D.engine_adopts() == true
         if have then installed = installed + 1 end
         if a.update then updates = updates + 1 end
     end

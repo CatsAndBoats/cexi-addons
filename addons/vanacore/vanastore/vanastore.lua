@@ -123,6 +123,12 @@ end
 function C.install(a) C.I.start(a) end
 function C.switch(a, on) C.I.switch(a, on) end
 
+-- A takeover is asked about first: nothing is fetched or written until the player says yes (draw_confirm)
+function C.ask_takeover(a)
+    if not a.takeover then return end
+    st.confirm = { slug = a.slug, anim = 0 }
+end
+
 -- the catalog asked for again (the header's button)
 function C.refresh()
     D.fetch()
@@ -220,6 +226,7 @@ local function draw_main(t, dt)
             local kx, ky = math.max(0, math.min(x, sw - w)), math.max(0, math.min(y, sh - h))
             if (kx ~= x or ky ~= y) and not imgui.IsMouseDown(0) then imgui.SetWindowPos({ kx, ky }) end
             y = y + (1 - fade) * S(14)
+            st.rect = { x = x, y = y, w = w, h = h }
             local mg = S(40)
             dl:PushClipRect({ x - mg, y - mg }, { x + w + mg, y + h + mg }, false)
             U.shadow(dl, x, y, w, h, S(16), fade)
@@ -274,7 +281,7 @@ local function draw_main(t, dt)
                 dl:AddLine({ x + w - S(5), y + h - S(5) - o }, { x + w - S(5) - o, y + h - S(5) }, U.u32(hot and K.gold or K.dim, hot and 0.9 or 0.4), 1)
             end
             if imgui.IsItemDeactivated() then config:save() end
-            if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and not L.typing() then
+            if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and not L.typing() and not st.confirm then
                 if st.settings_open then st.settings_open = false
                 elseif st.detail then C.close_detail()
                 else C.open(false) end
@@ -287,6 +294,94 @@ local function draw_main(t, dt)
                 st.open = false
                 say('the store window had a problem and was closed; see logs\\vanacore.log')
             end
+        end
+    end
+    imgui.End()
+    U.pop_theme()
+    U.set_window_alpha(1)
+end
+
+-- The takeover's question, over the store's window, before anything is fetched or written: what this copy is, what the
+-- store will do, and that nothing of the player's is lost. One button does it, one leaves things as they are.
+local CONFIRM = {
+    'This copy came from the launcher, or was copied in by hand.',
+    'VanaStore will replace it with the reviewed package from ffxiprivateservers.com, and keep it updated from now on.',
+    'Your settings are kept.',
+    'The old copy goes to backups\\addons in VanaCore\'s folder.',
+}
+local function draw_confirm(t, dt)
+    local c = st.confirm
+    if c == nil then return end
+    local a = D.by_slug[c.slug]
+    local r = st.rect
+    if a == nil or r == nil or not st.open or not a.takeover then
+        st.confirm = nil
+        return
+    end
+    c.anim = math.min(1, (c.anim or 0) + dt * 7)
+    local e = U.ease(c.anim)
+    imgui.SetNextWindowPos({ r.x, r.y }, U.ALWAYS)
+    imgui.SetNextWindowSize({ r.w, r.h }, U.ALWAYS)
+    imgui.SetNextWindowFocus()
+    U.set_window_alpha(C.alpha)
+    U.push_theme()
+    -- (4: it doesn't move; it sits on the store's window and takes its clicks while it is up)
+    if imgui.Begin('##vanastore_confirm', nil, U.WINDOW_FLAGS + U.NO_SAVE + 4) then
+        local drew, err = pcall(function ()
+            local dl = imgui.GetWindowDrawList()
+            dl:AddRectFilled({ r.x, r.y }, { r.x + r.w, r.y + r.h }, U.u32(K.bg0, 0.78 * e), S(16))
+            local w = math.min(S(540), r.w - S(60))
+            local tw = w - S(64)
+            local title = U.wrap('Let VanaStore take over ' .. a.title .. '?', F.bold, T.h1, tw)
+            local version = a.version ~= '' and ('Version ' .. a.version .. ' will be installed' .. ((a.have and a.have ~= '?') and (' in place of ' .. a.have) or '') .. '.') or nil
+            local points = {}
+            for _, text in ipairs(CONFIRM) do points[#points + 1] = U.wrap(text, F.text, T.body, tw - S(18)) end
+            local h = S(30) + S(22) + #title * S(30) + S(12) + S(28) + S(44) + S(30)
+            for _, lines in ipairs(points) do h = h + #lines * S(22) + S(6) end
+            if version then h = h + S(26) end
+            local x, y = math.floor(r.x + (r.w - w) / 2), math.floor(r.y + (r.h - h) / 2 + (1 - e) * S(12))
+            C.fade(e)
+            U.shadow(dl, x, y, w, h, S(14), 1.4)
+            U.panel(dl, x, y, w, h, P.glass, 1, S(14), U.mix(K.frame_light, K.line, 0.45))
+            local cx, cy = x + S(32), y + S(30)
+            L.eyebrow(dl, cx, cy, 'TAKE OVER', K.gold)
+            cy = cy + S(22)
+            for _, line in ipairs(title) do
+                U.text(dl, cx, cy, line, K.ink, F.bold, T.h1)
+                cy = cy + S(30)
+            end
+            cy = cy + S(12)
+            local u = L.px()
+            for _, lines in ipairs(points) do
+                dl:AddRectFilled({ L.round(cx + S(2)), L.round(cy + S(8)) }, { L.round(cx + S(2)) + 2 * u, L.round(cy + S(8)) + 2 * u }, U.u32(K.gold))
+                for _, line in ipairs(lines) do
+                    U.text(dl, cx + S(18), cy, line, U.mix(K.ink, K.dim, 0.25), F.text, T.body)
+                    cy = cy + S(22)
+                end
+                cy = cy + S(6)
+            end
+            if version then
+                L.mono(dl, cx + S(18), cy + S(2), version, K.dim, T.small)
+                cy = cy + S(26)
+            end
+            cy = cy + S(28) - S(6)
+            local yes = L.pixel_button(dl, '##vs_take_yes', cx, cy, S(184), S(44), 'TAKE OVER')
+            local no = L.quiet_button(dl, '##vs_take_no', cx + S(184) + S(22), cy + S(8), S(96), S(28), 'Not now', { color = K.dim })
+            if PAD.capturing() then
+                PAD.claim()
+                if PAD.pressed('cancel') then no = true end
+            end
+            if imgui.IsKeyPressed(U.KEY_ESCAPE) then no = true end
+            if yes then
+                st.confirm = nil
+                C.I.start(a, { adopt = true })
+            elseif no then
+                st.confirm = nil
+            end
+        end)
+        if not drew then
+            fail('confirm', err)
+            st.confirm = nil
         end
     end
     imgui.End()
@@ -318,6 +413,7 @@ vana.events.on('present', function ()
     C.I.tick()
     if st.open then D.look() end
     if st.open or st.anim > 0 then draw_main(t, dt) end
+    if st.confirm then draw_confirm(t, dt) end
     pcall(L.draw_tip, dt)
     local okt, errt = pcall(U.draw_toasts, t)
     if not okt then fail('toasts', errt) end

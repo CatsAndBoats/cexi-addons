@@ -55,6 +55,20 @@ return function (C)
         return fn() and true or false
     end
 
+    -- Whether this VanaCore can put a package in place of a folder no package installed (the takeover). The engine
+    -- says so with vana.addons.can_adopt (true, or a function that answers true); one without it has no takeover, and
+    -- the store goes on saying such an addon is updated elsewhere.
+    function I.can_adopt()
+        if I.assume_adopt ~= nil then return I.assume_adopt == true end -- (a test's: the sheet without the engine)
+        local v = vana.addons.can_adopt
+        if type(v) == 'function' then
+            local ok, yes = pcall(v)
+            return ok and yes == true
+        end
+        return v == true
+    end
+    D.engine_adopts = I.can_adopt
+
     local function sentence(text)
         text = tostring(text or ''):gsub('%s+$', '')
         if text == '' then return 'No reason was given.' end
@@ -199,7 +213,10 @@ return function (C)
             tidy(path)
             return refuse(job, "The store can't replace itself while it's open: install its update from /vana > Addons")
         end
-        if info.problem ~= nil then
+        -- (a takeover: the one thing in its way may be that no package installed the folder there, and VanaCore says
+        -- so itself with `adoptable`; anything else it finds wrong still ends the job)
+        local adopting = job.adopt == true and info.adoptable == true
+        if info.problem ~= nil and not adopting then
             tidy(path)
             return refuse(job, info.problem)
         end
@@ -213,13 +230,18 @@ return function (C)
                 return refuse(job, name .. " didn't unload, so it wasn't replaced")
             end
         end
-        local done, bad = vana.addons.package_install(path)
+        local done, bad
+        if adopting then
+            done, bad = vana.addons.package_install(path, { adopt = true }) -- (the old folder goes to backups\addons)
+        else
+            done, bad = vana.addons.package_install(path)
+        end
         if not done then
             if was_loaded then vana.chat.run('/addon load ' .. name .. ' vanacore', 1) end
             tidy(path)
             return refuse(job, 'VanaCore could not install it: ' .. tostring(bad))
         end
-        local fresh = info.installed_version == nil
+        local fresh = info.installed_version == nil -- (a takeover isn't: the addon stays loaded or not, as it was)
         C.records[name] = { slug = a.slug, version = tostring(info.version or a.version), sha256 = a.package.sha256, at = os.time() }
         C.save_records()
         if fresh or was_loaded then
@@ -228,19 +250,22 @@ return function (C)
             wait_until(function () return is_loaded(name) end, 4)
         end
         tidy(path)
-        vana.log(string.format('%s %s %s from %s (sha256 %s)', fresh and 'installed' or 'updated', name, tostring(info.version), a.package.url, got))
+        vana.log(string.format('%s %s %s from %s (sha256 %s)', adopting and 'took over' or (fresh and 'installed' or 'updated'), name, tostring(info.version), a.package.url, got))
         a.name = a.name or name
         C.jobs[a.slug] = nil
         D.look(true)
-        U.toast('ok', fresh and 'Installed' or 'Updated', a.title .. ' ' .. tostring(info.version or ''), 4, 'circle-check')
+        U.toast('ok', adopting and 'Taken over' or (fresh and 'Installed' or 'Updated'), a.title .. ' ' .. tostring(info.version or ''), 4, 'circle-check')
     end
 
-    -- Install or update the catalog's addon `a`; the window shows the job as it goes
-    function I.start(a)
+    -- Install or update the catalog's addon `a`; the window shows the job as it goes. `opts.adopt`: a takeover of a
+    -- copy no package installed, which the player has just agreed to (the store's confirmation).
+    function I.start(a, opts)
         local job = C.jobs[a.slug]
         if job and job.state ~= 'refused' then return end
-        if a.locked or a.foreign then return end
-        job = { slug = a.slug, state = 'download', progress = nil, at = clock() }
+        local adopt = opts ~= nil and opts.adopt == true
+        if a.locked then return end
+        if a.foreign and not (adopt and a.takeover) then return end
+        job = { slug = a.slug, state = 'download', progress = nil, at = clock(), adopt = adopt and a.foreign or nil }
         C.jobs[a.slug] = job
         vana.async(function ()
             local ok, err = pcall(run, a, job)

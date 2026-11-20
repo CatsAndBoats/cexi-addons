@@ -21,8 +21,9 @@ return function (C)
     local JOB_PIX = { download = 'DOWNLOADING', verify = 'CHECKING', install = 'INSTALLING' }
 
     local FOREIGN = "Installed by the launcher or by hand, so it's updated there, not by the store."
+    local FOREIGN_TAKE = 'Installed by the launcher or by hand. VanaStore can take it over and keep it updated.'
     local function switch_tip(a)
-        if a.foreign then return FOREIGN end
+        if a.foreign then return a.takeover and FOREIGN_TAKE or FOREIGN end
         return a.loaded and 'Loaded, and at every start' or 'Installed, not loaded'
     end
 
@@ -36,6 +37,8 @@ return function (C)
         -- (an addon the store may not install: nothing to press for a new one, the switch alone for one that's here)
         if a.have == nil then return a.locked and 'locked' or 'install', job end
         if a.update and not a.locked then return 'update', job end
+        -- (a copy the store didn't install, behind the site's: taking it over is how it's brought up to date)
+        if a.takeover and a.behind then return 'takeover', job end
         return 'switch', job
     end
 
@@ -59,6 +62,8 @@ return function (C)
             if L.quiet_button(dl, key, right - bw, cy - bh / 2, bw, bh, 'Install') then C.install(a) end
         elseif kind == 'update' then
             if L.quiet_button(dl, key, right - bw, cy - bh / 2, bw, bh, 'Update', { tip = 'You have ' .. tostring(a.have) }) then C.install(a) end
+        elseif kind == 'takeover' then
+            if L.quiet_button(dl, key, right - S(104), cy - bh / 2, S(104), bh, 'Take over', { tip = FOREIGN_TAKE }) then C.ask_takeover(a) end
         else
             local label = a.loaded and 'On' or 'Off'
             local lw = U.measure(label, F.semi, T.small) + S(8)
@@ -79,6 +84,8 @@ return function (C)
             if L.pixel_button(dl, key, x, y, w, h, 'INSTALL') then C.install(a) end
         elseif kind == 'update' then
             if L.pixel_button(dl, key, x, y, w, h, 'UPDATE') then C.install(a) end
+        elseif kind == 'takeover' then
+            if L.pixel_button(dl, key, x, y, w, h, 'TAKE OVER') then C.ask_takeover(a) end
         else
             local cw, ch = L.chip_size('INSTALLED')
             L.chip(dl, x, y + (h - ch) / 2, 'INSTALLED', 'teal')
@@ -104,7 +111,7 @@ return function (C)
             return w
         end
         if on_card then
-            if not a.behind then return 0 end
+            if not a.behind or a.takeover then return 0 end
             -- a newer version is on the site, and this copy isn't the store's to replace
             local w, h = L.chip(dl, x, y, 'UPDATES ELSEWHERE', 'faint')
             if key then
@@ -138,7 +145,7 @@ return function (C)
             if a.have == '?' or D.compare_versions(a.have, a.version) >= 0 then return ver, 'changed on the site', K.gold end
             return ver, 'you have ' .. tostring(a.have), K.gold
         end
-        if a.behind then return ver, 'you have ' .. tostring(a.have), K.faint end
+        if a.behind then return ver, 'you have ' .. tostring(a.have), a.takeover and K.gold or K.faint end
         return ver, nil, K.gold
     end
 
@@ -562,9 +569,15 @@ return function (C)
             end
             cy = cy + S(6)
         elseif a.foreign then
-            for _, line in ipairs(U.wrap(FOREIGN, F.text, T.small, sw)) do
+            for _, line in ipairs(U.wrap(a.takeover and FOREIGN_TAKE or FOREIGN, F.text, T.small, sw)) do
                 U.text(dl, sx, cy, line, K.faint, F.text, T.small)
                 cy = cy + S(18)
+            end
+            if a.takeover and not a.behind and not (job and job.state ~= 'refused') then
+                -- (up to date already: the takeover is offered all the same, quietly; behind, it is the button above)
+                cy = cy + S(8)
+                if L.quiet_button(dl, '##vs_detail_take', sx, cy, S(110), S(28), 'Take over') then C.ask_takeover(a) end
+                cy = cy + S(28)
             end
             cy = cy + S(16)
         else
