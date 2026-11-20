@@ -39,11 +39,12 @@ return function (C)
         return 'switch', job
     end
 
-    -- why the store won't install an addon, in a few words and in a sentence
+    -- why the store won't install an addon: the chip's words, and a sentence
     local LOCKED = {
-        review = { 'In review', 'IN REVIEW', 'Not reviewed by FFXIPS yet. The store installs reviewed addons only.' },
-        hosted = { 'On the site', 'ON THE SITE', "FFXIPS doesn't host this file itself, so the store can't check it. Its page has the link." },
-        package = { 'On the site', 'ON THE SITE', "The catalog has no checksum for this file, so the store can't check it." },
+        review = { 'PENDING REVIEW', 'Not reviewed by FFXIPS yet. The store installs reviewed addons only.' },
+        denied = { 'NOT APPROVED', 'FFXIPS reviewed this addon and did not approve it. The store installs approved addons only.' },
+        hosted = { 'ON THE SITE ONLY', "FFXIPS doesn't host this file itself, so the store can't check it. Its page on the site has the link." },
+        package = { 'ON THE SITE ONLY', "The catalog gives no checksum for this file, so the store can't check it. Its page on the site has the link." },
     }
 
     -- the card's: a quiet button or the switch, its right edge at `right`
@@ -51,12 +52,7 @@ return function (C)
         local kind, job = state_of(a)
         local bw, bh = S(88), S(28)
         if kind == 'locked' then
-            local words = LOCKED[a.locked]
-            local lw = U.measure(words[1], F.semi, T.small)
-            imgui.SetCursorScreenPos({ right - lw, cy - bh / 2 })
-            local _, hovered = U.hit(key, lw, bh, S(4))
-            U.text_mid(dl, right - lw, cy, words[1], K.faint, F.semi, T.small)
-            if hovered then L.tip(words[3]) end
+            return -- (nothing to press: the chip on the card's left says why)
         elseif kind == 'busy' then
             L.quiet_button(dl, key, right - S(112), cy - bh / 2, S(112), bh, JOB_LABEL[job.state], { progress = progress_of(job), disabled = true })
         elseif kind == 'install' then
@@ -76,8 +72,7 @@ return function (C)
         local kind, job = state_of(a)
         local w, h = S(184), S(44)
         if kind == 'locked' then
-            local words = LOCKED[a.locked]
-            L.pixel_button(dl, key, x, y, w, h, words[2], { kind = 'dark', ink = K.dim, disabled = true, tip = words[3] })
+            return 0 -- (nothing to press: the page says why in a sentence)
         elseif kind == 'busy' then
             L.pixel_button(dl, key, x, y, w, h, JOB_PIX[job.state], { progress = progress_of(job), disabled = true })
         elseif kind == 'install' then
@@ -95,10 +90,34 @@ return function (C)
         return w
     end
 
-    -- "Trusted" or "Pending review", as the site says it
-    local function status_chip(dl, x, y, a, alpha)
-        if a.status == 'trusted' then return L.chip(dl, x, y, 'TRUSTED', 'quiet', alpha) end
-        return L.chip(dl, x, y, 'PENDING REVIEW', 'faint', alpha)
+    -- How it stands on the site. A card marks only the exception (pending review, on the site only); an addon's own
+    -- page says Trusted too. Returns the chip's width, 0 for none.
+    local function status_chip(dl, x, y, a, on_card, key)
+        if a.locked then
+            local words = LOCKED[a.locked]
+            local w, h = L.chip(dl, x, y, words[1], 'faint')
+            if key then
+                imgui.SetCursorScreenPos({ x, y })
+                local _, hovered = U.hit(key, w, h, 0)
+                if hovered then L.tip(words[2]) end
+            end
+            return w
+        end
+        if on_card then return 0 end
+        return (L.chip(dl, x, y, 'TRUSTED', 'quiet'))
+    end
+    local function by_line(a) return a.author ~= '' and ('by ' .. a.author) or '' end
+
+    -- text in at most `max` lines; a longer one ends at a whole word, with an ellipsis
+    local function clamp(text, font, size, w, max)
+        local lines = U.wrap(text, font, size, w)
+        if #lines <= max then return lines end
+        local out = {}
+        for i = 1, max do out[i] = lines[i] end
+        local last = out[max]
+        while last ~= '' and U.measure(last .. '…', font, size) > w do last = last:match('^(.*)%s+%S+$') or '' end
+        out[max] = (last:gsub('[%s,;:%.]+$', '')) .. '…'
+        return out
     end
 
     -- v1.0.2, and what you have when it's older: in gold when the store can update it, dim when it's another's to update
@@ -219,17 +238,14 @@ return function (C)
         cy = cy + S(20)
         U.text(dl, tx, cy, U.fit(a.title, F.bold, T.h1, tw), K.ink, F.bold, T.h1)
         cy = cy + S(30)
-        local by = 'by ' .. a.author
+        local by = by_line(a)
         U.text(dl, tx, cy, by, K.dim, F.text, T.small)
         local ver, have, have_col = version_text(a)
-        local vx = tx + U.measure(by, F.text, T.small) + S(12)
+        local vx = tx + (by ~= '' and (U.measure(by, F.text, T.small) + S(12)) or 0)
         L.mono(dl, vx, cy, ver, K.dim, T.small)
         if have then L.mono(dl, vx + L.mono_width(ver, T.small) + S(10), cy, have, have_col, T.small) end
         cy = cy + S(26)
-        local lines = U.wrap(a.summary, F.text, T.body, tw)
-        for i = 1, math.min(2, #lines) do
-            local line = lines[i]
-            if i == 2 and #lines > 2 then line = U.fit(line .. ' …', F.text, T.body, tw) end
+        for _, line in ipairs(clamp(a.summary, F.text, T.body, tw, 2)) do
             U.text(dl, tx, cy, line, mix(K.ink, K.dim, 0.25), F.text, T.body)
             cy = cy + S(22)
         end
@@ -238,11 +254,11 @@ return function (C)
         local used = primary_action(dl, a, key .. '_act', tx, by2)
         local job = C.jobs[a.slug]
         if job and job.state == 'refused' then
-            -- why it wasn't installed, where the chip was
+            -- why it wasn't installed, beside the button
             U.text_mid(dl, tx + used + S(20), by2 + S(22), U.fit(job.why, F.text, T.small, tw - used - S(20)), K.red, F.text, T.small)
-        else
+        elseif a.locked then
             local _, chh = L.chip_size('TRUSTED')
-            status_chip(dl, tx + used + S(20), by2 + (S(44) - chh) / 2, a)
+            status_chip(dl, tx, by2 + (S(44) - chh) / 2, a, true)
         end
         imgui.SetCursorScreenPos({ x, y })
         if U.hit(key, w, h, 0) then C.open_detail(a) end
@@ -270,16 +286,13 @@ return function (C)
         U.text(dl, px, cy, U.fit(a.title, F.semi, T.body, pw - vw - S(10)), mix(K.ink, K.hot, hv), F.semi, T.body)
         L.mono(dl, px + pw - vw, cy + S(2), ver, K.dim, T.small)
         cy = cy + S(22)
-        U.text(dl, px, cy, U.fit('by ' .. a.author, F.text, T.small, pw), K.dim, F.text, T.small)
+        U.text(dl, px, cy, U.fit(by_line(a), F.text, T.small, pw), K.dim, F.text, T.small)
         if have then
             local hw = L.mono_width(have, T.small)
             L.mono(dl, px + pw - hw, cy, have, have_col, T.small)
         end
         cy = cy + S(24)
-        local lines = U.wrap(a.summary, F.text, T.small, pw)
-        for n = 1, math.min(2, #lines) do
-            local line = lines[n]
-            if n == 2 and #lines > 2 then line = U.fit(line .. ' …', F.text, T.small, pw) end
+        for _, line in ipairs(clamp(a.summary, F.text, T.small, pw, 2)) do
             U.text(dl, px, cy, line, mix(K.ink, K.dim, 0.45), F.text, T.small)
             cy = cy + S(18)
         end
@@ -290,7 +303,7 @@ return function (C)
             U.text_mid(dl, px, by, U.fit(job.why, F.text, T.small, pw - S(100)), K.red, F.text, T.small)
         else
             local _, chh = L.chip_size('TRUSTED')
-            status_chip(dl, px, by - chh / 2, a)
+            status_chip(dl, px, by - chh / 2, a, true, key .. '_why')
         end
         card_action(dl, a, key .. '_act', x + w - S(14), by)
         imgui.SetCursorScreenPos({ x, y + lift })
@@ -320,6 +333,10 @@ return function (C)
         local list = D.filter(st.view, st.compat, query)
         local plain = st.view == 'all' and st.compat == nil and query:gsub('%s', '') == ''
         local feat = plain and D.featured() or nil
+        if feat then
+            -- (the featured addon has the large card: it isn't shown again among the cards under it)
+            for i = #list, 1, -1 do if list[i] == feat then table.remove(list, i) end end
+        end
         local base = U.ease((U.clock() - (st.grid_at or 0)) / 0.3)
         if feat then
             C.fade(base)
@@ -330,14 +347,16 @@ return function (C)
             C.fade(1)
         end
         -- the heading over the cards: what is shown, and how many
-        local heading = st.view == 'installed' and 'INSTALLED' or st.view == 'updates' and 'UPDATES' or 'ALL ADDONS'
+        local heading = st.view == 'installed' and 'INSTALLED' or st.view == 'updates' and 'UPDATES' or (feat and 'MORE ADDONS' or 'ALL ADDONS')
         if query:gsub('%s', '') ~= '' then heading = 'SEARCH' end
         L.eyebrow(dl, ox + S(2), oy + at + S(2), heading, K.dim)
-        local count = #list == 1 and '1 addon' or (#list .. ' addons')
+        local shown = #list + (feat and 1 or 0)
+        local count = shown == 1 and '1 addon' or (shown .. ' addons')
         if st.compat then count = count .. (st.compat == 'general' and ', general' or ', server-specific') end
         local cw = U.measure(count, F.text, T.small)
         U.text(dl, ox + w - S(8) - cw, oy + at - S(2), count, K.faint, F.text, T.small)
         at = at + S(26)
+        if #list == 0 and feat then return at end
         if #list == 0 then
             local line, sub = 'No addons here yet.', nil
             if query:gsub('%s', '') ~= '' then line, sub = 'Nothing matches "' .. query .. '".', 'Try a shorter word, or look in All addons.'
@@ -454,12 +473,23 @@ return function (C)
             U.text(dl, sx, cy, line, K.ink, F.bold, T.title - 2)
             cy = cy + S(34)
         end
-        U.text(dl, sx, cy, 'by ' .. a.author, K.dim, F.text, T.body)
-        cy = cy + S(30)
-        status_chip(dl, sx, cy, a)
+        if a.author ~= '' then
+            U.text(dl, sx, cy, by_line(a), K.dim, F.text, T.body)
+            cy = cy + S(30)
+        end
+        status_chip(dl, sx, cy, a, false)
         cy = cy + S(36)
-        primary_action(dl, a, '##vs_detail_act', sx, cy)
-        cy = cy + S(44) + S(14)
+        if a.locked and a.have == nil then
+            -- why there is no button, said once
+            for _, line in ipairs(U.wrap(LOCKED[a.locked][2], F.text, T.small, sw)) do
+                U.text(dl, sx, cy, line, K.dim, F.text, T.small)
+                cy = cy + S(18)
+            end
+            cy = cy + S(2)
+        else
+            primary_action(dl, a, '##vs_detail_act', sx, cy)
+            cy = cy + S(44) + S(14)
+        end
         local job = C.jobs[a.slug]
         if job and job.state == 'refused' then
             for _, line in ipairs(U.wrap(job.why, F.text, T.small, sw)) do
@@ -472,7 +502,7 @@ return function (C)
                 U.text(dl, sx, cy, line, K.faint, F.text, T.small)
                 cy = cy + S(18)
             end
-            cy = cy + S(6)
+            cy = cy + S(16)
         else
             cy = cy + S(8)
         end
@@ -480,7 +510,9 @@ return function (C)
         if a.have then cy = cy + fact(dl, sx, cy, sw, 'You have', tostring(a.have), a.update and K.gold or K.teal) end
         cy = cy + fact(dl, sx, cy, sw, 'Size', D.size_text(a.package.size))
         cy = cy + fact(dl, sx, cy, sw, 'Updated', D.date_text(a.updated))
-        if a.downloads then cy = cy + fact(dl, sx, cy, sw, 'Downloads', tostring(a.downloads)) end
+        if a.pending_version then cy = cy + fact(dl, sx, cy, sw, 'In review', a.pending_version, K.dim) end
+        -- (a count is worth showing once it says something: under 25 it only reads as "nobody has this")
+        if a.downloads and a.downloads >= 25 then cy = cy + fact(dl, sx, cy, sw, 'Downloads', tostring(a.downloads)) end
         cy = cy + S(6)
         if a.page and L.link(dl, '##vs_page', sx, cy + S(10), 'View on FFXIPS', { icon = L.CP.link, icon_after = true, size = T.small, font = F.semi,
             color = K.gold, tip = a.page }) then C.open_page(a.page) end

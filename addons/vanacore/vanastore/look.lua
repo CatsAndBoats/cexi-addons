@@ -81,6 +81,63 @@ function L.pix(dl, x, y, str, color, n, alpha, shadow, spacing)
     return L.pix_width(str, n, spacing), px
 end
 
+-- The same face set by its ink: each letter starts where its squares do and the gap between two is one square, so a
+-- narrow letter (the T of VANASTORE sits a square in from its cell's edge) leaves no hole in a word. For the wordmark.
+local TIGHT = { by = {} }
+local function tight_layout(str, px)
+    local key = px .. ':' .. str
+    local lay = TIGHT.by[key]
+    if lay ~= nil then return lay end
+    lay = { at = {}, width = #str * px }
+    local font = L.fonts.pix
+    local ok, baked = pcall(function () return font:GetFontBaked(px) end)
+    local unit, x, found = px / 8, 0, ok and baked ~= nil
+    if found then
+        for i = 1, #str do
+            local ok2, g = pcall(baked.FindGlyph, baked, str:byte(i))
+            if str:sub(i, i) == ' ' then
+                lay.at[i] = x
+                x = x + px / 2
+            elseif ok2 and g and g.X1 > g.X0 then
+                lay.at[i] = x - g.X0
+                x = x + (g.X1 - g.X0) + unit
+            else
+                found = false
+                break
+            end
+        end
+    end
+    if found then
+        lay.width = x - unit
+    else
+        for i = 1, #str do lay.at[i] = (i - 1) * px end
+    end
+    TIGHT.by[key] = lay
+    return lay
+end
+function L.pix_tight_width(str, n)
+    if L.fonts.pix == nil then return L.pix_width(str, n) end
+    return tight_layout(str, L.pix_size(n)).width
+end
+function L.pix_tight(dl, x, y, str, color, n, alpha, shadow)
+    local font = L.fonts.pix
+    if font == nil then return L.pix(dl, x, y, str, color, n, alpha, shadow) end
+    local px = L.pix_size(n)
+    local lay = tight_layout(str, px)
+    x, y = round(x), round(y)
+    local off = math.max(1, round(px / 8))
+    local cs, cc = shadow and u32(shadow, alpha) or nil, u32(color, alpha)
+    for i = 1, #str do
+        local ch = str:sub(i, i)
+        if ch ~= ' ' then
+            local cx = x + round(lay.at[i])
+            if cs then dl:AddText(font, px, { cx + off, y + off }, cs, ch) end
+            dl:AddText(font, px, { cx, y }, cc, ch)
+        end
+    end
+    return lay.width, px
+end
+
 -- The site's panel frame: a dark edge, a ring of light gold, a ring of brown, and a hard shadow down and to the right.
 -- Returns how far the fill sits in from the edge. `hot` (0..1) turns the gold ring to the hover colour.
 function L.frame(dl, x, y, w, h, fill, hot, alpha)
@@ -418,7 +475,8 @@ function L.placeholder(dl, x, y, w, h, title, alpha, rounding, corners)
     local n = math.max(2, math.floor(h / S(8) / 3))
     local letter = (title or '?'):sub(1, 1):upper()
     local px = L.pix_size(n)
-    L.pix(dl, x + (w - px) / 2, y + (h - px) / 2, letter, mix(C.frame_light, C.bg1, 0.35), n, alpha, C.frame_dark)
+    -- (a lighter blue of the tile's own, not a third colour: the pictures beside it carry the colour)
+    L.pix(dl, x + (w - px) / 2, y + (h - px) / 2, letter, '#3C5282', n, alpha, C.frame_dark)
     dl:PopClipRect()
 end
 

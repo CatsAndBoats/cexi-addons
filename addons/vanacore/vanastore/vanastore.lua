@@ -140,7 +140,7 @@ local function draw_header(dl, x, y, w, t)
     local h = S(80)
     U.aurora(dl, x, y, w, h, t, S(16))
     L.eyebrow(dl, x + S(26), y + S(16), 'FFXI ADDONS', K.gold)
-    L.pix(dl, x + S(26), y + S(34), 'VANASTORE', K.hot, 3, 1, '#1A0F00')
+    L.pix_tight(dl, x + S(26), y + S(34), 'VANASTORE', K.hot, 3, 1, '#1A0F00')
     local pulse = 0.55 + 0.45 * math.sin(t * 2)
     dl:AddRectFilledMultiColor({ x + S(16), y + h - 1 }, { x + w - S(16), y + h + 1 }, U.u32(K.teal, 0), U.u32(K.teal, 0.7 * pulse),
         U.u32(K.gold, 0.8 * pulse), U.u32(K.gold, 0))
@@ -159,7 +159,7 @@ local function draw_header(dl, x, y, w, t)
         C.refresh()
     end
     -- the search box
-    local fw = math.min(S(280), w - S(26) - L.pix_width('VANASTORE', 3) - S(40) - (size + S(4)) * 3 - S(40))
+    local fw = math.min(S(280), w - S(26) - L.pix_tight_width('VANASTORE', 3) - S(40) - (size + S(4)) * 3 - S(40))
     if fw > S(120) then
         local fx = ix - S(14) - fw
         imgui.SetCursorScreenPos({ fx, iy })

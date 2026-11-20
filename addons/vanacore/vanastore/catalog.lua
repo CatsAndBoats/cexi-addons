@@ -128,10 +128,13 @@ local function entry(raw)
         shots = {},
     }
     a.status = a.trusted and 'trusted' or 'pending'
+    a.pending_version = text_of(raw.pendingVersion) -- (a newer version waiting for review on the site, if it says so)
+    if a.pending_version == '' then a.pending_version = nil end
     if a.summary == '' then a.summary = summary_of(description) end
     if not on_site(a.page) then a.page = nil end
     -- why it can't be installed from here, if it can't (see the top of this file)
-    if not a.trusted then a.locked = 'review'
+    -- (from `trusted`, not from the review's word alone: an approval of a file since replaced comes as trusted = false)
+    if not a.trusted then a.locked = a.review == 'denied' and 'denied' or 'review'
     elseif not a.hosted then a.locked = 'hosted'
     elseif not on_site(a.package.url) or not a.package.sha256:match('^%x+$') or #a.package.sha256 ~= 64 then
         a.locked = 'package'
@@ -155,10 +158,11 @@ local function take(doc, source)
     local list, by_slug, by_name = {}, {}, {}
     for _, raw in ipairs(doc.addons) do
         local a, why = entry(raw)
-        if a and by_slug[a.slug] == nil and (a.name == nil or by_name[a.name] == nil) then
+        -- (listed as the site lists them: two entries may hold the same package name, and both are shown)
+        if a and by_slug[a.slug] == nil then
             list[#list + 1] = a
             by_slug[a.slug] = a
-            if a.name then by_name[a.name] = a end
+            if a.name and by_name[a.name] == nil then by_name[a.name] = a end
         elseif why then
             vana.log('catalog: left out ' .. tostring(why))
         end
@@ -270,10 +274,14 @@ function D.look(force)
         -- launcher keeps, or one copied in by hand, is another's to update, and the store offers its switch alone
         a.packaged = have ~= nil and vana.fs.exists(vana.paths.addons .. '\\vanacore\\' .. a.name .. '\\.vcaddon.json')
         a.foreign = have ~= nil and not a.packaged
-        -- an update: a newer version, or the same version's file changed on the site since the store installed it
+        -- an update: a newer version, or this listing's file changed on the site since the store installed it from
+        -- there (the site keeps a listing's address and swaps its file when a new one is approved; the version's words
+        -- are the uploader's, so the checksum is what tells). The store's record counts only while it is of what is
+        -- installed now, and only for the listing it came from.
         local rec = D.records and D.records[a.name] or nil
-        local newer = have ~= nil and have ~= '?' and D.compare_versions(have, a.version) < 0
-        local changed = rec ~= nil and rec.version == have and type(rec.sha256) == 'string' and rec.sha256 ~= a.package.sha256
+        local newer = have ~= nil and have ~= '?' and a.version ~= '' and D.compare_versions(have, a.version) < 0
+        local changed = rec ~= nil and rec.version == have and rec.slug == a.slug and type(rec.sha256) == 'string'
+            and rec.sha256 ~= a.package.sha256
         a.update = a.packaged and not a.locked and (newer or changed)
         if have then installed = installed + 1 end
         if a.update then updates = updates + 1 end
