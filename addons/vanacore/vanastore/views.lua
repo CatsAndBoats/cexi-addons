@@ -638,6 +638,20 @@ return function (C)
             end
             cy = cy + S(14)
         end
+        if not a.trusted and a.locked ~= 'denied' and not (job and job.state == 'refused') then
+            -- what the site's scan found in an addon nobody has reviewed: the one to notice in brighter ink
+            local strong, rest = D.flag_lines(a)
+            for i, text in ipairs({ strong or false, rest or false }) do
+                if text then
+                    for _, line in ipairs(U.wrap(text, F.text, T.small, sw)) do
+                        U.text(dl, sx, cy, line, i == 1 and K.dim or K.faint, F.text, T.small)
+                        cy = cy + S(18)
+                    end
+                    cy = cy + S(8)
+                end
+            end
+            if strong or rest then cy = cy + S(6) end
+        end
         cy = cy + fact(dl, sx, cy, sw, 'Version', a.version ~= '' and a.version or '-')
         if a.have then cy = cy + fact(dl, sx, cy, sw, 'You have', tostring(a.have), a.update and K.gold or K.teal) end
         if a.framework_name ~= '' then cy = cy + fact(dl, sx, cy, sw, 'Framework', a.framework_name) end

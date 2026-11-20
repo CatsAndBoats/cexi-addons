@@ -364,13 +364,10 @@ local function draw_confirm(t, dt)
             end
             if not a.trusted then
                 for _, text in ipairs(CONFIRM.unreviewed) do texts[#texts + 1] = text end
-                -- what the site's scan of its Lua noticed, in plain words (nothing a reviewer has weighed yet)
-                if #a.flags > 0 then
-                    local said = {}
-                    for _, flag in ipairs(a.flags) do said[#said + 1] = D.FLAG_WORDS[flag] or ('is flagged for ' .. flag:gsub('[-_]', ' ')) end
-                    local list = #said == 1 and said[1] or (table.concat(said, ', ', 1, #said - 1) .. ' and ' .. said[#said])
-                    texts[#texts + 1] = "The site's scan noticed that it " .. list .. '. Many addons do.'
-                end
+                -- what the site's scan of its Lua found (nothing a reviewer has weighed yet)
+                local strong, rest = D.flag_lines(a)
+                if strong then texts[#texts + 1] = strong end
+                if rest then texts[#texts + 1] = rest end
                 texts[#texts + 1] = 'Install it only if you trust its author' .. (a.author ~= '' and (', ' .. a.author) or '') .. '.'
             end
             local title = U.wrap(heading, F.bold, T.h1, tw)

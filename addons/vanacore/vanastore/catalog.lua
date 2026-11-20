@@ -126,17 +126,42 @@ local function summary_of(description, title)
     return cut
 end
 
--- one entry, checked: nil and why if it can't be shown
--- What the site's scan of an addon's Lua noticed, in plain words (its `luaFlags`), for the warning before an addon
--- nobody has reviewed is installed. A flag this store hasn't a phrase for is said by its own name.
+-- What the site's scan of an addon's Lua found, in plain words (its `luaFlags`), for an addon nobody has reviewed.
+-- The scan matches text in .lua files, so a flag is a sign, not proof: a comment can set one off. These seven are
+-- all the site gives; one this store hasn't a phrase for is said by its own name.
 D.FLAG_WORDS = {
-    ['file-access'] = 'reads and writes files', ['http-lib'] = 'makes web requests', ['socket-lib'] = 'opens network connections',
-    ['os-execute'] = 'runs other programs', ['ffi'] = 'calls native code', ['memory-access'] = "reads or changes the game's memory",
-    ['dynamic-code'] = 'builds code as it runs', ['clipboard'] = 'reads the clipboard',
+    ['file-access'] = 'reads or writes files on this computer',
+    ['dynamic-code'] = 'builds and runs code as it goes',
+    ['http-lib'] = 'can call web addresses',
+    ['socket-lib'] = 'can open network connections',
+    ['ssl-lib'] = 'can make encrypted network connections',
+    ['base64-blob'] = 'holds a long block of encoded data',
 }
+D.FLAG_ORDER = { 'file-access', 'dynamic-code', 'http-lib', 'socket-lib', 'ssl-lib', 'base64-blob' }
 
--- (`scan_gate`: this catalog says of each entry whether the virus scanner passed it; one it didn't isn't installed)
-local function entry(raw, scan_gate)
+-- The scan's findings as sentences: `strong`, the one a player should notice (it can run other programs: said on its
+-- own and not softened), and `rest`, the others in one sentence. nil for none.
+function D.flag_lines(a)
+    local has, said, known = {}, {}, { ['os-execute'] = true }
+    for _, flag in ipairs(a.flags or {}) do has[flag] = true end
+    for _, flag in ipairs(D.FLAG_ORDER) do
+        known[flag] = true
+        if has[flag] then said[#said + 1] = D.FLAG_WORDS[flag] end
+    end
+    for _, flag in ipairs(a.flags or {}) do
+        if not known[flag] then said[#said + 1] = 'is flagged for ' .. flag:gsub('[-_]', ' ') end
+    end
+    local strong = has['os-execute'] and "The site's scan found code that can run other programs on this computer." or nil
+    local rest = nil
+    if #said > 0 then
+        local list = #said == 1 and said[1] or (table.concat(said, ', ', 1, #said - 1) .. ' and ' .. said[#said])
+        rest = "The site's scan " .. (strong and 'also ' or '') .. 'found signs that it ' .. list .. '. Many addons do.'
+    end
+    return strong, rest
+end
+
+-- one entry, checked: nil and why if it can't be shown
+local function entry(raw)
     if type(raw) ~= 'table' then return nil, 'not an entry' end
     local slug = text_of(raw.slug)
     if slug == nil or not slug:match('^[%w_.%-]+$') then return nil, 'no slug' end
@@ -197,7 +222,7 @@ local function entry(raw, scan_gate)
     -- (from `trusted`, not from the review's word alone: an approval of a file since replaced comes as trusted = false)
     if not a.trusted and a.review == 'denied' then a.locked = 'denied'
     elseif a.native then a.locked = 'plugin'
-    elseif scan_gate and not a.virus_scanned then a.locked = 'scan'
+    elseif not a.virus_scanned then a.locked = 'scan' -- (the site's virus scanner hasn't passed the file it serves)
     elseif not D.INSTALLS[framework] then a.locked = 'framework'
     elseif not a.hosted then a.locked = 'hosted'
     elseif not on_site(a.package.url) or not a.package.sha256:match('^%x+$') or #a.package.sha256 ~= 64 then
@@ -221,15 +246,8 @@ local function take(doc, source)
     if type(doc) ~= 'table' or type(doc.addons) ~= 'table' then return false, 'not a catalog' end
     if tonumber(doc.schema) ~= 1 then return false, 'a newer catalog than this store reads: update VanaStore' end
     local list, by_slug, by_name = {}, {}, {}
-    -- (the site says of each entry whether its virus scan passed, once its catalog carries the field at all: then an
-    -- entry without a pass is one the store doesn't install)
-    local scan_gate = false
     for _, raw in ipairs(doc.addons) do
-        if type(raw) == 'table' and type(raw.virusScanned) == 'boolean' then scan_gate = true break end
-    end
-    D.scan_gate = scan_gate
-    for _, raw in ipairs(doc.addons) do
-        local a, why = entry(raw, scan_gate)
+        local a, why = entry(raw)
         -- (listed as the site lists them: two entries may hold the same package name, and both are shown)
         if a and by_slug[a.slug] == nil then
             list[#list + 1] = a
