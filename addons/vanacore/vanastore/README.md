@@ -8,7 +8,10 @@ Browse them, read about one, install it, update it, and switch it on or off with
   and a link to its page on the site.
 - **Install and update.** One button. The file comes from the site, its SHA-256 is compared with the one the site's
   catalog gives before anything opens it, and VanaCore's own package installer does the rest. A file that doesn't
-  match is deleted unopened, and the window says so.
+  match is deleted unopened, and the window says so. VanaCore works the checksum out itself where it can
+  (`vana.fs.sha256`, on a thread of its own) and is handed the catalog's with the package, so the bytes it installs
+  are the bytes that were checked (`vana.addons.package_sha256`). On a VanaCore without those (0.8.285 and older) the
+  store hashes the file in Lua, five milliseconds of each frame: slow on a big addon, but the game stays smooth.
 - **Reviewed, or not.** An addon ffxiprivateservers.com has reviewed carries a small shield by its name. One it
   hasn't is marked "Not reviewed" and can still be installed: the store asks first, in plain words, before anything is
   downloaded. Either way the file must be one the site hosts, with its checksum.

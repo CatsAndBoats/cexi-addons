@@ -4,8 +4,10 @@
 --
 -- The steps, each a state the window draws (C.jobs[slug].state):
 --   download   the file comes from the site into <VanaCore>\cache\vanastore\
---   verify     its SHA-256 is worked out, a piece a frame, and compared with the catalog's: a different file is deleted
---              unopened, and the job ends 'refused'
+--   verify     its SHA-256 is compared with the catalog's: a different file is deleted unopened, and the job ends
+--              'refused'. Who works it out depends on the VanaCore (see "The checksum" below): VanaCore itself where it
+--              can, on a thread of its own and again on the very bytes it installs; this file's Lua otherwise, a few
+--              milliseconds of each frame
 --   install    VanaCore reads the package (vana.addons.package_info: its name must be the one the catalog gives, and
 --              VanaCore must find nothing wrong with it), the addon is unloaded if it's loaded, and VanaCore installs it
 --   refused    why it wasn't installed, said in the window (job.why); the addon is as it was
@@ -165,6 +167,63 @@ return function (C)
     end
 
     ---------------------------------------------------------------------------
+    -- The checksum. Three ways, by what this VanaCore has:
+    --   vana.fs.can_sha256          VanaCore hashes the file on a thread of its own (vana.fs.sha256) while the window
+    --                               shows how far it is: a wrong file is known before anything opens it
+    --   vana.addons.package_sha256  the catalog's checksum goes with the package to VanaCore's reader and installer,
+    --                               which refuse bytes that don't have it: what is installed is what was checked
+    --   neither (0.8.285 and older) sha256.lua, in Lua: slow, so it takes only LUA_BUDGET of each frame
+    ---------------------------------------------------------------------------
+
+    local LUA_BUDGET = 0.005 -- seconds of a frame the Lua hash may take (a 60 fps frame is 0.0167)
+    local LUA_PIECE = 4096   -- bytes hashed between two looks at the clock
+
+    local function engine_hashes() return vana.fs.can_sha256 == true and type(vana.fs.sha256) == 'function' end
+    local function engine_pins() return vana.addons.package_sha256 == true end
+    -- (for /store's own report and the tests: 'engine', or 'lua')
+    function I.hashing() return (engine_hashes() or engine_pins()) and 'engine' or 'lua' end
+
+    -- inside a task: the file's SHA-256 from VanaCore, or nil and why when it couldn't say
+    local function hash_engine(path, job)
+        local started, hashing = pcall(vana.fs.sha256, path, { progress = function (done, total)
+            job.progress = (total and total > 0) and math.min(1, done / total) or nil
+        end })
+        if not started or type(hashing) ~= 'table' then return nil, tostring(hashing) end
+        local ok, res = pcall(function () return hashing:await() end)
+        if ok and type(res) == 'string' and #res == 64 then return res:lower() end
+        return nil, type(res) == 'table' and tostring(res.message or res.code) or tostring(res)
+    end
+
+    -- inside a task: the same in Lua, LUA_BUDGET of each frame; nil when the file can't be read
+    local function hash_lua(path, job, size)
+        local file = io.open(path, 'rb')
+        if file == nil then return nil end
+        local hash, bytes, ended = SHA.new(), 0, false
+        while not ended do
+            local till = clock() + LUA_BUDGET
+            repeat
+                local piece = file:read(LUA_PIECE)
+                if piece == nil then ended = true break end
+                hash:update(piece)
+                bytes = bytes + #piece
+            until clock() >= till
+            job.progress = (size and size > 0) and math.min(1, bytes / size) or nil
+            if not ended then coroutine.yield() end
+        end
+        file:close()
+        return hash:hex()
+    end
+
+    -- the download isn't the catalog's file: gone unopened, and said
+    local function mismatch(a, job, path, got)
+        tidy(path)
+        vana.log(string.format('%s: the download has sha256 %s; the catalog says %d bytes, sha256 %s', a.slug, tostring(got or '(not the expected one)'),
+            a.package.size or 0, a.package.sha256))
+        D.fetch() -- (the addon may have been updated on the site since the catalog was read: look again)
+        return refuse(job, "The download doesn't match the catalog's checksum, so it wasn't opened. Nothing was installed")
+    end
+
+    ---------------------------------------------------------------------------
     -- The job
     ---------------------------------------------------------------------------
 
@@ -202,33 +261,40 @@ return function (C)
 
         -- 2. the checksum, before anything opens the file as a package
         job.state, job.progress = 'verify', 0
-        local file = io.open(path, 'rb')
-        if file == nil then return refuse(job, "The downloaded file can't be read") end
-        local hash, bytes, size = SHA.new(), 0, a.package.size
-        while true do
-            local piece = file:read(262144)
-            if piece == nil then break end
-            hash:update(piece)
-            bytes = bytes + #piece
-            job.progress = (size and size > 0) and math.min(1, bytes / size) or nil
-            coroutine.yield()
+        local want, got = a.package.sha256, nil
+        local pin = engine_pins() and want or nil -- (VanaCore checks the bytes it reads and the bytes it installs)
+        if engine_hashes() then
+            local why
+            got, why = hash_engine(path, job)
+            if got == nil then vana.log(a.slug .. ": VanaCore couldn't hash the download (" .. tostring(why) .. ')') end
         end
-        file:close()
-        local got = hash:hex()
-        if got ~= a.package.sha256 then
-            tidy(path)
-            vana.log(string.format('%s: the download is %d bytes, sha256 %s; the catalog says %d bytes, sha256 %s', a.slug, bytes, got,
-                size or 0, a.package.sha256))
-            D.fetch() -- (the addon may have been updated on the site since the catalog was read: look again)
-            return refuse(job, "The download doesn't match the catalog's checksum, so it wasn't opened. Nothing was installed")
+        if got == nil and pin == nil then
+            got = hash_lua(path, job, a.package.size)
+            if got == nil then
+                tidy(path)
+                return refuse(job, "The downloaded file can't be read")
+            end
+        end
+        if got ~= nil and got ~= want then return mismatch(a, job, path, got) end
+        -- (the options of VanaCore's two package calls: a plain zip's framework, name and folder, and the checksum)
+        local function how(adopt)
+            if plain == nil and pin == nil and not adopt then return nil end
+            local t = {}
+            if plain then t.framework, t.name, t.root = plain.framework, plain.name, plain.root end
+            if pin then t.sha256 = pin end
+            if adopt then t.adopt = true end -- (the old folder goes to backups\addons)
+            return t
         end
 
         -- 3. VanaCore reads the package
         job.state, job.progress = 'install', nil
         pcall(vana.fs.write, path .. '.from', a.package.url) -- (where it came from, for VanaCore's own record of the install)
         local info, why
-        if plain then info, why = vana.addons.package_info(path, plain) else info, why = vana.addons.package_info(path) end
+        local opts = how(false)
+        if opts then info, why = vana.addons.package_info(path, opts) else info, why = vana.addons.package_info(path) end
         if info == nil then
+            -- (VanaCore's own word that the bytes aren't the catalog's)
+            if pin and tostring(why):find('SHA-256', 1, true) then return mismatch(a, job, path, tostring(why):match('is (%x+), not')) end
             tidy(path)
             return refuse(job, why or "It isn't an addon package")
         end
@@ -266,14 +332,8 @@ return function (C)
             end
         end
         local done, bad
-        if plain or adopting then
-            local how = {}
-            if plain then how.framework, how.name, how.root = plain.framework, plain.name, plain.root end
-            if adopting then how.adopt = true end -- (the old folder goes to backups\addons)
-            done, bad = vana.addons.package_install(path, how)
-        else
-            done, bad = vana.addons.package_install(path)
-        end
+        opts = how(adopting)
+        if opts then done, bad = vana.addons.package_install(path, opts) else done, bad = vana.addons.package_install(path) end
         if not done then
             if was_loaded then vana.chat.run('/addon load ' .. name .. ' ' .. folder, 1) end
             tidy(path)
@@ -294,7 +354,8 @@ return function (C)
             wait_until(function () return is_loaded(name, folder) end, 4)
         end
         tidy(path)
-        vana.log(string.format('%s %s (%s) %s from %s (sha256 %s)', adopting and 'took over' or (fresh and 'installed' or 'updated'), name, folder, tostring(info.version), a.package.url, got))
+        vana.log(string.format('%s %s (%s) %s from %s (sha256 %s)', adopting and 'took over' or (fresh and 'installed' or 'updated'), name, folder, tostring(info.version), a.package.url,
+            got or (want .. ', by VanaCore')))
         C.jobs[a.slug] = nil
         D.look(true)
         U.toast('ok', adopting and 'Taken over' or (fresh and 'Installed' or 'Updated'), a.title .. ' ' .. tostring(info.version or ''), 4, 'circle-check')

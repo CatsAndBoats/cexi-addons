@@ -1,6 +1,7 @@
--- SHA-256 (FIPS 180-4), in LuaJIT's own bit operations: VanaCore gives addons no hash, and the store must know a
--- download is the file the catalog names before the package is read. Fed in pieces, so a file is hashed a little a
--- frame and the game never waits on it.
+-- SHA-256 (FIPS 180-4), in LuaJIT's own bit operations: the store must know a download is the file the catalog names
+-- before the package is read. A VanaCore with a hash of its own (vana.fs.sha256, vana.addons.package_sha256) does this
+-- itself and far faster; this is for the ones without (0.8.285 and older). Fed in pieces, so install.lua hashes a file
+-- a few milliseconds a frame and the game never waits on it.
 --
 --   local h = SHA.new()    h:update(bytes) ...    h:hex() -> 64 lower-case hex digits
 --   SHA.hex_of(bytes)      the same in one call
