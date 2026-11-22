@@ -262,6 +262,7 @@ L.CP = {
     link = 0xF35D, download = 0xF019, shield = 0xF3ED, clock = 0xF017, box = 0xF466, cubes = 0xF1B3, globe = 0xF0AC,
     server = 0xF233, arrow_up = 0xF062, chev_left = 0xF053, chev_right = 0xF054, image = 0xF03E, warn = 0xF071,
     circle_up = 0xF0AA, layers = 0xF5FD, power = 0xF011, copy = 0xF0C5, user = 0xF007,
+    star = 0xF005, cal_plus = 0xF271, az = 0xF15D, sort = 0xF160, chev_down = 0xF078, chev_up = 0xF077,
 }
 
 local glyphs = { str = {}, mid = {}, scale = nil }
