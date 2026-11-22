@@ -6,6 +6,7 @@ In game (/store works as well as /vanastore):
   /store                  the store on or off
   /store open | close
   /store search <words>   opens it on a search
+  /store sort <order>     recommended, downloads, newest, updated or name
   /store scale <pct|auto> the window's size, 60 to 250
   /store settings         size, opacity, controller
   /store help             this list
@@ -26,7 +27,7 @@ cache\vanastore\ in VanaCore's folder.
 
 addon.name    = 'vanastore'
 addon.author  = 'Carver'
-addon.version = '0.1.0'
+addon.version = '0.2.0'
 addon.desc    = 'VanaStore: browse, install and update VanaCore addons from ffxiprivateservers.com.'
 addon.link    = 'https://ffxiprivateservers.com/addons'
 
@@ -44,7 +45,8 @@ local D = require('catalog')
 local PAD = require('pad')
 local K = L.C
 
-local DEFAULTS = { scale = 0, opacity = 100, w = 1100, h = 760, view = 'all' }
+-- (sort: the order of the lists, one of catalog.lua's D.SORTS)
+local DEFAULTS = { scale = 0, opacity = 100, w = 1100, h = 760, view = 'all', sort = 'recommended' }
 local config = vana.settings.register({ scope = 'character', defaults = DEFAULTS })
 -- what the store installed on this PC (name -> { slug, version, sha256, at }): the same for every character.
 -- (`origin` is a developer's: a copy of the site to test against; empty is ffxiprivateservers.com. `servers`: the name
@@ -140,6 +142,21 @@ function C.ask_takeover(a)
     st.confirm = { slug = a.slug, kind = 'takeover', anim = 0 }
 end
 
+-- The order the lists are in: the player's pick, kept with the window's settings
+function C.sort_now() return D.sort_known(cfg.sort) and cfg.sort or 'recommended' end
+function C.set_sort(by)
+    if not D.sort_known(by) then return false end
+    if cfg.sort ~= by then
+        cfg.sort = by
+        config:save()
+        st.grid_at = clock() - 0.1
+        st.scroll_top = true
+    end
+    return true
+end
+-- where the order's pill is: over a list of the site's addons
+local function sorting() return st.open and not st.settings_open and not st.detail and st.view ~= 'bundled' and D.state == 'ready' end
+
 -- the catalog asked for again (the header's button)
 function C.refresh()
     D.fetch()
@@ -192,18 +209,26 @@ local function draw_header(dl, x, y, w, t)
 end
 
 local function draw_legend(dl, x, y, w)
-    local items = { { 'confirm', 'Select' }, { 'cancel', st.detail and 'Back' or 'Close' }, { 'l1 r1', 'Lists' }, { 'rstick', 'Scroll' } }
+    local items = { { 'confirm', 'Select' }, { 'cancel', st.sort_open and 'Back' or st.detail and 'Back' or 'Close' }, { 'l1 r1', 'Lists' } }
+    if sorting() then items[#items + 1] = { 'y', 'Sort' } end
+    items[#items + 1] = { 'rstick', 'Scroll' }
     local lw = PAD.legend(dl, -10000, -10000, items, 0)
     PAD.legend(dl, x + (w - lw) / 2, y + S(14), items, 1)
 end
 
 local VIEWS = { 'all', 'installed', 'updates', 'bundled' }
 local function pad_buttons()
+    if st.sort_open then
+        -- (the order's menu is up: ImGui shuts it at Cancel, and Y shuts it too)
+        if PAD.pressed('y') then st.sort_close = true end
+        return
+    end
     if PAD.pressed('cancel') then
         if st.settings_open then st.settings_open = false
         elseif st.detail then C.close_detail()
         else C.open(false) end
     end
+    if PAD.pressed('y') and sorting() then st.sort_ask = true end
     local turn = (PAD.pressed('r1') and 1 or 0) - (PAD.pressed('l1') and 1 or 0)
     if turn ~= 0 then
         local i = 1
@@ -260,6 +285,9 @@ local function draw_main(t, dt)
             local bh = y + h - by - foot - legend_h
             local bx, bw = x + S(16), w - S(32)
             if legend_h > 0 then draw_legend(dl, x, y + h - legend_h - S(4), w) end
+            if not sorting() then st.sort_open, st.sort_ask = false, nil end
+            -- (whether the order's menu was up as the frame began: an Escape that shuts it doesn't shut the store)
+            local menu_up = st.sort_open
             local rail_w = S(W.rail)
             V.rail(dl, bx, by, rail_w)
             dl:AddLine({ bx + rail_w + S(12), by }, { bx + rail_w + S(12), by + bh - S(4) }, U.u32(K.line, 0.7), 1)
@@ -292,7 +320,7 @@ local function draw_main(t, dt)
                 dl:AddLine({ x + w - S(5), y + h - S(5) - o }, { x + w - S(5) - o, y + h - S(5) }, U.u32(hot and K.gold or K.dim, hot and 0.9 or 0.4), 1)
             end
             if imgui.IsItemDeactivated() then config:save() end
-            if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and not L.typing() and not st.confirm then
+            if imgui.IsWindowFocused(3) and imgui.IsKeyPressed(U.KEY_ESCAPE) and not L.typing() and not st.confirm and not menu_up then
                 if st.settings_open then st.settings_open = false
                 elseif st.detail then C.close_detail()
                 else C.open(false) end
@@ -485,6 +513,7 @@ end)
 local HELP = {
     '/store: the addon store on or off (/vanastore is the same)',
     '/store search <words>: opens it on a search',
+    '/store sort <order>: recommended, downloads, newest, updated or name',
     '/store scale <pct|auto>: the window\'s size, 60 to 250',
     '/store settings: size, opacity, controller',
 }
@@ -503,6 +532,12 @@ vana.events.on('command', function (e)
         C.open(true)
         st.query[1], st.detail, st.settings_open = rest, nil, false
         st.grid_at = clock()
+    elseif what == 'sort' or what == 'order' then
+        local by = rest:lower()
+        local alias = { popular = 'downloads', downloaded = 'downloads', new = 'newest', recent = 'updated', ['a-z'] = 'name', az = 'name' }
+        by = alias[by] or by
+        if by == '' then say('the order is ' .. C.sort_now())
+        elseif not C.set_sort(by) then say('orders: recommended, downloads, newest, updated, name') end
     elseif what == 'settings' then
         C.open(true)
         st.settings_open = true

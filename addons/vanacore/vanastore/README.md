@@ -6,6 +6,10 @@ Browse them, read about one, install it, update it, and switch it on or off with
 - **Browse.** All addons, the ones you have, and the ones with an update; General or Server-specific, as the site
   sorts them; a search box. Each addon has a page of its own with its pictures, its description, its version and size,
   and a link to its page on the site.
+- **Downloads and order.** Every card shows how many times the addon has been downloaded from the site. The pill at
+  the top right of a list orders it: Recommended (reviewed addons first, then the ones made for your server, the
+  store's front with its featured card), Most downloaded, Newest, Recently updated, or Name A–Z. Under a date order
+  each card shows its date too. The choice is kept with the window's settings; Y opens it on a controller.
 - **Install and update.** One button. The file comes from the site, its SHA-256 is compared with the one the site's
   catalog gives before anything opens it, and VanaCore's own package installer does the rest. A file that doesn't
   match is deleted unopened, and the window says so. VanaCore works the checksum out itself where it can
@@ -39,6 +43,7 @@ Browse them, read about one, install it, update it, and switch it on or off with
 |---|---|
 | `/store` | The store on or off |
 | `/store search <words>` | Opens it on a search |
+| `/store sort <order>` | `recommended`, `downloads`, `newest`, `updated` or `name` |
 | `/store scale <pct\|auto>` | The window's size, 60 to 250 |
 | `/store settings` | Size, opacity, controller |
 
@@ -46,7 +51,7 @@ Browse them, read about one, install it, update it, and switch it on or off with
 
 | | |
 |---|---|
-| `settings\addons\vanastore\<Character>\settings.json` | The window's size, opacity and place |
+| `settings\addons\vanastore\<Character>\settings.json` | The window's size, opacity, place and order |
 | `settings\addons\vanastore\installed.json` | What the store installed, with each file's checksum |
 | `settings\addons\vanastore\catalog.json` | The catalog as last fetched, for a start with no network |
 | `cache\vanastore\` | Pictures, and a download while it is checked |

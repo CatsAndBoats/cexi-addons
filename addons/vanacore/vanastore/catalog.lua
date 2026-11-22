@@ -52,6 +52,39 @@ function D.date_text(iso)
     return string.format('%s %d, %s', MONTHS[tonumber(m)] or m, tonumber(d), y)
 end
 
+-- Nov 20, with the year only when it isn't the catalog's
+function D.short_date(iso)
+    local y, m, d = tostring(iso or ''):match('^(%d%d%d%d)-(%d%d)-(%d%d)')
+    if y == nil then return nil end
+    local text = string.format('%s %d', MONTHS[tonumber(m)] or m, tonumber(d))
+    if y ~= tostring(D.generated or ''):sub(1, 4) then text = text .. ', ' .. y end
+    return text
+end
+
+-- 1,234
+function D.count_text(n)
+    local s = tostring(math.floor(tonumber(n) or 0))
+    local out = s:reverse():gsub('(%d%d%d)', '%1,'):reverse()
+    return (out:gsub('^,', ''))
+end
+
+-- 950, 1.2k, 12k, 3.4M: a count in the least room
+function D.compact_count(n)
+    n = math.floor(tonumber(n) or 0)
+    local function short(v, unit)
+        local text = v < 10 and string.format('%.1f', math.floor(v * 10) / 10) or tostring(math.floor(v))
+        return (text:gsub('%.0$', '')) .. unit
+    end
+    if n < 1000 then return tostring(n) end
+    if n < 1000000 then return short(n / 1000, 'k') end
+    return short(n / 1000000, 'M')
+end
+
+-- as the site says it: "1 download", "12 downloads"
+function D.downloads_text(n)
+    return D.count_text(n) .. (math.floor(tonumber(n) or 0) == 1 and ' download' or ' downloads')
+end
+
 -- 1.10 is newer than 1.9, 1.0.1 than 1.0; anything that isn't a number sorts as text after the numbers
 function D.compare_versions(a, b)
     local pa, pb = {}, {}
@@ -196,6 +229,8 @@ local function entry(raw)
         compatibility = server and 'server' or 'general', server = server, server_key = server and D.server_key(server) or nil,
         summary = text_of(raw.summary, ''), description = description,
         updated = text_of(raw.updatedAt, text_of(raw.createdAt, '')):sub(1, 10),
+        -- (the whole times, for the order: the site's are UTC ISO 8601, which sort as text)
+        created_at = text_of(raw.createdAt, ''), updated_at = text_of(raw.updatedAt, text_of(raw.createdAt, '')),
         downloads = tonumber(raw.downloads), featured = raw.featured == true, page = text_of(raw.pageUrl),
         package = { url = text_of(raw.downloadUrl), size = tonumber(raw.sizeBytes) or 0, sha256 = text_of(raw.sha256, ''):lower() },
         shots = {},
@@ -526,12 +561,27 @@ function D.look(force)
     D.local_rev = D.local_rev + 1
 end
 
+-- The orders a list can be in. 'recommended' is the store's own (below); the others are the player's pick, each with
+-- the recommended order breaking its ties.
+D.SORTS = { 'recommended', 'downloads', 'newest', 'updated', 'name' }
+local SORT_BY = {
+    downloads = function (a, b) return (a.downloads or -1) > (b.downloads or -1), (a.downloads or -1) == (b.downloads or -1) end,
+    newest = function (a, b) return a.created_at > b.created_at, a.created_at == b.created_at end,
+    updated = function (a, b) return a.updated_at > b.updated_at, a.updated_at == b.updated_at end,
+    name = function (a, b)
+        local x, y = a.title:lower(), b.title:lower()
+        return x < y, x == y
+    end,
+}
+function D.sort_known(by) return by == 'recommended' or SORT_BY[by] ~= nil end
+
 -- the addons a view shows: view 'all' | 'installed' | 'updates'; compat nil, 'general' (any server), 'server' (made for
 -- one), or, where the game's server is known, 'here' (made for it) and 'other' (made for another); the search words.
--- (`family`: the rail's framework group, nil for all.) Reviewed addons come first, and within each, those made for
--- the server the game is on, then those for any server, then other servers'; each kind in the site's order.
+-- (`family`: the rail's framework group, nil for all.) Recommended: reviewed addons first, and within each, those made
+-- for the server the game is on, then those for any server, then other servers'; each kind in the site's order.
+-- `by`: one of D.SORTS, recommended when nil.
 local RANK = { here = 1, any = 2, server = 2, other = 3 }
-function D.filter(view, compat, query, family)
+function D.filter(view, compat, query, family, by)
     local buckets = { {}, {}, {}, {}, {}, {} }
     local words = {}
     for word in tostring(query or ''):lower():gmatch('%S+') do words[#words + 1] = word end
@@ -554,6 +604,16 @@ function D.filter(view, compat, query, family)
     local out = {}
     for _, b in ipairs(buckets) do
         for _, a in ipairs(b) do out[#out + 1] = a end
+    end
+    local before = SORT_BY[by]
+    if before then
+        local at = {}
+        for i, a in ipairs(out) do at[a] = i end
+        table.sort(out, function (a, b)
+            local first, tie = before(a, b)
+            if tie then return at[a] < at[b] end
+            return first
+        end)
     end
     return out
 end

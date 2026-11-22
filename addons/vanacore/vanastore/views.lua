@@ -73,33 +73,40 @@ return function (C)
         if a.page == nil then return end
         local label = 'View on FFXIPS'
         local tw, th = U.measure(label, F.semi, T.small)
-        if L.link(dl, key, right - tw - th - S(4), cy, label, { icon = L.CP.link, icon_after = true, size = T.small, font = F.semi, tip = tip }) then
+        local x = right - tw - th - S(4)
+        if L.link(dl, key, x, cy, label, { icon = L.CP.link, icon_after = true, size = T.small, font = F.semi, tip = tip }) then
             C.open_page(a.page)
         end
+        return x
     end
 
     -- the card's: a quiet button or the switch, its right edge at `right`. An addon the site hasn't reviewed has the
-    -- same button in dim ink, not gold: it can be had, and isn't offered as the reviewed ones are.
+    -- same button in dim ink, not gold: it can be had, and isn't offered as the reviewed ones are. Returns its left edge.
     local function card_action(dl, a, key, right, cy)
         local kind, job = state_of(a)
         local bw, bh = S(88), S(28)
         local col = (a.trusted and elsewhere_of(a) == nil) and K.gold or K.dim
         if kind == 'locked' then
-            if a.locked ~= 'denied' and a.locked ~= 'scan' then page_link(dl, a, key, right, cy, LOCKED[a.locked][2]) end
+            if a.locked ~= 'denied' and a.locked ~= 'scan' and a.page then return page_link(dl, a, key, right, cy, LOCKED[a.locked][2]) end
+            return right
         elseif kind == 'busy' then
             L.quiet_button(dl, key, right - S(112), cy - bh / 2, S(112), bh, JOB_LABEL[job.state], { progress = progress_of(job), disabled = true })
+            return right - S(112)
         elseif kind == 'install' then
             if L.quiet_button(dl, key, right - bw, cy - bh / 2, bw, bh, 'Install', { color = col }) then C.install(a) end
         elseif kind == 'update' then
             if L.quiet_button(dl, key, right - bw, cy - bh / 2, bw, bh, 'Update', { color = col, tip = 'You have ' .. tostring(a.have) }) then C.install(a) end
         elseif kind == 'takeover' then
             if L.quiet_button(dl, key, right - S(104), cy - bh / 2, S(104), bh, 'Take over', { color = col, tip = FOREIGN_TAKE }) then C.ask_takeover(a) end
+            return right - S(104)
         else
             local label = a.loaded and 'On' or 'Off'
             local lw = U.measure(label, F.semi, T.small) + S(8)
             local _, pressed = L.switch(dl, key, right - S(38) - lw, cy, a.loaded, label, switch_tip(a))
             if pressed then C.switch(a, not a.loaded) end
+            return right - S(38) - lw
         end
+        return right - bw
     end
 
     -- the primary one, in the site's button (gold for a reviewed addon, the dark slab for one that isn't); returns the
@@ -228,6 +235,49 @@ return function (C)
         local where = elsewhere_of(a)
         if where then return ver, 'in ' .. where, K.faint end
         return ver, nil, K.gold
+    end
+
+    -- What a card says on its bottom row, after any chip: how many downloads, and, when the list is in that order, when
+    -- the addon was added or last updated. The figure the list is ordered by is lit (its icon in gold). Words are
+    -- shortened (12 downloads, 12; 12,345, 12k) before anything is left out, and the order's own figure is the last to
+    -- go. Returns the width drawn.
+    local function meta(dl, a, x, cy, room)
+        local by = C.sort_now()
+        local items = {}
+        if a.downloads then
+            items[#items + 1] = { cp = L.CP.download, full = D.downloads_text(a.downloads), short = D.count_text(a.downloads),
+                tiny = D.compact_count(a.downloads), lit = by == 'downloads' }
+        end
+        local when = (by == 'newest' and a.created_at) or (by == 'updated' and a.updated_at) or nil
+        local day = when and D.short_date(when)
+        if day then
+            items[#items + 1] = { cp = by == 'newest' and L.CP.cal_plus or L.CP.clock, full = (by == 'newest' and 'Added ' or 'Updated ') .. day,
+                short = day, tiny = day, lit = true }
+        end
+        if #items == 0 or room <= 0 then return 0 end
+        local size, iw, gap = T.small, S(17), S(14)
+        local function width(list, form)
+            local w = 0
+            for i, it in ipairs(list) do w = w + (i > 1 and gap or 0) + iw + U.measure(it[form], F.text, size) end
+            return w
+        end
+        local key_item = items[#items].lit and items[#items] or items[1]
+        local tries = { { items, 'full' }, { items, 'short' }, { items, 'tiny' }, { { key_item }, 'full' }, { { key_item }, 'short' },
+            { { key_item }, 'tiny' } }
+        for _, try in ipairs(tries) do
+            local list, form = try[1], try[2]
+            local w = width(list, form)
+            if w <= room then
+                local cx = x
+                for _, it in ipairs(list) do
+                    L.icon(dl, cx + S(6), cy, it.cp, it.lit and K.gold or K.faint, T.small * 0.85, it.lit and 0.95 or 0.9)
+                    U.text_mid(dl, cx + iw, cy, it[form], it.lit and mix(K.dim, K.ink, 0.35) or K.faint, F.text, size)
+                    cx = cx + iw + U.measure(it[form], F.text, size) + gap
+                end
+                return w
+            end
+        end
+        return 0
     end
 
     -- an addon's picture (its nth), or the stand-in; fades in as its texture arrives
@@ -422,9 +472,14 @@ return function (C)
         if job and job.state == 'refused' then
             -- why it wasn't installed, beside the button
             U.text_mid(dl, tx + used + S(20), by2 + S(22), U.fit(job.why, F.text, T.small, tw - used - S(20)), K.red, F.text, T.small)
-        elseif a.locked then
-            local _, chh = L.chip_size('TRUSTED')
-            status_chip(dl, tx, by2 + (S(44) - chh) / 2, a, true)
+        else
+            local mx = tx + (used > 0 and (used + S(22)) or 0)
+            if a.locked then
+                local _, chh = L.chip_size('TRUSTED')
+                local cw = status_chip(dl, tx, by2 + (S(44) - chh) / 2, a, true)
+                mx = tx + (cw > 0 and (cw + S(14)) or 0)
+            end
+            meta(dl, a, mx, by2 + S(22), tx + tw - mx)
         end
         imgui.SetCursorScreenPos({ x, y })
         if U.hit(key, w, h, 0) then C.open_detail(a) end
@@ -464,16 +519,18 @@ return function (C)
             U.text(dl, px, cy, line, mix(K.ink, K.dim, 0.45), F.text, T.small)
             cy = cy + S(18)
         end
-        -- the bottom row
+        -- the bottom row: a chip if it needs one and the downloads, then its control
         local by = y + h - S(14) - S(14)
         local job = C.jobs[a.slug]
+        local left = card_action(dl, a, key .. '_act', x + w - S(14), by)
         if job and job.state == 'refused' then
             U.text_mid(dl, px, by, U.fit(job.why, F.text, T.small, pw - S(100)), K.red, F.text, T.small)
         else
             local _, chh = L.chip_size('TRUSTED')
-            status_chip(dl, px, by - chh / 2, a, true, key .. '_why')
+            local cw = status_chip(dl, px, by - chh / 2, a, true, key .. '_why')
+            local mx = px + (cw > 0 and (cw + S(9)) or 0)
+            meta(dl, a, mx, by, left - S(10) - mx)
         end
-        card_action(dl, a, key .. '_act', x + w - S(14), by)
         imgui.SetCursorScreenPos({ x, y + lift })
         if U.hit(key, w, h, r, { x = x, y = y, w = w, h = h }) then C.open_detail(a) end
     end
@@ -511,13 +568,15 @@ return function (C)
         end
         local by = y + h - S(16) - S(14)
         local job = C.jobs[a.slug]
+        local left = card_action(dl, a, key .. '_act', x + w - S(22), by)
         if job and job.state == 'refused' then
             U.text_mid(dl, px, by, U.fit(job.why, F.text, T.small, tw - S(110)), K.red, F.text, T.small)
         else
             local _, chh = L.chip_size('TRUSTED')
-            status_chip(dl, px, by - chh / 2, a, true, key .. '_why')
+            local cw = status_chip(dl, px, by - chh / 2, a, true, key .. '_why')
+            local mx = px + (cw > 0 and (cw + S(12)) or 0)
+            meta(dl, a, mx, by, left - S(14) - mx)
         end
-        card_action(dl, a, key .. '_act', x + w - S(22), by)
         imgui.SetCursorScreenPos({ x, y + lift })
         if U.hit(key, w, h, r, { x = x, y = y, w = w, h = h }) then C.open_detail(a) end
     end
@@ -605,8 +664,9 @@ return function (C)
         return at
     end
 
-    -- a heading over a block of cards (its icon before it, if any), and how many on the right; returns where the cards go
-    local function section_heading(dl, ox, oy, at, w, label, count, color, icon)
+    -- a heading over a block of cards (its icon before it, if any), and how many on the right (`reserve` short of the
+    -- page's edge: the order's pill sits there on the page's first line); returns where the cards go
+    local function section_heading(dl, ox, oy, at, w, label, count, color, icon, reserve)
         local x = ox + S(2)
         if icon then
             L.icon(dl, x + S(6), oy + at + S(2) + L.pix_size(1) / 2, icon, color, T.small * 0.9)
@@ -614,7 +674,7 @@ return function (C)
         end
         L.eyebrow(dl, x, oy + at + S(2), label, color or K.dim)
         local cw = U.measure(count, F.text, T.small)
-        U.text(dl, ox + w - S(8) - cw, oy + at - S(2), count, K.faint, F.text, T.small)
+        U.text(dl, ox + w - S(8) - (reserve or 0) - cw, oy + at - S(2), count, K.faint, F.text, T.small)
         return at + S(26)
     end
 
@@ -653,6 +713,103 @@ return function (C)
         return at + math.ceil(#list / cols) * (card_h + gap)
     end
 
+    ---------------------------------------------------------------------------
+    -- The order: a pill at the top right of the list, and its menu
+    ---------------------------------------------------------------------------
+
+    local SORT = {
+        recommended = { name = 'Recommended', cp = L.CP.star },
+        downloads = { name = 'Most downloaded', cp = L.CP.download, hint = 'The most downloads on FFXIPS first' },
+        newest = { name = 'Newest', cp = L.CP.cal_plus, hint = 'The latest added to FFXIPS first' },
+        updated = { name = 'Recently updated', cp = L.CP.clock, hint = 'The latest new versions first' },
+        name = { name = 'Name A–Z', cp = L.CP.az, hint = 'By name, in alphabetical order' },
+    }
+    local function sort_hint(id)
+        if id ~= 'recommended' then return SORT[id].hint end
+        local here = D.here
+        return here and ('Reviewed first, then made for ' .. here.name) or "Reviewed first, in the site's order"
+    end
+    local SORT_MENU = '##vs_sort_menu'
+
+    -- the menu: each order with its icon and a line on what it puts first, the one in use in gold with a check. Opened
+    -- under the pill, its right edge on the pill's; a controller's focus starts on the order in use.
+    local function sort_menu(right, y)
+        local pw, row_h = S(344), S(50)
+        local ph = S(40) + #D.SORTS * row_h + S(6)
+        local e = U.ease((U.clock() - (st.sort_open_at or 0)) / 0.18)
+        imgui.SetNextWindowPos({ right - pw, y - (1 - e) * S(6) }, U.ALWAYS)
+        imgui.SetNextWindowSize({ pw, ph }, U.ALWAYS)
+        local was = st.sort_open
+        st.sort_open = false
+        -- (8 + 16: no scroll bar, no scrolling)
+        if imgui.BeginPopup(SORT_MENU, 8 + 16) then
+            st.sort_open = true
+            if not was then st.sort_open_at = U.clock() end
+            local ok, err = pcall(function ()
+                local pdl = imgui.GetWindowDrawList()
+                local x0, y0 = imgui.GetWindowPos()
+                pdl:AddRect({ x0, y0 }, { x0 + pw, y0 + ph }, u32(mix(K.frame_light, K.line, 0.45), 0.95), S(10), 240, 1)
+                L.eyebrow(pdl, x0 + S(18), y0 + S(16), 'SORT BY', K.dim)
+                local now = C.sort_now()
+                for i, id in ipairs(D.SORTS) do
+                    local o = SORT[id]
+                    local on = id == now
+                    local rx, ry, rw, rh = x0 + S(6), y0 + S(36) + (i - 1) * row_h, pw - S(12), row_h - S(2)
+                    imgui.SetCursorScreenPos({ rx, ry })
+                    local pressed, _, hv = U.hit('##vs_sort_' .. id, rw, rh, S(8))
+                    if on then imgui.SetItemDefaultFocus() end
+                    if on then
+                        pdl:AddRectFilled({ rx, ry }, { rx + rw, ry + rh }, u32(K.gold, 0.09 + 0.05 * hv), S(8))
+                    elseif hv > 0.01 then
+                        pdl:AddRectFilled({ rx, ry }, { rx + rw, ry + rh }, u32(K.hot, 0.07 * hv), S(8))
+                    end
+                    L.icon(pdl, rx + S(22), ry + rh / 2, o.cp, on and K.gold or mix(K.dim, K.ink, hv), T.small)
+                    U.text(pdl, rx + S(44), ry + S(8), o.name, on and K.gold or mix(K.ink, K.hot, hv), F.semi, T.body - 1)
+                    U.text(pdl, rx + S(44), ry + S(28), U.fit(sort_hint(id), F.text, T.small, rw - S(80)), on and K.dim or K.faint, F.text, T.small)
+                    if on then L.icon(pdl, rx + rw - S(20), ry + rh / 2, L.CP.check, K.gold, T.small) end
+                    if pressed then
+                        C.set_sort(id)
+                        imgui.CloseCurrentPopup()
+                    end
+                end
+                if st.sort_close or imgui.IsKeyPressed(U.KEY_ESCAPE) then imgui.CloseCurrentPopup() end
+            end)
+            if not ok then C.fail('sort', err) imgui.CloseCurrentPopup() end
+            imgui.EndPopup()
+        end
+        st.sort_close = nil
+    end
+
+    -- the pill: "Sort by" and the order in use, its right edge at `right`; returns its width and height
+    local function sort_control(dl, right, y)
+        local s = SORT[C.sort_now()]
+        local h = S(30)
+        local lead = 'Sort by'
+        local lw, vw = U.measure(lead, F.text, T.small), U.measure(s.name, F.semi, T.small)
+        local w = S(14) + S(16) + S(8) + lw + S(6) + vw + S(10) + S(10) + S(14)
+        local x = right - w
+        imgui.SetCursorScreenPos({ x, y })
+        local pressed, hovered, hv = U.hit('##vs_sort', w, h, h / 2)
+        local lit = st.sort_open and 1 or hv
+        dl:AddRectFilled({ x, y }, { x + w, y + h }, u32(mix(K.panel, K.panel2, 0.6 * lit)), h / 2)
+        dl:AddRect({ x, y }, { x + w, y + h }, u32(mix(K.line, K.gold, lit), 0.95), h / 2, 240, 1)
+        local cy, cx = y + h / 2, x + S(14)
+        L.icon(dl, cx + S(8), cy, L.CP.sort, mix(K.dim, K.gold, lit), T.small)
+        cx = cx + S(16) + S(8)
+        U.text_mid(dl, cx, cy, lead, K.faint, F.text, T.small)
+        cx = cx + lw + S(6)
+        U.text_mid(dl, cx, cy, s.name, mix(K.ink, K.hot, hv), F.semi, T.small)
+        cx = cx + vw + S(10)
+        L.icon(dl, cx + S(5), cy, st.sort_open and L.CP.chev_up or L.CP.chev_down, mix(K.dim, K.gold, lit), T.tiny)
+        if hovered and not st.sort_open then L.tip('The order of the addons') end
+        if pressed or st.sort_ask then
+            st.sort_ask = nil
+            imgui.OpenPopup(SORT_MENU)
+        end
+        sort_menu(right, y + h + S(6))
+        return w, h
+    end
+
     local function grid_page(dl, ox, oy, w, view_h, scroll, t)
         local at = 0
         local query = st.query[1] or ''
@@ -668,15 +825,30 @@ return function (C)
         -- the lobby has named it, and this one's and other servers' go back to all when it can't say)
         if here and st.compat == 'server' then st.compat = 'here' end
         if not here and (st.compat == 'here' or st.compat == 'other') then st.compat = nil end
-        local list = D.filter(st.view, st.compat, query, st.framework)
+        local by = C.sort_now()
+        local list = D.filter(st.view, st.compat, query, st.framework, by)
         local searching = query:gsub('%s', '') ~= ''
         local plain = st.view == 'all' and st.compat == nil and st.framework == nil and not searching
-        local feat = plain and D.featured() or nil
+        -- (the store's front, the featured card and the server's own section, is the recommended order's: in another
+        -- the list is one, in that order, the featured addon in its place among the rest)
+        local front = plain and by == 'recommended'
+        local feat = front and D.featured() or nil
         if feat then
             -- (the featured addon has the large card: it isn't shown again among the cards under it)
             for i = #list, 1, -1 do if list[i] == feat then table.remove(list, i) end end
         end
         local base = U.ease((U.clock() - (st.grid_at or 0)) / 0.3)
+        -- the order, at the top right, where it stays whatever the page shows: on the first heading's line, or above
+        -- the featured card
+        C.fade(1)
+        local sort_w, sort_h = sort_control(dl, ox + w - S(6), oy + at)
+        local reserve = sort_w + S(16)
+        if feat then
+            at = at + sort_h + S(14)
+            reserve = nil
+        else
+            at = at + S(9)
+        end
         if feat then
             C.fade(base)
             at = at + S(4)
@@ -688,7 +860,7 @@ return function (C)
         local function count_of(n) return n == 1 and '1 addon' or (n .. ' addons') end
         -- All addons, on a server VanaCore can name: the addons made for it first, under its name, then those for any
         -- server, then other servers' with a word on why they're last
-        if plain and here and #list > 0 then
+        if front and here and #list > 0 then
             local groups = { here = {}, any = {}, other = {} }
             for _, a in ipairs(list) do
                 local g = groups[a.fit] or groups.any
@@ -703,7 +875,8 @@ return function (C)
             local n = 0
             for _, sec in ipairs(sections) do
                 if #sec[1] > 0 then
-                    at = section_heading(dl, ox, oy, at, w, sec[2], count_of(#sec[1]), sec[3], sec[4])
+                    at = section_heading(dl, ox, oy, at, w, sec[2], count_of(#sec[1]), sec[3], sec[4], reserve)
+                    if reserve then at, reserve = at + S(6), nil end
                     if sec[5] then
                         U.text(dl, ox + S(2), oy + at - S(4), sec[5], K.faint, F.text, T.small)
                         at = at + S(22)
@@ -725,7 +898,8 @@ return function (C)
         elseif st.compat == 'general' then count = count .. (here and ', any server' or ', general')
         elseif st.compat == 'server' then count = count .. ', server-specific' end
         if st.framework then count = count .. ', ' .. (st.framework == 'vanacore' and 'VanaCore' or st.framework == 'ashita' and 'Ashita' or 'Windower') end
-        at = section_heading(dl, ox, oy, at, w, heading, count, heading_col, heading_icon)
+        at = section_heading(dl, ox, oy, at, w, heading, count, heading_col, heading_icon, reserve)
+        if reserve then at = at + S(6) end
         if #list == 0 and feat then return at end
         if #list == 0 then
             local line, sub = 'No addons here yet.', nil
@@ -914,6 +1088,8 @@ return function (C)
         if a.have then cy = cy + fact(dl, sx, cy, sw, 'You have', tostring(a.have), a.update and K.gold or K.teal) end
         if a.framework_name ~= '' then cy = cy + fact(dl, sx, cy, sw, 'Framework', a.framework_name) end
         if a.package.size > 0 then cy = cy + fact(dl, sx, cy, sw, 'Size', D.size_text(a.package.size)) end
+        local added = a.created_at:sub(1, 10)
+        if added ~= '' and added ~= a.updated then cy = cy + fact(dl, sx, cy, sw, 'Added', D.date_text(added)) end
         cy = cy + fact(dl, sx, cy, sw, 'Updated', D.date_text(a.updated))
         if a.github then
             -- where a mirrored listing came from: the repository, then its release and commit under it
@@ -931,8 +1107,7 @@ return function (C)
             cy = cy + S(30)
         end
         if a.update_in_review then cy = cy + fact(dl, sx, cy, sw, 'In review', a.pending_version or 'a new version', K.dim) end
-        -- (a count is worth showing once it says something: under 25 it only reads as "nobody has this")
-        if a.downloads and a.downloads >= 25 then cy = cy + fact(dl, sx, cy, sw, 'Downloads', tostring(a.downloads)) end
+        if a.downloads then cy = cy + fact(dl, sx, cy, sw, 'Downloads', D.count_text(a.downloads)) end
         cy = cy + S(6)
         if a.page and L.link(dl, '##vs_page', sx, cy + S(10), 'View on FFXIPS', { icon = L.CP.link, icon_after = true, size = T.small, font = F.semi,
             color = K.gold, tip = a.page }) then C.open_page(a.page) end
