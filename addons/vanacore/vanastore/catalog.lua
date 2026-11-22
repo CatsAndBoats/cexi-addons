@@ -193,7 +193,7 @@ local function entry(raw)
         framework = framework, framework_name = kind and kind.name or '', family = kind and kind.family or 'other',
         trusted = raw.trusted == true, hosted = raw.hosted ~= false,
         review = text_of(raw.reviewStatus, ''):lower(), scan = text_of(raw.scanStatus, ''):lower(),
-        compatibility = server and 'server' or 'general', server = server,
+        compatibility = server and 'server' or 'general', server = server, server_key = server and D.server_key(server) or nil,
         summary = text_of(raw.summary, ''), description = description,
         updated = text_of(raw.updatedAt, text_of(raw.createdAt, '')):sub(1, 10),
         downloads = tonumber(raw.downloads), featured = raw.featured == true, page = text_of(raw.pageUrl),
@@ -264,7 +264,7 @@ local function entry(raw)
             end
         end
     end
-    a.search = (a.title .. ' ' .. a.author .. ' ' .. a.summary .. ' ' .. (a.name or '') .. ' ' .. a.framework_name):lower()
+    a.search = (a.title .. ' ' .. a.author .. ' ' .. a.summary .. ' ' .. (a.name or '') .. ' ' .. a.framework_name .. ' ' .. (a.server or '')):lower()
     return a
 end
 
@@ -428,6 +428,40 @@ function D.look_bundled(loaded)
     return out
 end
 
+-------------------------------------------------------------------------------
+-- The server the game is on (vana.game.server, VanaCore 0.9.5 on). An addon made for one server names it in the
+-- catalog's targetServer, in its uploader's own spelling ('CatsEyeXI', 'CatsEyeXi'), so names are matched by their
+-- letters and digits alone. The lobby names the server only once the player is past the title screen; until then the
+-- name it gave last time at the same address stands in (D.known: the store's ledger), shown as not yet confirmed.
+-------------------------------------------------------------------------------
+
+function D.server_key(name)
+    local key = tostring(name or ''):lower():gsub('[^%w]', '')
+    return key ~= '' and key or nil
+end
+
+D.known = {}    -- address -> the name its lobby gave (vanastore.lua keeps it in the ledger, and saves on D.on_known)
+D.here = nil    -- { name, key, host, live }: where the game is, or nil where VanaCore can't say
+
+function D.where()
+    local game = vana.game
+    if type(game) ~= 'table' or type(game.server) ~= 'function' then return nil end
+    local ok, s = pcall(game.server)
+    if not ok or type(s) ~= 'table' then return nil end
+    local host = type(s.host) == 'string' and s.host ~= '' and s.host:lower() or nil
+    local name = type(s.name) == 'string' and (s.name:gsub('^%s+', ''):gsub('%s+$', '')) or ''
+    if D.server_key(name) ~= nil then
+        if host and D.known[host] ~= name then
+            D.known[host] = name
+            if D.on_known then pcall(D.on_known) end
+        end
+        return { name = name, key = D.server_key(name), host = host, live = true }
+    end
+    local last = host and D.known[host] or nil
+    if type(last) == 'string' and D.server_key(last) then return { name = last, key = D.server_key(last), host = host, live = false } end
+    return nil
+end
+
 -- looked at again every few seconds while the window is open, and at once after the store changes something
 function D.look(force)
     local now = clock()
@@ -441,7 +475,16 @@ function D.look(force)
         end
     end
     local updates, installed = 0, 0
+    local here = D.where()
+    D.here = here
+    local fits = { here = 0, any = 0, other = 0, server = 0 }
     for _, a in ipairs(D.addons) do
+        -- (where it works: 'here', made for the server the game is on; 'any' server; made for an 'other' one; or for
+        -- one 'server' while VanaCore can't say which the game is on)
+        if a.server_key == nil then a.fit = 'any'
+        elseif here == nil then a.fit = 'server'
+        else a.fit = a.server_key == here.key and 'here' or 'other' end
+        fits[a.fit] = fits[a.fit] + 1
         -- (what is installed is looked for only where the store installs: the framework's own folder)
         local dir = a.dir
         local have = D.installs(a.framework, a.plain) and installed_version(a.name, dir) or nil
@@ -478,19 +521,25 @@ function D.look(force)
         if a.update then updates = updates + 1 end
     end
     D.look_bundled(loaded)
-    D.counts = { all = #D.addons, installed = installed, updates = updates, bundled = #D.bundled }
+    D.counts = { all = #D.addons, installed = installed, updates = updates, bundled = #D.bundled,
+                 here = fits.here, any = fits.any, other = fits.other, server = fits.server }
     D.local_rev = D.local_rev + 1
 end
 
--- the addons a view shows: view 'all' | 'installed' | 'updates', compat nil | 'general' | 'server', and the search words
--- (`family`: the rail's framework group, nil for all.) Trusted addons come first, each kind in the site's order.
+-- the addons a view shows: view 'all' | 'installed' | 'updates'; compat nil, 'general' (any server), 'server' (made for
+-- one), or, where the game's server is known, 'here' (made for it) and 'other' (made for another); the search words.
+-- (`family`: the rail's framework group, nil for all.) Reviewed addons come first, and within each, those made for
+-- the server the game is on, then those for any server, then other servers'; each kind in the site's order.
+local RANK = { here = 1, any = 2, server = 2, other = 3 }
 function D.filter(view, compat, query, family)
-    local out, later = {}, {}
+    local buckets = { {}, {}, {}, {}, {}, {} }
     local words = {}
     for word in tostring(query or ''):lower():gmatch('%S+') do words[#words + 1] = word end
     for _, a in ipairs(D.addons) do
         local keep = (view == 'all') or (view == 'installed' and a.have ~= nil) or (view == 'updates' and a.update)
-        if keep and compat then keep = a.compatibility == compat end
+        if keep and compat == 'general' then keep = a.server_key == nil
+        elseif keep and compat == 'server' then keep = a.server_key ~= nil
+        elseif keep and compat then keep = a.fit == compat end
         if keep and family then keep = a.family == family end
         if keep then
             for _, word in ipairs(words) do
@@ -498,10 +547,14 @@ function D.filter(view, compat, query, family)
             end
         end
         if keep then
-            if a.trusted then out[#out + 1] = a else later[#later + 1] = a end
+            local b = buckets[(a.trusted and 0 or 3) + (RANK[a.fit] or 2)]
+            b[#b + 1] = a
         end
     end
-    for _, a in ipairs(later) do out[#out + 1] = a end
+    local out = {}
+    for _, b in ipairs(buckets) do
+        for _, a in ipairs(b) do out[#out + 1] = a end
+    end
     return out
 end
 

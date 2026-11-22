@@ -47,8 +47,9 @@ local K = L.C
 local DEFAULTS = { scale = 0, opacity = 100, w = 1100, h = 760, view = 'all' }
 local config = vana.settings.register({ scope = 'character', defaults = DEFAULTS })
 -- what the store installed on this PC (name -> { slug, version, sha256, at }): the same for every character.
--- (`origin` is a developer's: a copy of the site to test against; empty is ffxiprivateservers.com.)
-local ledger = vana.settings.register({ name = 'installed', defaults = { installed = {}, origin = '' } })
+-- (`origin` is a developer's: a copy of the site to test against; empty is ffxiprivateservers.com. `servers`: the name
+-- each server's lobby gave, by the address the game was started with, so the store knows it at the title screen.)
+local ledger = vana.settings.register({ name = 'installed', defaults = { installed = {}, origin = '', servers = {} } })
 
 -- what every part of the addon shares (views.lua)
 local C = {
@@ -540,6 +541,9 @@ vana.events.on('load', function ()
     C.records = ledger.data.installed
     D.records = C.records
     D.set_origin(ledger.data.origin)
+    if type(ledger.data.servers) ~= 'table' then ledger.data.servers = {} end
+    D.known = ledger.data.servers
+    D.on_known = function () ledger:save() end
     D.on_catalog = function ()
         D.look(true)
         st.grid_at = clock()

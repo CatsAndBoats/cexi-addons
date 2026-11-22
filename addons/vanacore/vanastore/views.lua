@@ -129,6 +129,12 @@ return function (C)
         return w
     end
 
+    -- an addon made for another server than the one the game is on, said in a sentence
+    local function other_text(a)
+        return 'Made for ' .. tostring(a.server) .. ". You're playing on " .. tostring(D.here and D.here.name or 'another server')
+            .. ', so it may not work here.'
+    end
+
     -- How it stands on the site, as a chip. A card marks only what isn't the usual: not approved, a native plugin, on
     -- the site only, not reviewed, or updated elsewhere (a reviewed addon has its small shield by its name instead). An
     -- addon's own page says Trusted as well. Returns the chip's width, 0 for none.
@@ -138,6 +144,8 @@ return function (C)
             label, tip = LOCKED[a.locked][1], LOCKED[a.locked][2]
         elseif not a.trusted and a.locked ~= 'denied' then
             label, tip = 'NOT REVIEWED', UNREVIEWED
+        elseif on_card and a.fit == 'other' and a.have == nil then
+            label, tip = 'OTHER SERVER', other_text(a)
         elseif on_card and a.behind and not a.takeover then
             label, tip = 'UPDATES ELSEWHERE', FOREIGN
         end
@@ -165,6 +173,35 @@ return function (C)
         local by = a.author ~= '' and ('by ' .. a.author) or ''
         if a.framework_name ~= '' then by = by .. (by ~= '' and '  ·  ' or '') .. a.framework_name end
         return by
+    end
+
+    -- The server an addon is made for, as its by-line ends: the one the game is on in teal, another's faint, and
+    -- one named while VanaCore can't say where the game is in the by-line's own ink. Nil for an addon for any server.
+    local function server_tag(a)
+        if a.server == nil then return nil end
+        if a.fit == 'here' then return (D.here and D.here.name) or a.server, K.teal, F.semi end
+        if a.fit == 'other' then return a.server, K.faint, F.text end
+        return a.server, K.dim, F.text
+    end
+
+    -- who made it, which framework, and which server: drawn in at most `w`, the server's name kept whole; returns the
+    -- width drawn
+    local function by_row(dl, a, x, y, w, size)
+        local by = by_line(a)
+        local tag, col, font = server_tag(a)
+        if tag == nil then
+            local fitted = U.fit(by, F.text, size, w)
+            U.text(dl, x, y, fitted, K.dim, F.text, size)
+            return U.measure(fitted, F.text, size)
+        end
+        local sep = by ~= '' and '  ·  ' or ''
+        local sw, tw = U.measure(sep, F.text, size), U.measure(tag, font, size)
+        local fitted = U.fit(by, F.text, size, math.max(0, w - sw - tw))
+        U.text(dl, x, y, fitted, K.dim, F.text, size)
+        local tx = x + U.measure(fitted, F.text, size)
+        U.text(dl, tx, y, sep, K.dim, F.text, size)
+        U.text(dl, tx + sw, y, tag, col, font, size)
+        return tx + sw + tw - x
     end
 
     -- text in at most `max` lines; a longer one ends at a whole word, with an ellipsis
@@ -251,6 +288,36 @@ return function (C)
     end
     V.set_view = set_view
 
+    -- The server the game is on, as a card heading the rail's server filters: its name as its lobby gives it, a dot
+    -- that breathes once the lobby has given it (an open ring while it's last time's name, at the title screen), and
+    -- how many addons are made for it. Pressed, the page shows those alone.
+    local function server_card(dl, x, y, w, here, count, on)
+        local h, r = S(72), S(10)
+        imgui.SetCursorScreenPos({ x, y })
+        local pressed, hovered, hv = U.hit('##vs_r_here', w, h, r)
+        local lit = on and 1 or hv
+        dl:AddRectFilled({ x, y }, { x + w, y + h }, u32(mix(K.bg1, K.teal, 0.05 + 0.06 * lit)), r)
+        dl:AddRect({ x, y }, { x + w, y + h }, u32(on and K.teal or mix(K.line, K.teal, 0.35 + 0.45 * hv), on and 0.95 or 0.85), r, 240, 1)
+        local dx, dy = x + S(17), y + S(19)
+        if here.live then
+            local p = (math.sin(U.clock() * 2.2) + 1) / 2
+            dl:AddCircleFilled({ dx, dy }, S(4) + S(5) * p, u32(K.teal, 0.25 * (1 - p)), 24)
+            dl:AddCircleFilled({ dx, dy }, S(3.5), u32(K.teal), 16)
+        else
+            dl:AddCircle({ dx, dy }, S(3.3), u32(K.teal_dim), 16, math.max(1, S(1.4)))
+        end
+        L.eyebrow(dl, dx + S(13), dy - L.pix_size(1) / 2, 'PLAYING ON', here.live and K.teal or K.teal_dim)
+        local name = U.fit(here.name, F.bold, T.body + 2, w - S(28))
+        U.text(dl, x + S(13), y + S(31), name, on and K.hot or mix(K.ink, K.hot, hv), F.bold, T.body + 2)
+        local sub = count == 0 and 'Nothing made for it yet' or count == 1 and '1 addon made for it' or (count .. ' addons made for it')
+        U.text(dl, x + S(13), y + S(51), U.fit(sub, F.text, T.small, w - S(26)), on and K.dim or K.faint, F.text, T.small)
+        if hovered then
+            L.tip(here.live and ('The addons made for ' .. here.name .. ', the server you are on')
+                or (here.name .. ' was the server at ' .. tostring(here.host) .. ' last time. Its lobby says so again when you log in.'))
+        end
+        return pressed, h
+    end
+
     function V.rail(dl, x, y, w)
         local counts = D.counts or { all = 0, installed = 0, updates = 0, bundled = 0 }
         local cy = y + S(2)
@@ -270,14 +337,34 @@ return function (C)
         pressed, h = rail_item(dl, '##vs_r_bund', x, cy, w, 'Bundled', L.CP.box, st.view == 'bundled', counts.bundled)
         if pressed then set_view('bundled', st.compat) end
         cy = cy + h + S(22)
-        L.eyebrow(dl, x + S(10), cy, 'COMPATIBILITY', K.dim)
-        cy = cy + S(22)
-        pressed, h = rail_item(dl, '##vs_r_gen', x, cy, w, 'General', L.CP.globe, st.compat == 'general')
-        if pressed then set_view(st.view, st.compat ~= 'general' and 'general' or nil) end
-        cy = cy + h + S(2)
-        pressed, h = rail_item(dl, '##vs_r_srv', x, cy, w, 'Server-specific', L.CP.server, st.compat == 'server')
-        if pressed then set_view(st.view, st.compat ~= 'server' and 'server' or nil) end
-        cy = cy + h + S(22)
+        local here = D.here
+        if here then
+            -- (the server the game is on: its card, then any server's addons, then other servers' where there are any)
+            L.eyebrow(dl, x + S(10), cy, 'SERVER', K.dim)
+            cy = cy + S(22)
+            pressed, h = server_card(dl, x, cy, w, here, counts.here or 0, st.compat == 'here')
+            if pressed then set_view(st.view, st.compat ~= 'here' and 'here' or nil) end
+            cy = cy + h + S(6)
+            pressed, h = rail_item(dl, '##vs_r_gen', x, cy, w, 'Any server', L.CP.globe, st.compat == 'general', counts.any)
+            if pressed then set_view(st.view, st.compat ~= 'general' and 'general' or nil) end
+            cy = cy + h + S(2)
+            if (counts.other or 0) > 0 or st.compat == 'other' then
+                pressed, h = rail_item(dl, '##vs_r_oth', x, cy, w, 'Other servers', L.CP.server, st.compat == 'other', counts.other)
+                if pressed then set_view(st.view, st.compat ~= 'other' and 'other' or nil) end
+                cy = cy + h + S(2)
+            end
+            cy = cy + S(20)
+        else
+            -- (a VanaCore that can't say which server the game is on)
+            L.eyebrow(dl, x + S(10), cy, 'COMPATIBILITY', K.dim)
+            cy = cy + S(22)
+            pressed, h = rail_item(dl, '##vs_r_gen', x, cy, w, 'General', L.CP.globe, st.compat == 'general')
+            if pressed then set_view(st.view, st.compat ~= 'general' and 'general' or nil) end
+            cy = cy + h + S(2)
+            pressed, h = rail_item(dl, '##vs_r_srv', x, cy, w, 'Server-specific', L.CP.server, st.compat == 'server')
+            if pressed then set_view(st.view, st.compat ~= 'server' and 'server' or nil) end
+            cy = cy + h + S(22)
+        end
         L.eyebrow(dl, x + S(10), cy, 'FRAMEWORK', K.dim)
         cy = cy + S(22)
         for _, f in ipairs({ { 'vanacore', 'VanaCore' }, { 'ashita', 'Ashita' }, { 'windower', 'Windower' } }) do
@@ -318,10 +405,9 @@ return function (C)
         U.text(dl, tx, cy, ftitle, K.ink, F.bold, T.h1)
         shield(dl, a, tx + U.measure(ftitle, F.bold, T.h1), cy + S(15))
         cy = cy + S(30)
-        local by = by_line(a)
-        U.text(dl, tx, cy, by, K.dim, F.text, T.small)
         local ver, have, have_col = version_text(a)
-        local vx = tx + (by ~= '' and (U.measure(by, F.text, T.small) + S(12)) or 0)
+        local bw = by_row(dl, a, tx, cy, tw - L.mono_width(ver, T.small) - (have and (L.mono_width(have, T.small) + S(10)) or 0) - S(12), T.small)
+        local vx = tx + (bw > 0 and (bw + S(12)) or 0)
         L.mono(dl, vx, cy, ver, K.dim, T.small)
         if have then L.mono(dl, vx + L.mono_width(ver, T.small) + S(10), cy, have, have_col, T.small) end
         cy = cy + S(26)
@@ -368,7 +454,7 @@ return function (C)
         shield(dl, a, px + U.measure(ctitle, F.semi, T.body), cy + S(10))
         L.mono(dl, px + pw - vw, cy + S(2), ver, K.dim, T.small)
         cy = cy + S(22)
-        U.text(dl, px, cy, U.fit(by_line(a), F.text, T.small, pw), K.dim, F.text, T.small)
+        by_row(dl, a, px, cy, pw - (have and (L.mono_width(have, T.small) + S(10)) or 0), T.small)
         if have then
             local hw = L.mono_width(have, T.small)
             L.mono(dl, px + pw - hw, cy, have, have_col, T.small)
@@ -416,7 +502,7 @@ return function (C)
         shield(dl, a, px + U.measure(ctitle, F.semi, T.body), cy + S(10))
         L.mono(dl, px + tw - vw, cy + S(2), ver, K.dim, T.small)
         cy = cy + S(22)
-        U.text(dl, px, cy, U.fit(by_line(a), F.text, T.small, tw), K.dim, F.text, T.small)
+        by_row(dl, a, px, cy, tw - (have and (L.mono_width(have, T.small) + S(10)) or 0), T.small)
         if have then L.mono(dl, px + tw - L.mono_width(have, T.small), cy, have, have_col, T.small) end
         cy = cy + S(26)
         for _, line in ipairs(clamp(a.summary, F.text, T.small, math.min(tw, S(560)), 3)) do
@@ -519,6 +605,54 @@ return function (C)
         return at
     end
 
+    -- a heading over a block of cards (its icon before it, if any), and how many on the right; returns where the cards go
+    local function section_heading(dl, ox, oy, at, w, label, count, color, icon)
+        local x = ox + S(2)
+        if icon then
+            L.icon(dl, x + S(6), oy + at + S(2) + L.pix_size(1) / 2, icon, color, T.small * 0.9)
+            x = x + S(18)
+        end
+        L.eyebrow(dl, x, oy + at + S(2), label, color or K.dim)
+        local cw = U.measure(count, F.text, T.small)
+        U.text(dl, ox + w - S(8) - cw, oy + at - S(2), count, K.faint, F.text, T.small)
+        return at + S(26)
+    end
+
+    -- the cards of a list, from `at` down: a grid, or a short list as rows as wide as the page; `i0`: how many came
+    -- before them on the page (their fading in follows on). Returns where the page goes on.
+    local function card_rows(dl, list, ox, oy, at, w, view_h, scroll, t, i0)
+        local gap = S(CARD.gap)
+        local room = w - S(8)
+        local cols = math.max(1, math.floor((room + gap) / (S(CARD.min_w) + gap)))
+        local card_w = math.floor((room - gap * (cols - 1)) / cols)
+        local card_h = math.floor(card_w * 9 / 16) + S(CARD.text_h)
+        if #list < cols then
+            -- a short list: each addon a row as wide as the page
+            local row_h = S(176)
+            for i, a in ipairs(list) do
+                local cy = oy + at + (i - 1) * (row_h + gap)
+                local a_in = U.ease((U.clock() - (st.grid_at or 0) - 0.05 - (i0 + i - 1) * 0.05) / 0.3)
+                C.fade(a_in)
+                local ok, err = pcall(wide_card, dl, a, ox + S(2), cy + (1 - a_in) * S(10), room, row_h, i, t)
+                if not ok then C.fail('card', err) end
+                C.fade(1)
+            end
+            return at + #list * (row_h + gap)
+        end
+        for i, a in ipairs(list) do
+            local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+            local cx, cy = ox + S(2) + col * (card_w + gap), oy + at + row * (card_h + gap)
+            if cy + card_h >= oy + scroll - S(40) and cy <= oy + scroll + view_h + S(40) then
+                local a_in = U.ease((U.clock() - (st.grid_at or 0) - 0.05 - (i0 + i - 1) * 0.035) / 0.3)
+                C.fade(a_in)
+                local ok, err = pcall(card, dl, a, cx, cy + (1 - a_in) * S(10), card_w, card_h, i, t)
+                if not ok then C.fail('card', err) end
+                C.fade(1)
+            end
+        end
+        return at + math.ceil(#list / cols) * (card_h + gap)
+    end
+
     local function grid_page(dl, ox, oy, w, view_h, scroll, t)
         local at = 0
         local query = st.query[1] or ''
@@ -529,8 +663,14 @@ return function (C)
             else empty(dl, ox, oy + S(90), w - S(8), "The catalog couldn't be read.", tostring(D.why or D.fetch_why or '')) end
             return S(300)
         end
+        local here = D.here
+        -- (the rail's server filters follow what VanaCore can say: made for one server becomes made for this one once
+        -- the lobby has named it, and this one's and other servers' go back to all when it can't say)
+        if here and st.compat == 'server' then st.compat = 'here' end
+        if not here and (st.compat == 'here' or st.compat == 'other') then st.compat = nil end
         local list = D.filter(st.view, st.compat, query, st.framework)
-        local plain = st.view == 'all' and st.compat == nil and st.framework == nil and query:gsub('%s', '') == ''
+        local searching = query:gsub('%s', '') ~= ''
+        local plain = st.view == 'all' and st.compat == nil and st.framework == nil and not searching
         local feat = plain and D.featured() or nil
         if feat then
             -- (the featured addon has the large card: it isn't shown again among the cards under it)
@@ -545,56 +685,59 @@ return function (C)
             at = at + h + S(30)
             C.fade(1)
         end
+        local function count_of(n) return n == 1 and '1 addon' or (n .. ' addons') end
+        -- All addons, on a server VanaCore can name: the addons made for it first, under its name, then those for any
+        -- server, then other servers' with a word on why they're last
+        if plain and here and #list > 0 then
+            local groups = { here = {}, any = {}, other = {} }
+            for _, a in ipairs(list) do
+                local g = groups[a.fit] or groups.any
+                g[#g + 1] = a
+            end
+            local mine = #groups.here > 0
+            local sections = {
+                { groups.here, 'MADE FOR ' .. here.name:upper(), K.teal, L.CP.server },
+                { groups.any, mine and 'FOR ANY SERVER' or (feat and 'MORE ADDONS' or 'ALL ADDONS'), K.dim },
+                { groups.other, 'FOR OTHER SERVERS', K.faint, nil, 'Made for other servers than ' .. here.name .. ': they may not work here.' },
+            }
+            local n = 0
+            for _, sec in ipairs(sections) do
+                if #sec[1] > 0 then
+                    at = section_heading(dl, ox, oy, at, w, sec[2], count_of(#sec[1]), sec[3], sec[4])
+                    if sec[5] then
+                        U.text(dl, ox + S(2), oy + at - S(4), sec[5], K.faint, F.text, T.small)
+                        at = at + S(22)
+                    end
+                    at = card_rows(dl, sec[1], ox, oy, at, w, view_h, scroll, t, n) + S(14)
+                    n = n + #sec[1]
+                end
+            end
+            return at
+        end
         -- the heading over the cards: what is shown, and how many
         local heading = st.view == 'installed' and 'INSTALLED' or st.view == 'updates' and 'UPDATES' or (feat and 'MORE ADDONS' or 'ALL ADDONS')
-        if query:gsub('%s', '') ~= '' then heading = 'SEARCH' end
-        L.eyebrow(dl, ox + S(2), oy + at + S(2), heading, K.dim)
-        local count = #list == 1 and '1 addon' or (#list .. ' addons') -- (the cards under this heading)
-        if st.compat then count = count .. (st.compat == 'general' and ', general' or ', server-specific') end
+        local heading_col, heading_icon = K.dim, nil
+        if st.compat == 'here' and st.view == 'all' and here then heading, heading_col, heading_icon = 'MADE FOR ' .. here.name:upper(), K.teal, L.CP.server end
+        if searching then heading, heading_col, heading_icon = 'SEARCH', K.dim, nil end
+        local count = count_of(#list) -- (the cards under this heading)
+        if st.compat == 'here' and here then count = count .. (heading_icon and '' or (', for ' .. here.name)) -- (said once: the heading names it)
+        elseif st.compat == 'other' then count = count .. ', other servers'
+        elseif st.compat == 'general' then count = count .. (here and ', any server' or ', general')
+        elseif st.compat == 'server' then count = count .. ', server-specific' end
         if st.framework then count = count .. ', ' .. (st.framework == 'vanacore' and 'VanaCore' or st.framework == 'ashita' and 'Ashita' or 'Windower') end
-        local cw = U.measure(count, F.text, T.small)
-        U.text(dl, ox + w - S(8) - cw, oy + at - S(2), count, K.faint, F.text, T.small)
-        at = at + S(26)
+        at = section_heading(dl, ox, oy, at, w, heading, count, heading_col, heading_icon)
         if #list == 0 and feat then return at end
         if #list == 0 then
             local line, sub = 'No addons here yet.', nil
-            if query:gsub('%s', '') ~= '' then line, sub = 'Nothing matches "' .. query .. '".', 'Try a shorter word, or look in All addons.'
+            if searching then line, sub = 'Nothing matches "' .. query .. '".', 'Try a shorter word, or look in All addons.'
             elseif st.view == 'updates' then line, sub = 'Everything is up to date.', nil
-            elseif st.view == 'installed' then line, sub = 'Nothing from the store is installed yet.', 'Addons you install show here, with their switches.' end
+            elseif st.view == 'installed' then line, sub = 'Nothing from the store is installed yet.', 'Addons you install show here, with their switches.'
+            elseif st.compat == 'here' and here then line, sub = 'Nothing on FFXIPS is made for ' .. here.name .. ' yet.', 'Addons for any server work there too.'
+            elseif st.compat == 'other' then line, sub = 'No addons for other servers.', nil end
             empty(dl, ox, oy + at + S(30), w - S(8), line, sub)
             return at + S(200)
         end
-        local gap = S(CARD.gap)
-        local room = w - S(8)
-        local cols = math.max(1, math.floor((room + gap) / (S(CARD.min_w) + gap)))
-        local card_w = math.floor((room - gap * (cols - 1)) / cols)
-        local card_h = math.floor(card_w * 9 / 16) + S(CARD.text_h)
-        if #list < cols then
-            -- a short list: each addon a row as wide as the page
-            local row_h = S(176)
-            for i, a in ipairs(list) do
-                local cy = oy + at + (i - 1) * (row_h + gap)
-                local a_in = U.ease((U.clock() - (st.grid_at or 0) - 0.05 - (i - 1) * 0.05) / 0.3)
-                C.fade(a_in)
-                local ok, err = pcall(wide_card, dl, a, ox + S(2), cy + (1 - a_in) * S(10), room, row_h, i, t)
-                if not ok then C.fail('card', err) end
-                C.fade(1)
-            end
-            return at + #list * (row_h + gap)
-        end
-        for i, a in ipairs(list) do
-            local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
-            local cx, cy = ox + S(2) + col * (card_w + gap), oy + at + row * (card_h + gap)
-            if cy + card_h >= oy + scroll - S(40) and cy <= oy + scroll + view_h + S(40) then
-                local a_in = U.ease((U.clock() - (st.grid_at or 0) - 0.05 - (i - 1) * 0.035) / 0.3)
-                C.fade(a_in)
-                local ok, err = pcall(card, dl, a, cx, cy + (1 - a_in) * S(10), card_w, card_h, i, t)
-                if not ok then C.fail('card', err) end
-                C.fade(1)
-            end
-        end
-        local rows = math.ceil(#list / cols)
-        return at + rows * (card_h + gap)
+        return card_rows(dl, list, ox, oy, at, w, view_h, scroll, t, 0)
     end
 
     ---------------------------------------------------------------------------
@@ -679,7 +822,13 @@ return function (C)
         -- the right column
         local sx, sw = px + pw + S(28), side
         local cy = py + S(2)
-        L.eyebrow(dl, sx, cy, a.compatibility == 'server' and ('FOR ' .. (a.server or 'ONE SERVER'):upper()) or 'ANY SERVER')
+        -- which server it's for: the one the game is on in teal
+        if a.fit == 'here' then
+            L.icon(dl, sx + S(6), cy + L.pix_size(1) / 2, L.CP.server, K.teal, T.small * 0.9)
+            L.eyebrow(dl, sx + S(18), cy, 'MADE FOR ' .. ((D.here and D.here.name) or a.server):upper(), K.teal)
+        else
+            L.eyebrow(dl, sx, cy, a.compatibility == 'server' and ('FOR ' .. (a.server or 'ONE SERVER'):upper()) or 'ANY SERVER')
+        end
         cy = cy + S(22)
         for _, line in ipairs(U.wrap(a.title, F.bold, T.title - 2, sw)) do
             U.text(dl, sx, cy, line, K.ink, F.bold, T.title - 2)
@@ -736,6 +885,13 @@ return function (C)
             -- (said once here, plainly; the chip above names it, and the warning comes before any download)
             for _, line in ipairs(U.wrap(UNREVIEWED, F.text, T.small, sw)) do
                 U.text(dl, sx, cy, line, K.faint, F.text, T.small)
+                cy = cy + S(18)
+            end
+            cy = cy + S(14)
+        end
+        if a.fit == 'other' and D.here and not (job and job.state == 'refused') then
+            for _, line in ipairs(U.wrap(other_text(a), F.text, T.small, sw)) do
+                U.text(dl, sx, cy, line, K.dim, F.text, T.small)
                 cy = cy + S(18)
             end
             cy = cy + S(14)
