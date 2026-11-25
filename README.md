@@ -38,6 +38,14 @@ picks the builds (only `vanacore` for now). The Ashita Party Finder isn't publis
   `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and optionally `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN` for the cache
   purge. The script is [`.github/scripts/publish_r2.py`](.github/scripts/publish_r2.py).
 
+## Addon Updater
+
+**Actions → Addon Updater** publishes the addons pinned in [`addons.json`](addons.json) (Ashita addons and plugins
+from their authors' repositories, and the VanaCore native ones) to R2 from exactly the commit pinned. It runs on a push
+to `main` that changes `addons.json`, or by hand (*force*, *only*, *dry run*). A new pin goes live only when a code
+owner of `addons.json` (`.github/CODEOWNERS`) other than the pull request's author approved it. Moved here from
+CatsAndBoats/launcher; how it works is in [`.github/scripts/addon_updater/README.md`](.github/scripts/addon_updater/README.md).
+
 ## The launcher's addon list
 
 [`launcher-addons.json`](launcher-addons.json) lists every addon and plugin the launcher can install: its launcher

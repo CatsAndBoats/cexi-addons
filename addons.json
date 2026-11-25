@@ -1,0 +1,56 @@
+[
+    {
+        "name": "Sidekick",
+        "github": "https://github.com/seekey13/Sidekick",
+        "install": "Sidekick",
+        "lua": "Sidekick.lua",
+        "commit": "58c7cb3705bf94a42f1596e59d8e0e7b05b4a4ee"
+    },
+    {
+        "name": "UberMap",
+        "github": "https://github.com/seekey13/UberMap",
+        "install": "ubermap",
+        "lua": "ubermap.lua",
+        "commit": "dd3b02e3f91f1e99f726f133f038bdd71532b903"
+    },
+    {
+        "name": "Goldilox-UI",
+        "github": "https://github.com/seekey13/goldilox-ui",
+        "install": "goldilox-ui",
+        "lua": "goldilox-ui.lua",
+        "commit": "52bc8dd2ae1a3631cae5441ac5eca920047e3d60"
+    },
+    {
+        "name": "CrystalBuff",
+        "github": "https://github.com/seekey13/CrystalBuff",
+        "install": "crystalbuff",
+        "lua": "crystalbuff.lua",
+        "commit": "fa11ccbd723c722e856d2f9e5deefa2fe055d04f"
+    },
+    {
+        "name": "AMANTracker",
+        "github": "https://github.com/seekey13/AMANTracker",
+        "install": "AMANTracker",
+        "lua": "AMANTracker.lua",
+        "commit": "cc10be65a1d7ad7be5c9c9318fa336383c596053"
+    },
+    {
+        "name": "yunagearopt",
+        "github": "https://github.com/YunasXI/yunagearopt",
+        "install": "yunagearopt",
+        "lua": "yunagearopt.lua",
+        "native": true,
+        "self_update": true,
+        "commit": "76de0ef3efbf8af9ff0201d3771c226c7a4eab6f"
+    },
+    {
+        "name": "Goldilox",
+        "github": "https://github.com/ChadBrowick/Goldilox-Vanacore",
+        "branch": "main",
+        "path": "Goldilox-v3.8/Goldilox",
+        "install": "Goldilox",
+        "lua": "Goldilox.lua",
+        "vanacore": true,
+        "commit": "02c47d6ef6aa7fc2b696522c3f879f22f1b2f731"
+    }
+]

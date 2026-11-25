@@ -1,7 +1,7 @@
 name: Publish to R2
 
 # Publishes the VanaCore addons in addons/vanacore/ to the VanaCore build on R2, into its addons\vanacore\ folder, the
-# way CatsAndBoats/launcher's Addon Updater publishes the Ashita addons in its addons.json: only files that changed go
+# way the Addon Updater (addon_updater.yaml) publishes the addons pinned in addons.json: only files that changed go
 # up, then launcher.json and the build's state, so the launcher fetches them on its next check. Only the vanacore tag's
 # build for now (the "tags" input). See .github/scripts/publish_r2.py.
 #
@@ -32,9 +32,9 @@ on:
         type: string
         default: vanacore
 
-# One publish at a time from this repository. The launcher's own R2 writers (Addon Updater, VanaCore Release) are in
-# its r2-publish group, which doesn't reach across repositories: publish_r2.py reads launcher.json and the state again
-# just before writing them, so the window for a clash is a second or so.
+# One publish at a time from this repository: the Addon Updater is in the same r2-publish group. Other R2 writers
+# (VanaCore Release, the Manager) aren't, as a group doesn't reach across repositories: publish_r2.py reads
+# launcher.json and the state again just before writing them, so the window for a clash is a second or so.
 concurrency:
   group: r2-publish
   cancel-in-progress: false

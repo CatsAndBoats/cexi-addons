@@ -1,0 +1,5 @@
+# Who approves an addon's pin. The Addon Updater (INSTALL) publishes a new pin in
+# addons.json only when one of these people, other than the pull request's author,
+# approved the pull request's final head (.github/scripts/addon_updater/approvals.py).
+/addons.json @CarverXI @vekien
+/.github/CODEOWNERS @CarverXI @vekien

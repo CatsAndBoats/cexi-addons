@@ -1,0 +1,123 @@
+name: Addon Updater
+
+# INSTALL: publishes each addons.json entry's pinned commit to R2, so addons can be
+# added or updated without rebuilding the whole client download. Each addon goes to the
+# main/ashita build, and to the vanacore build only if it sets "vanacore": true in
+# addons.json (see config.TARGETS).
+#
+# It never asks what is newest upstream: a new pin is set by hand in a pull request.
+# A pin that isn't live yet is published only if
+# a code owner of addons.json other than the pull request's author approved it
+# (approvals.py); its files are fetched by git at exactly that commit and checked.
+#
+# The job fetches, vets, virus-scans and stages everything locally first, and only
+# then uploads. A failure at any point before the upload phase leaves R2 untouched.
+# It writes nothing back to the repository, and keeps no artifact: what failed and why is
+# in the run's summary and log (Actions storage is billed against the account's budget).
+
+on:
+  push:
+    branches: [main]
+    paths: [addons.json]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Do everything except upload to R2"
+        type: boolean
+        default: false
+      force:
+        description: "Re-publish even when the pinned commit is already live (also backfills a build that lacks the addon)"
+        type: boolean
+        default: false
+      only:
+        description: "Comma-separated addon names to process (blank = all)"
+        type: string
+        default: ""
+      skip_clamav:
+        description: "Skip the ClamAV scan (use only if the virus DB refuses to update)"
+        type: boolean
+        default: false
+      adopt:
+        description: "First run only: record the current pins as live, publishing nothing"
+        type: boolean
+        default: false
+
+# Two runs writing launcher.json and the manifest at once would clobber each other.
+# Never cancel in progress: a half-finished publish is worse than a queued one. Publish to R2
+# (publish-r2.yaml) is in the same group. (VanaCore's release, in CatsAndBoats/VanaCore, writes
+# them too; a concurrency group can't reach across repositories, so its push reads launcher.json
+# again just before writing it.)
+concurrency:
+  group: r2-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: Publish addons
+    # GitHub's own runner: free on a public repository. Carver's self-hosted catseyexi-linux runner isn't open to
+    # public repositories, so a job sent there from here would sit queued forever.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      # Full history: the approval check finds the commit that set each new pin.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/scripts/addon_updater/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r .github/scripts/addon_updater/requirements.txt
+
+      # Guards the safety gates themselves. If someone loosens the extension
+      # allow-list or breaks the hash function, this fails before R2 is touched.
+      - name: Self-check
+        run: python .github/scripts/addon_updater/test_addon_updater.py
+
+      - name: Install ClamAV
+        if: ${{ inputs.skip_clamav != true }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clamav clamav-freshclam
+          # freshclam fights with the packaged daemon over the DB lock.
+          sudo systemctl stop clamav-freshclam 2>/dev/null || true
+          # The mirrors rate-limit, so give it a few goes before giving up. The
+          # script hard-fails on a missing DB rather than silently skipping.
+          for attempt in 1 2 3; do
+            if sudo freshclam --quiet; then
+              echo "Virus database updated on attempt $attempt"
+              exit 0
+            fi
+            echo "freshclam attempt $attempt failed; retrying"
+            sleep 20
+          done
+          echo "::error::Could not update the ClamAV virus database after 3 attempts"
+          exit 1
+
+      - name: Run addon updater
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          python .github/scripts/addon_updater/main.py \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }} \
+            ${{ inputs.force == true && '--force' || '' }} \
+            ${{ inputs.skip_clamav == true && '--skip-clamav' || '' }} \
+            ${{ inputs.adopt == true && '--adopt' || '' }} \
+            --only "$ONLY"
