@@ -103,6 +103,9 @@ KEY_LAUNCHER_JSON = "launcher/launcher.json"
 # {addons.json name: commit} of what the updater has published (main.py read_published).
 # Not read by the launcher.
 KEY_PUBLISHED = "launcher/addons_published.json"
+# {addons.json name: commit} of the pin a daily --latest publish moved past, so a later
+# pinned run doesn't put that older pin back (main.py read_superseded). Not read by the launcher.
+KEY_SUPERSEDED = "launcher/addons_superseded.json"
 
 # Public origin, used only for cache purging.
 PUBLIC_ORIGIN = "https://launcher.catseyexi.com"

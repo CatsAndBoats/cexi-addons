@@ -5,10 +5,16 @@ name: Addon Updater
 # main/ashita build, and to the vanacore build only if it sets "vanacore": true in
 # addons.json (see config.TARGETS).
 #
-# It never asks what is newest upstream: a new pin is set by hand in a pull request.
-# A pin that isn't live yet is published only if
-# a code owner of addons.json other than the pull request's author approved it
-# (approvals.py); its files are fetched by git at exactly that commit and checked.
+# Daily (schedule, or the "latest" input): each addon's newest upstream commit (latest
+# release, or the newest commit on its "branch") is published with no approval, so an
+# author's next release reaches players within a day. addons.json isn't written back
+# (main takes changes only through pull requests); R2's record says what is live.
+#
+# On a push changing addons.json: each entry's pinned commit. A pin that isn't live yet
+# is published only if a code owner of addons.json other than the pull request's author
+# approved it (approvals.py). A pin the daily run has already moved past is left alone.
+#
+# Either way its files are fetched by git at exactly that commit and checked.
 #
 # The job fetches, vets, virus-scans and stages everything locally first, and only
 # then uploads. A failure at any point before the upload phase leaves R2 untouched.
@@ -19,8 +25,15 @@ on:
   push:
     branches: [main]
     paths: [addons.json]
+  schedule:
+    # 05:20 UTC daily. Off the hour on purpose: scheduled jobs queue heavily at :00.
+    - cron: "20 5 * * *"
   workflow_dispatch:
     inputs:
+      latest:
+        description: "Publish each addon's newest upstream commit instead of its pin, with no approval (what the daily run does)"
+        type: boolean
+        default: false
       dry_run:
         description: "Do everything except upload to R2"
         type: boolean
@@ -116,6 +129,7 @@ jobs:
           ONLY: ${{ inputs.only }}
         run: |
           python .github/scripts/addon_updater/main.py \
+            ${{ (github.event_name == 'schedule' || inputs.latest == true) && '--latest' || '' }} \
             ${{ inputs.dry_run == true && '--dry-run' || '' }} \
             ${{ inputs.force == true && '--force' || '' }} \
             ${{ inputs.skip_clamav == true && '--skip-clamav' || '' }} \
