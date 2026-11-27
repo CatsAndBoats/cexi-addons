@@ -2,19 +2,40 @@
 
 Publishes Ashita and VanaCore addons to R2 from **pinned commits** of their GitHub
 repositories, so addons can be added or updated without rebuilding the whole client
-download, and nothing an addon's author pushes reaches players until a person here
-approves it.
+download. Once a day it also publishes each addon's **newest upstream release** (or
+newest commit on its `branch`) with no approval, so an author's next release reaches
+players within a day ([Daily updates](#daily-updates)).
 
 One workflow, **Addon Updater** (`addon_updater.yaml`, `main.py`):
 
 | | |
 | --- | --- |
-| When | On a push to main that changes `addons.json`, or by hand |
-| Upstream | Never looks: publishes the pin. Nothing checks for newer versions; a pin is moved by hand in a pull request ([Updating an addon](#updating-an-addon)) |
-| Fetch | The pinned commit, by its hash, checked by git |
+| When | Daily at 05:20 UTC (`--latest`); on a push to main that changes `addons.json`; or by hand |
+| Upstream | Daily: the latest release, or the newest commit on `branch` touching `path`. On a push: never looks, publishes the pin |
+| Fetch | That commit, by its hash, checked by git |
 | Checks | File rules, lua header, ClamAV |
-| Writes | R2 (files, `launcher.json`, manifests, `launcher/addons_published.json`). Never the repository |
+| Writes | R2 (files, `launcher.json`, manifests, `launcher/addons_published.json`, `launcher/addons_superseded.json`). Never the repository |
 | Secrets | R2's and Cloudflare's |
+
+## Daily updates
+
+The scheduled run (and a manual run with `latest`) ignores the pins: for each entry it
+takes the latest published release (drafts and prereleases don't count; an entry with no
+release and no `branch` is skipped), or for a `branch` entry the newest commit on that
+branch touching `path`. If that isn't what is live, it is fetched by git at that commit,
+vetted, virus-scanned and published, **with no approval**. An `asset` entry takes the
+latest release's upload as it is, since there is no pinned `asset_sha256` to check it
+against.
+
+- `addons.json` isn't written back: main takes changes only through pull requests. What
+  is live is `launcher/addons_published.json` on R2, and the run summary.
+- When it publishes past an entry's pin, it records that pin in
+  `launcher/addons_superseded.json`. A later pinned run (any push changing `addons.json`)
+  leaves that addon alone while its pin is still the superseded one, so adding an addon
+  doesn't roll the others back. Moving the pin in a pull request publishes it as before,
+  approval and all, until the next daily run moves past it.
+- To hold an addon back from daily updates, take it out of `addons.json`: there is no
+  per-addon opt-out.
 
 ## Pins, approvals and what is checked
 
@@ -28,6 +49,8 @@ One workflow, **Addon Updater** (`addon_updater.yaml`, `main.py`):
   has (the repo's `export-ignore` / `export-subst` applied: checked identical for every
   addon when this was built), but nothing downloaded is trusted. Downloading a zipball
   by tag name, which could move between resolving and downloading, is gone.
+These apply to pinned runs (a push changing `addons.json`, or by hand without `latest`).
+
 - **Approval.** A pin that isn't live yet (`launcher/addons_published.json` on R2) is
   published only when `approvals.py` finds that the commit on main which set it was
   merged from a pull request, approved on its final head by someone `.github/CODEOWNERS`
@@ -137,8 +160,8 @@ commit to publish. A code owner other than you approves; merging it publishes.
 
 ### Updating an addon
 
-Nothing checks upstream for new versions. To update an addon, open a pull request that
-changes only its entry:
+The daily run does this on its own. To publish a specific commit sooner (or a commit
+that isn't a release), open a pull request that changes only its entry:
 
 - `commit`: the new full hash (for a release, the commit its tag points at; for a
   `branch` entry, the latest commit on that branch that touched `path`), and `tag` for a
@@ -238,6 +261,7 @@ the folder the addon lives in with `path` (relative to the repo root):
 
 | Input | Effect |
 | --- | --- |
+| `latest` | What the daily run does: newest upstream commit instead of the pin, no approval |
 | `dry_run` | Fetch, vet and scan, print what would happen, upload nothing |
 | `force` | Re-publish even when the pin is already live (still uploads only changed files) |
 | `only` | Comma-separated addon names, e.g. `Sidekick,HXUI` |

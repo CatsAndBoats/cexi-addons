@@ -2,15 +2,22 @@
 """
 CatsEyeXI addon updater.
 
-Publishes each addons.json entry's pinned commit ("commit") to R2, so addons can be
-updated without rebuilding the whole client download. This is INSTALL: it never asks
-what is newest upstream (a new pin is set by hand in a pull request).
+Publishes addons to R2, so addons can be updated without rebuilding the whole client
+download. Two modes:
 
-A pin is published only when it is already live (R2's record of published commits)
-or a code owner other than its author approved it in a pull request merged into
-main (approvals.py). Its files are fetched by git at exactly that commit and
-checked to be that commit (sources.fetch_commit); an "asset" entry's zip must match
-its pinned asset_sha256.
+--latest (the daily scheduled run): each entry's newest upstream commit (its latest
+release, or with "branch" the newest commit touching "path") goes out with no
+approval. The pin it moves past is kept in R2 (config.KEY_SUPERSEDED), so a later
+pinned run doesn't roll players back to it. addons.json isn't written back (main
+takes changes only through pull requests): R2's record is what is live.
+
+Pinned (a push changing addons.json, or a manual run): each entry's "commit". A pin
+is published only when it is already live (R2's record of published commits) or a
+code owner other than its author approved it in a pull request merged into main
+(approvals.py). An "asset" entry's zip must match its pinned asset_sha256.
+
+Either way the files are fetched by git at exactly that commit and checked to be that
+commit (sources.fetch_commit), vetted and virus-scanned.
 
 The run is strictly two-phase. Phase one gathers, vets, scans and stages
 everything locally and touches nothing remote. Phase two uploads. If anything at
@@ -27,6 +34,7 @@ addons.json is never written: it is the reviewed input, not a log.
 
 Usage:
     python main.py [--dry-run] [--force] [--only NAME[,NAME...]] [--skip-clamav]
+    python main.py --latest  # the daily run: newest upstream commit, no approval
     python main.py --adopt   # record the current pins as published; publishes nothing
 """
 
@@ -100,9 +108,10 @@ class StagedAddon:
         self.metadata = metadata    # parsed addon.* header
 
 
-def gather(entries, rows, token, force, only, published, approve):
+def gather(entries, rows, token, force, only, published, approve, latest=False, superseded=None):
     """
-    Fetch, check and vet every addon whose pinned commit isn't published yet.
+    Fetch, check and vet every addon whose pinned commit (with latest, its newest
+    upstream commit) isn't published yet.
 
     Returns (staged, failures). A failure quarantines one addon; the others still
     publish, and main() exits non-zero so the run is visibly red. Each addon's
@@ -123,7 +132,7 @@ def gather(entries, rows, token, force, only, published, approve):
         info(f"\n  {name}")
 
         try:
-            staged_addon = _gather_one(entry, token, force, row, published, approve)
+            staged_addon = _gather_one(entry, token, force, row, published, approve, latest, superseded)
         except AddonError as exc:
             error(f"  {name}: {exc}")
             failures.append((name, str(exc)))
@@ -141,7 +150,7 @@ def gather(entries, rows, token, force, only, published, approve):
     return staged, failures
 
 
-def _gather_one(entry, token, force, row, published, approve):
+def _gather_one(entry, token, force, row, published, approve, latest=False, superseded=None):
     name = entry["name"]
     lua_filename = entry.get("lua") or f"{name}.lua"
     install = entry.get("install") or name
@@ -167,6 +176,9 @@ def _gather_one(entry, token, force, row, published, approve):
     if asset and path:
         raise AddonError("'asset' and 'path' can't go together: a release asset is the addon's folder already")
 
+    if latest:
+        return _gather_latest(entry, token, force, row, published, owner, repo, branch, path, asset, lua_filename, install)
+
     pin = (entry.get("commit") or "").strip().lower()
     if not sources.is_sha(pin):
         raise AddonError(
@@ -181,6 +193,14 @@ def _gather_one(entry, token, force, row, published, approve):
     if pin == live and not force:
         info(f"    up to date at {tag} ({pin[:7]})")
         row.status = summary.UP_TO_DATE
+        return None
+
+    if pin != live and live and (superseded or {}).get(name) == pin and not force:
+        # The daily --latest run published something newer than this pin. Putting the
+        # pin back would roll every player back, so only a pin moved since then counts.
+        info(f"    pin {pin[:7]} was superseded by the daily update; {live[:7]} stays live")
+        row.status, row.sha = summary.UP_TO_DATE, live
+        row.tag = f"{branch}@{live[:7]}" if branch else live[:7]
         return None
 
     if pin == live:
@@ -223,6 +243,55 @@ def _gather_one(entry, token, force, row, published, approve):
 
     row.status, row.version = summary.STAGED, metadata["version"]
     return StagedAddon(entry, tag, pin, files, metadata, row)
+
+
+def _gather_latest(entry, token, force, row, published, owner, repo, branch, path, asset, lua_filename, install):
+    """
+    The daily run: the newest upstream commit (latest release, or the newest commit on
+    'branch' that touches 'path') instead of the pin, published with no approval. It is
+    still fetched by git at exactly that commit, vetted and virus-scanned. An asset
+    entry takes the latest release's upload as it is: there is no pinned hash for it.
+    """
+    name = entry["name"]
+    assets = []
+    if branch:
+        sha = sources.resolve_branch_commit(token, owner, repo, branch, path)
+        tag = f"{branch}@{sha[:7]}"
+    else:
+        release = sources.resolve_latest_release(token, owner, repo)
+        if release is None:
+            info(f"    Skipped: no GitHub release exists for {name}")
+            row.status = summary.NO_RELEASE
+            return None
+        tag, sha, assets = release
+    sha = sha.lower()
+
+    row.tag, row.sha = tag, sha
+    live = published.get(name, "")
+    row.known_sha = live
+
+    if sha == live and not force:
+        info(f"    up to date at {tag} ({sha[:7]})")
+        row.status = summary.UP_TO_DATE
+        return None
+
+    info(f"    {'forced re-publish of' if sha == live else 'newest upstream'} {tag} ({sha[:7]}), live is {live[:7] or 'none'}")
+
+    if asset:
+        chosen = sources.pick_release_asset(assets, asset)
+        info(f"    release asset: {chosen['name']} ({human_bytes(chosen.get('size') or 0)})")
+        zip_bytes = sources.download_release_asset(token, chosen)
+        root, raw_files = sources.extract_release(zip_bytes, lua_filename, path)
+    else:
+        root, raw_files = sources.fetch_commit(token, owner, repo, sha, lua_filename, path)
+    info(f"    addon root: {root or '<archive root>'}")
+
+    files = vetting.filter_and_check(raw_files, install)
+    metadata = vetting.read_lua_metadata(files[entry_lua_key(files, lua_filename)], install)
+    info(f"    verified: {metadata['name']} v{metadata['version']} by {metadata['author']}")
+
+    row.status, row.version = summary.STAGED, metadata["version"]
+    return StagedAddon(entry, tag, sha, files, metadata, row)
 
 
 def write_staging(staged):
@@ -389,8 +458,43 @@ def read_published(r2):
     return data
 
 
-def write_published(r2, published, staged):
-    """The record of what is live, with this run's pins in it. Written last."""
+def read_superseded(r2):
+    """{addons.json name: pin} that a daily --latest publish moved past ({} when none yet)."""
+    raw = r2.get(config.KEY_SUPERSEDED)
+    if raw is None:
+        return {}
+    data = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+    if not isinstance(data, dict) or not all(isinstance(v, str) for v in data.values()):
+        raise SystemExit(f"{config.KEY_SUPERSEDED} isn't a {{name: commit}} object; refusing to go on")
+    return data
+
+
+def updated_superseded(superseded, staged, latest):
+    """
+    The superseded record after this run: a --latest publish records the addons.json pin
+    it moved past; a pinned publish clears the entry (its pin is what is live now).
+    """
+    record = OrderedDict(sorted(superseded.items()))
+    for addon in staged:
+        pin = (addon.entry.get("commit") or "").strip().lower()
+        if latest and sources.is_sha(pin) and pin != addon.sha:
+            record[addon.name] = pin
+        else:
+            record.pop(addon.name, None)
+    return record
+
+
+def write_published(r2, published, staged, superseded=None, latest=False):
+    """
+    The record of what is live, with this run's commits in it. Written last, with the
+    superseded record just before it: a run that dies between the two re-does itself,
+    and a later pinned run still can't put an older pin back.
+    """
+    if superseded is not None:
+        new = updated_superseded(superseded, staged, latest)
+        if new != OrderedDict(sorted(superseded.items())):
+            info(f"  superseded record ({len(new)} addon(s))")
+            r2.put(config.KEY_SUPERSEDED, (json.dumps(new, indent=2) + "\n").encode("utf-8"), "application/json")
     record = OrderedDict(sorted(published.items()))
     for addon in staged:
         record[addon.name] = addon.sha
@@ -415,6 +519,10 @@ def parse_args():
     parser.add_argument("--force", action="store_true", help="re-publish even when the commit matches")
     parser.add_argument("--only", default="", help="comma-separated addon names to process")
     parser.add_argument("--skip-clamav", action="store_true", help="skip the virus scan")
+    parser.add_argument(
+        "--latest", action="store_true",
+        help="publish each addon's newest upstream commit instead of its pin, with no approval (the daily run)",
+    )
     parser.add_argument(
         "--adopt", action="store_true",
         help="record addons.json's current pins as published, without publishing (first run only)",
@@ -485,13 +593,18 @@ def run(args, token, only, entries, report):
 
     # -- phase one -----------------------------------------------------------
 
-    step("1/6  Fetching pinned commits")
-    staged, failures = gather(entries, report.rows, token, args.force, only, published, approver(token))
+    superseded = read_superseded(r2)
+    latest = args.latest
 
-    # The common case: every pin is already live. Stop here.
+    step("1/6  Fetching newest upstream commits" if latest else "1/6  Fetching pinned commits")
+    staged, failures = gather(
+        entries, report.rows, token, args.force, only, published, approver(token), latest, superseded,
+    )
+
+    # The common case: everything is already live. Stop here.
     if not staged:
         step("No updates")
-        info("  Every pinned commit is already published.")
+        info("  Every addon's newest commit is already published." if latest else "  Every pinned commit is already published.")
         info("  Nothing downloaded, nothing uploaded.")
         if failures:
             _report_failures(failures)
@@ -587,7 +700,7 @@ def run(args, token, only, entries, report):
         step("No updates")
         info("  Pins moved but no published file or metadata changed.")
         info("  launcher.json and the build manifest are untouched.")
-        write_published(r2, published, staged)
+        write_published(r2, published, staged, superseded, latest)
         report.published()
         if failures:
             _report_failures(failures)
@@ -661,7 +774,7 @@ def run(args, token, only, entries, report):
         # players' installs.
         info(f"  {removed_total} orphaned object(s) left on R2 (manifest-only removal)")
 
-    write_published(r2, published, staged)
+    write_published(r2, published, staged, superseded, latest)
     report.published()
 
     step("Done")

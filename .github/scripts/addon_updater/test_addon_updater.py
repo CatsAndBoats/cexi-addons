@@ -1012,6 +1012,68 @@ def test_approvals():
     expect_reject("a pin HEAD doesn't hold", lambda: approvals.introducing_commit(work, "Demo", "c" * 40))
 
 
+def test_latest():
+    # --latest (the daily run): the newest upstream commit instead of the pin, no approval;
+    # the pin it moves past is recorded so a later pinned run doesn't put it back.
+    repo = {f"{ROOT}/Demo/Demo.lua": GOOD_LUA, f"{ROOT}/Demo/lib/x.lua": b"-- x"}
+    entry = OrderedDict([
+        ("name", "Demo"), ("github", "https://github.com/acme/Demo"), ("branch", "main"),
+        ("path", "Demo"), ("install", "Demo"), ("lua", "Demo.lua"), ("commit", "a" * 40),
+    ])
+    released = OrderedDict([
+        ("name", "Rel"), ("github", "https://github.com/acme/Rel"),
+        ("install", "Demo"), ("lua", "Demo.lua"), ("commit", "a" * 40),
+    ])
+    seen = {"approved": [], "fetched": []}
+
+    def fake_fetch(token, owner, repo_name, sha, lua, path):
+        seen["fetched"].append(sha)
+        return sources.extract_release(make_zip(repo), lua, path)
+
+    def approve(e, pin):
+        seen["approved"].append(pin)
+
+    release = {"value": ("v2", "C" * 40, [])}
+    saved = sources.fetch_commit, sources.resolve_branch_commit, sources.resolve_latest_release
+    sources.fetch_commit = fake_fetch
+    sources.resolve_branch_commit = lambda *_a: "b" * 40
+    sources.resolve_latest_release = lambda *_a: release["value"]
+    try:
+        row = summary.AddonRow(entry)
+        staged = updater._gather_one(entry, "t", False, row, {"Demo": "a" * 40}, approve, latest=True)
+        quiet = updater._gather_one(entry, "t", False, summary.AddonRow(entry), {"Demo": "b" * 40}, approve, latest=True)
+        rel_row = summary.AddonRow(released)
+        rel = updater._gather_one(released, "t", False, rel_row, {}, approve, latest=True)
+        release["value"] = None
+        none_row = summary.AddonRow(released)
+        no_release = updater._gather_one(released, "t", False, none_row, {}, approve, latest=True)
+
+        # Pinned runs after a daily publish: the superseded pin stays put, a moved pin goes.
+        superseded = {"Demo": "a" * 40}
+        seen["fetched"].clear()
+        held_row = summary.AddonRow(entry)
+        held = updater._gather_one(entry, "t", False, held_row, {"Demo": "b" * 40}, approve, superseded=superseded)
+        moved = OrderedDict(entry, commit="d" * 40)
+        moved_staged = updater._gather_one(moved, "t", False, summary.AddonRow(moved), {"Demo": "b" * 40}, approve, superseded=superseded)
+    finally:
+        sources.fetch_commit, sources.resolve_branch_commit, sources.resolve_latest_release = saved
+
+    check("latest publishes the newest branch commit", staged is not None and staged.sha == "b" * 40, staged and staged.sha)
+    check("latest labels it branch@sha", row.tag == "main@bbbbbbb", row.tag)
+    check("latest that is already live is up to date", quiet is None)
+    check("latest takes the latest release's commit", rel is not None and rel.sha == "c" * 40 and rel_row.tag == "v2", rel and (rel.sha, rel_row.tag))
+    check("latest with no release is skipped", no_release is None and none_row.status == summary.NO_RELEASE, none_row.status)
+    check("a superseded pin isn't put back", held is None and held_row.status == summary.UP_TO_DATE, held_row.status)
+    check("a superseded pin isn't fetched", seen["fetched"] == ["d" * 40], seen["fetched"])
+    check("a pin moved since then publishes", moved_staged is not None and moved_staged.sha == "d" * 40)
+    check("only the moved pin went through approval", seen["approved"] == ["d" * 40], seen["approved"])
+
+    record = updater.updated_superseded({"Other": "e" * 40}, [staged], latest=True)
+    check("latest records the pin it moved past", record == {"Demo": "a" * 40, "Other": "e" * 40}, dict(record))
+    record = updater.updated_superseded(record, [moved_staged], latest=False)
+    check("a pinned publish clears it", record == {"Other": "e" * 40}, dict(record))
+
+
 def main():
     # The modules narrate what they are doing, which is useful in a real run and
     # just noise here. Quieten them so a failure is the only thing on screen.
@@ -1030,6 +1092,7 @@ def main():
     test_forced_deletes()
     test_native_asset()
     test_branch_source()
+    test_latest()
     test_pinned_git()
     test_approvals()
     test_serialisation()
